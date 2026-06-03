@@ -1,0 +1,48 @@
+{
+  "total_count": 3,
+  "incomplete_results": false,
+  "items": [
+    {
+      "name": "train.py",
+      "path": "src/train.py",
+      "repository": {
+        "id": 12345,
+        "name": "medical-ai-platform",
+        "full_name": "MedVision-AI/medical-ai-platform",
+        "owner": {
+          "login": "MedVision-AI",
+          "type": "Organization"
+        },
+        "pushed_at": "2026-04-20T10:00:00Z"
+      }
+    },
+    {
+      "name": "train.py",
+      "path": "train.py",
+      "repository": {
+        "id": 67890,
+        "name": "personal-project",
+        "full_name": "john-doe/personal-project",
+        "owner": {
+          "login": "john-doe",
+          "type": "User"
+        },
+        "pushed_at": "2026-04-25T10:00:00Z"
+      }
+    },
+    {
+      "name": "train.py",
+      "path": "src/train.py",
+      "repository": {
+        "id": 99999,
+        "name": "legacy-system",
+        "full_name": "OldCorp/legacy-system",
+        "owner": {
+          "login": "OldCorp",
+          "type": "Organization"
+        },
+        "pushed_at": "2024-01-01T10:00:00Z"
+      }
+    }
+  ]
+}

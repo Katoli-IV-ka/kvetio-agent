@@ -1,0 +1,13 @@
+{
+  "name": "mozilla",
+  "fullname": "Mozilla",
+  "description": "Mozilla builds Firefox and champions a healthy internet.",
+  "location": "San Francisco, CA",
+  "website": null,
+  "email": null,
+  "avatarUrl": "https://huggingface.co/avatars/mozilla.jpg",
+  "numModels": 14,
+  "numDatasets": 3,
+  "numMembers": 47,
+  "isHf": false
+}

@@ -1,0 +1,36 @@
+{
+  "jobs": [
+    {
+      "id": 1001,
+      "title": "Senior ML Engineer — RLHF",
+      "updated_at": "2026-04-15T10:00:00Z",
+      "absolute_url": "https://boards.greenhouse.io/example/jobs/1001",
+      "location": {"name": "Remote, US"},
+      "content": "<p>We are looking for an ML engineer to build our <b>RLHF</b> pipeline and improve our <i>training data</i> quality.</p>"
+    },
+    {
+      "id": 1002,
+      "title": "Frontend Developer",
+      "updated_at": "2026-04-20T10:00:00Z",
+      "absolute_url": "https://boards.greenhouse.io/example/jobs/1002",
+      "location": {"name": "Remote"},
+      "content": "<p>React, TypeScript, Tailwind. Not data-related at all.</p>"
+    },
+    {
+      "id": 1003,
+      "title": "Data Annotation Engineer (Medical Imaging)",
+      "updated_at": "2026-04-22T10:00:00Z",
+      "absolute_url": "https://boards.greenhouse.io/example/jobs/1003",
+      "location": {"name": "Boston, MA"},
+      "content": "<p>You will own annotation pipelines for our DICOM and MRI datasets.</p>"
+    },
+    {
+      "id": 1004,
+      "title": "ML Engineer (legacy posting)",
+      "updated_at": "2024-01-01T10:00:00Z",
+      "absolute_url": "https://boards.greenhouse.io/example/jobs/1004",
+      "location": {"name": "Remote"},
+      "content": "<p>We do training data work — but this posting is more than 180 days old.</p>"
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+# Stage 0 — ICP Definition. Редактируется человеком, версионируется в git.
+# Каждый сегмент — отдельная "линза", через которую агент смотрит на источники.
+
+segments:
+  - name: medical-imaging
+    description: |
+      Компании, обучающие модели на медицинских изображениях
+      (radiology, pathology, dermatology, ophthalmology).
+    industries: [Healthcare, Medical Devices, Computer Vision]
+    keywords_strong:
+      - medical imaging
+      - radiology AI
+      - pathology AI
+      - DICOM
+      - MRI
+      - CT scan
+      - mammography
+      - ultrasound AI
+    keywords_weak:
+      - healthcare AI
+      - clinical AI
+      - medical AI
+    funding_stages: [Series A, Series B, Series C, Series D]
+    min_team_size: 5
+    geographies: [US, EU, UK, IL]
+
+  - name: autonomous-vehicles
+    description: AV / ADAS / robotics с компьютерным зрением.
+    industries: [Automotive, Robotics, Computer Vision]
+    keywords_strong:
+      - autonomous driving
+      - perception
+      - LIDAR
+      - sensor fusion
+      - ADAS
+    keywords_weak:
+      - mobility AI
+    funding_stages: [Series A, Series B, Series C, Series D]
+    min_team_size: 10
+    geographies: [US, EU, UK, IL, JP, CN]
+
+  - name: speech-and-audio
+    description: TTS / STT / диаризация / голосовые ассистенты.
+    industries: [Speech, Audio, NLP]
+    keywords_strong:
+      - speech recognition
+      - TTS
+      - text-to-speech
+      - STT
+      - speaker diarization
+      - voice cloning
+    keywords_weak: [conversational AI, voice AI]
+    funding_stages: [Seed, Series A, Series B, Series C]
+    min_team_size: 3
+    geographies: [US, EU, UK]
+
+  - name: generative-ai
+    description: |
+      Компании, обучающие собственные LLM / мультимодальные / генеративные модели.
+      Нуждаются в instruction tuning, RLHF, preference data и domain-specific корпусах.
+    industries: [Artificial Intelligence, Machine Learning, NLP, Foundation Models]
+    keywords_strong:
+      - large language model
+      - LLM
+      - foundation model
+      - instruction tuning
+      - RLHF
+      - fine-tuning
+      - pre-training
+      - generative AI
+    keywords_weak:
+      - language model
+      - AI assistant
+      - chat model
+    funding_stages: [Seed, Series A, Series B, Series C, Series D]
+    min_team_size: 3
+    geographies: [US, EU, UK, IL, CA]
+
+  - name: agriculture-ai
+    description: |
+      Компании, применяющие ML/CV для точного земледелия, анализа растений,
+      мониторинга полей, прогнозирования урожая. Нуждаются в размеченных
+      спутниковых/дроновых снимках, данных с полей.
+    industries: [Agriculture, AgTech, Computer Vision, Robotics]
+    keywords_strong:
+      - precision agriculture
+      - crop disease
+      - plant health
+      - yield prediction
+      - agronomy AI
+      - satellite imagery
+      - drone agriculture
+    keywords_weak:
+      - farming AI
+      - soil analysis
+      - crop monitoring
+    funding_stages: [Seed, Series A, Series B, Series C]
+    min_team_size: 3
+    geographies: [US, EU, UK, IL, AU, IN, BR]
+
+  - name: robotics-ai
+    description: |
+      Компании, обучающие ML-модели для восприятия и управления роботами.
+      Нуждаются в имитационных данных, motion capture, синтетических сценах.
+    industries: [Robotics, Manufacturing, Computer Vision, Artificial Intelligence]
+    keywords_strong:
+      - robot learning
+      - robot perception
+      - manipulation
+      - SLAM
+      - sim-to-real
+      - reinforcement learning robot
+      - industrial AI
+    keywords_weak:
+      - autonomous robot
+      - robot vision
+      - cobots
+    funding_stages: [Seed, Series A, Series B, Series C, Series D]
+    min_team_size: 5
+    geographies: [US, EU, UK, JP, CA]
+
+  - name: video-photo-ai
+    description: |
+      Компании, строящие генеративные модели для видео и изображений.
+      Нуждаются в размеченном видеоконтенте, парах prompt-image/video.
+    industries: [Artificial Intelligence, Media & Entertainment, Retail & E-commerce]
+    keywords_strong:
+      - text-to-video
+      - video generation
+      - image generation
+      - diffusion model
+      - text-to-image
+      - video editing AI
+      - generative video
+    keywords_weak:
+      - AI video
+      - AI image
+      - creative AI
+    funding_stages: [Seed, Series A, Series B, Series C]
+    min_team_size: 3
+    geographies: [US, EU, UK, CN]

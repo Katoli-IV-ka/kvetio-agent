@@ -1,0 +1,95 @@
+# Registry источников. Адаптеры читают эти настройки при инициализации.
+
+sources:
+  greenhouse:
+    enabled: true
+    tier: A
+    rate_limit_rps: 1
+    parser_version: "2026-04"
+    description: "Greenhouse ATS — парсинг job-постингов"
+    script: scripts/greenhouse.py
+    supported_segments:
+      - medical-imaging
+      - autonomous-vehicles
+      - speech-and-audio
+    default_limit: 50
+    # Greenhouse API не имеет глобального поиска — нужны slug'и компаний.
+    # Стартовый список лежит в data/known_ats_slugs.csv.
+
+  lever:
+    enabled: false
+    tier: A
+    rate_limit_rps: 1
+    parser_version: "2026-04"
+    description: "Lever ATS — парсинг job-постингов"
+    script: scripts/lever.py
+    supported_segments:
+      - medical-imaging
+      - autonomous-vehicles
+      - speech-and-audio
+    default_limit: 50
+
+  ashby:
+    enabled: false
+    tier: A
+    rate_limit_rps: 1
+
+  huggingface:
+    enabled: true
+    tier: A
+    rate_limit_rps: 5
+    parser_version: "2026-05"
+    max_models_per_tag: 3000
+    pipeline_tag_map:
+      medical-imaging:
+        - image-classification
+        - image-segmentation
+        - object-detection
+      autonomous-vehicles:
+        - object-detection
+        - depth-estimation
+        - image-segmentation
+      speech-and-audio:
+        - automatic-speech-recognition
+        - text-to-speech
+        - audio-classification
+        - voice-activity-detection
+      generative-ai:
+        - text-generation
+        - text2text-generation
+        - conversational
+        - summarization
+
+  yc_browser:
+    enabled: true
+    tier: A
+    rate_limit_rps: 2
+    parser_version: "2026-05"
+    description: "Y Combinator Company Browser — публичный JSON API (yc-oss/api)"
+    script: scripts/yc_browser.py
+    supported_segments:
+      - medical-imaging
+      - autonomous-vehicles
+      - speech-and-audio
+    default_limit: 100
+    # Публичный yc-oss API. Данные обновляются ежедневно, авторизация не нужна.
+    # Сегменты: medical-imaging, autonomous-vehicles, speech-and-audio
+
+  github:
+    enabled: true
+    tier: A
+    rate_limit_rps: 0.5
+    parser_version: "2026-05"
+
+  papers_with_code:
+    enabled: false
+    tier: A
+    rate_limit_rps: 1
+
+  techcrunch_rss:
+    enabled: false
+    tier: B
+
+  arxiv:
+    enabled: false
+    tier: C

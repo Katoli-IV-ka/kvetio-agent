@@ -1,0 +1,23 @@
+[
+  {
+    "id": "deepgram/nova-2",
+    "author": "deepgram",
+    "pipeline_tag": "automatic-speech-recognition",
+    "downloads": 95000,
+    "likes": 120
+  },
+  {
+    "id": "mozilla/common-voice-asr",
+    "author": "mozilla",
+    "pipeline_tag": "automatic-speech-recognition",
+    "downloads": 42000,
+    "likes": 80
+  },
+  {
+    "id": "huggingface/whisper-demo",
+    "author": "huggingface",
+    "pipeline_tag": "automatic-speech-recognition",
+    "downloads": 500000,
+    "likes": 9000
+  }
+]

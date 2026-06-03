@@ -1,0 +1,13 @@
+{
+  "name": "huggingface",
+  "fullname": "Hugging Face",
+  "description": "The AI community building the future.",
+  "location": "New York, NY",
+  "website": "https://huggingface.co",
+  "email": null,
+  "avatarUrl": "https://huggingface.co/avatars/huggingface.jpg",
+  "numModels": 500,
+  "numDatasets": 200,
+  "numMembers": 250,
+  "isHf": true
+}

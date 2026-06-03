@@ -1,0 +1,22 @@
+# Kvetio Agent — runtime-зависимости
+# Установка: pip install -r requirements.txt
+# Dev-инструменты (pytest, ruff, …) — в requirements-dev.txt
+
+# HTTP
+httpx>=0.27
+tenacity>=8.2
+
+# Парсинг доменов
+tldextract>=5.1
+
+# Fuzzy-matching имён компаний
+rapidfuzz>=3.9
+
+# YAML-конфиги
+pyyaml>=6.0
+
+# .env файлы
+python-dotenv>=1.0
+
+# Supabase
+supabase>=2.4

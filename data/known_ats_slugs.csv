@@ -1,0 +1,10 @@
+company_name,ats,slug,website,segment_hint,note
+# Стартовый seed list. Дополнять по мере поиска.
+# Найти slug: открыть careers.html компании -> URL вида boards.greenhouse.io/{slug} или jobs.lever.co/{slug}.
+# website: домен без схемы (например: acme.ai). Оставить пустым если неизвестен — агент найдёт через WebSearch.
+# Примеры (валидность slug'ов проверить эмпирически):
+Anthropic,greenhouse,anthropic,anthropic.com,llm,
+Hugging Face,greenhouse,huggingface,huggingface.co,ml-platform,
+Scale AI,greenhouse,scaleai,scale.com,data-platform,
+Notion,greenhouse,notion,notion.so,saas,
+Replicate,greenhouse,replicate,replicate.com,ml-platform,

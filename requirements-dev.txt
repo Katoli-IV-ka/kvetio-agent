@@ -1,0 +1,9 @@
+# Dev-инструменты для kvetio-agent
+# Установка (после requirements.txt):
+#     pip install -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest>=8.2
+respx>=0.21
+ruff>=0.5

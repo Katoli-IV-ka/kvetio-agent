@@ -1,0 +1,11 @@
+# kvetio-agent — это не библиотека и не pip-installable пакет.
+# Скрипты в scripts/ запускаются напрямую: `python scripts/X.py`.
+# Здесь хранится только конфиг линтера и тестов; зависимости — в requirements.txt.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

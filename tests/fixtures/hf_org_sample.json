@@ -1,0 +1,13 @@
+{
+  "name": "deepgram",
+  "fullname": "Deepgram",
+  "description": "Deepgram provides speech-to-text APIs for developers.",
+  "location": "San Francisco, CA",
+  "website": "https://deepgram.com",
+  "email": null,
+  "avatarUrl": "https://huggingface.co/avatars/deepgram.jpg",
+  "numModels": 8,
+  "numDatasets": 2,
+  "numMembers": 45,
+  "isHf": false
+}

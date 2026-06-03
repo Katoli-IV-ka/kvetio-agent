@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets and local config
+.env
+.env.local
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS / system junk
+.DS_Store
+Thumbs.db
+
+# Local data and run artefacts
+runs/
+data/*.json
+data/*.db
+data/*.sqlite
+
+# Allow seed data
+!data/known_ats_slugs.csv
