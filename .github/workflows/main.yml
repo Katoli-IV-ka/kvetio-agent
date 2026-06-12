@@ -1,0 +1,16 @@
+# .github/workflows/notify-parent.yml
+name: Notify parent repo
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository: Katoli-IV-ka/kvetio
+          event-type: submodule-update
