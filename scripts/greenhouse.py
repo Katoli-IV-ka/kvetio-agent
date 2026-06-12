@@ -27,7 +27,7 @@ from typing import Iterator
 # Плоский импорт из той же папки
 sys.path.insert(0, str(Path(__file__).parent))
 from http_client import HttpClient
-from models import Confidence, ICPQuery, RawSignal
+from models import ICPQuery, RawSignal
 
 logger = logging.getLogger(__name__)
 

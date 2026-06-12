@@ -22,14 +22,14 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 sys.path.insert(0, str(Path(__file__).parent))
-from models import Company, Evidence, RawSignal
+from models import Company, RawSignal
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +235,46 @@ class SupabaseStore:
             coverage[segment][status] = coverage[segment].get(status, 0) + 1
 
         return coverage
+
+    def list_hot_leads(self, limit: int = 5) -> list[dict]:
+        """Очередь Hot-лидов для Telegram routines."""
+        res = (
+            self._client.table("companies")
+            .select(
+                "name, domain, status, score, score_bucket, icp_segment, latest_signal, "
+                "notion_page_id, updated_at"
+            )
+            .eq("status", "enriched")
+            .eq("score_bucket", "Hot")
+            .order("score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
+    def list_stale_review_queue(self, days: int = 14, limit: int = 10) -> list[dict]:
+        """Компании, которые давно не проверялись или ещё ни разу не проверены."""
+        cutoff = date.today() - timedelta(days=days)
+        review_statuses = [
+            "new",
+            "pending_verify",
+            "pending_enrich",
+            "needs_update",
+            "manual_review",
+        ]
+        res = (
+            self._client.table("companies")
+            .select(
+                "name, domain, status, score, score_bucket, icp_segment, "
+                "last_verified, updated_at"
+            )
+            .in_("status", review_statuses)
+            .or_(f"last_verified.is.null,last_verified.lt.{cutoff.isoformat()}")
+            .order("last_verified", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
 
 
 def _map_bucket(bucket: str) -> str:

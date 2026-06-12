@@ -62,7 +62,8 @@ kvetio-agent/
 │   ├── yc_browser.py          # источник: Y Combinator company browser
 │   ├── supabase_store.py      # CRUD над Supabase + дедуп + покрытие
 │   ├── score.py               # детерминированный scoring engine
-│   └── notify.py              # уведомления в Telegram
+│   ├── notify.py              # уведомления в Telegram
+│   └── telegram_routines.py   # операционные Telegram-дайджесты и очереди
 ├── sql/                       # миграции Postgres/Supabase
 │   ├── 001_init.sql
 │   ├── 002_github_org_cache.sql
@@ -92,12 +93,34 @@ python scripts/notify.py --run-summary '{"task":"collection_task", ...}'
 
 Скрипты пишут в stdout JSON-совместимый вывод и читают stdin/аргументы. Никаких импортов между скриптами в обход явных API — каждый скрипт самодостаточен.
 
+## Telegram routines
+
+`scripts/telegram_routines.py` собирает операционные сообщения из Supabase и отправляет их через существующий Telegram Bot API слой.
+
+```bash
+# Проверить текст и payload без отправки в Telegram
+python scripts/telegram_routines.py daily_digest --dry-run
+python scripts/telegram_routines.py hot_leads --limit 5 --dry-run
+python scripts/telegram_routines.py stale_review --days 30 --limit 10 --dry-run
+
+# Отправить в Telegram-чат из TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+python scripts/telegram_routines.py daily_digest
+python scripts/telegram_routines.py hot_leads --limit 5
+python scripts/telegram_routines.py stale_review --days 30 --limit 10
+```
+
+Доступные routines:
+- `daily_digest` — total/by-status статистика и покрытие по ICP-сегментам.
+- `hot_leads` — enriched + Hot компании, отсортированные по score.
+- `stale_review` — компании без проверки или с устаревшим `last_verified`.
+
 ## Текущий статус
 
 - ✅ Greenhouse, HuggingFace, YC Browser — рабочие источники.
 - ✅ Supabase — единый runtime store, дедупликация (exact + fuzzy) реализована.
 - ✅ Scoring — детерминированная функция от Company → ScoreBreakdown.
 - ✅ Telegram-уведомления.
+- ✅ Telegram routines для ежедневных дайджестов и review-очередей.
 - ⏳ GitHub — текущий план в репозитории [kvetio](https://github.com/Katoli-IV-ka/kvetio) (`docs/superpowers/plans/`).
 - ⏳ Notion sync — каркас, нужна сверка полей с боевой базой.
 
