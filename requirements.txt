@@ -23,3 +23,6 @@ beautifulsoup4>=4.12
 
 # Supabase
 supabase>=2.4
+
+# LLM fallback для GitHub domain inference
+anthropic>=0.39

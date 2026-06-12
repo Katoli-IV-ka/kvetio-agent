@@ -48,10 +48,11 @@ python scripts/supabase_store.py --coverage
 | Источник | Команда |
 |---|---|
 | `huggingface` | `python scripts/huggingface.py --segment <segment> --max-models 1000` |
+| `github` | `python scripts/github.py --segment <segment> --limit <limit> --dry-run` |
 | `yc_browser` | `python scripts/yc_browser.py --segment <segment> --limit <limit>` |
 | `greenhouse` | `python scripts/greenhouse.py --segment <segment>` |
 
-Порядок: huggingface → yc_browser → greenhouse.
+Порядок: huggingface → github → yc_browser → greenhouse.
 
 Сообщи какие источники выбраны и почему, прежде чем запускать.
 
@@ -68,8 +69,8 @@ python scripts/supabase_store.py --coverage
 ### Шаг 4 — Объединить и дедуплицировать
 
 **4a. Дедупликация внутри сессии** — по нормализованному домену. Если одна компания
-пришла из HuggingFace и YC одновременно — оставляй одну запись,
-в `sources` пиши оба: `["huggingface", "yc_browser"]`.
+пришла из HuggingFace, GitHub и YC одновременно — оставляй одну запись,
+в `sources` пиши все источники: `["huggingface", "github", "yc_browser"]`.
 
 **4b. Дедупликация против базы:**
 ```sql
@@ -80,7 +81,7 @@ WHERE domain = '<normalized_domain>';
 
 После объединения выведи:
 ```
-huggingface: N | yc_browser: M | greenhouse: K
+huggingface: N | github: G | yc_browser: M | greenhouse: K
 Дублей в сессии: X | Уже в базе: Y
 → Для проверки: Z компаний
 ```
@@ -92,12 +93,12 @@ huggingface: N | yc_browser: M | greenhouse: K
 Выведи первые 10 компаний из списка и дождись подтверждения:
 
 ```
-Сегмент: <segment> | Источники: huggingface, yc_browser
+Сегмент: <segment> | Источники: huggingface, github, yc_browser
 Новых для проверки: Z
 
 Топ-10:
 1. Acme Medical AI — acme.ai (huggingface, 8 моделей)
-2. RadarBot — radarbot.io (yc_browser, batch W24)
+2. RadarBot — radarbot.io (github, recent train.py)
 ...
 
 Запустить верификацию? [yes/no]
@@ -122,6 +123,7 @@ huggingface: N | yc_browser: M | greenhouse: K
 |---|---|---|
 | `yc_browser` | Всегда есть | Используй напрямую |
 | `huggingface` | Иногда `null` | Если `null` → WebSearch (ниже) |
+| `github` | Из `blog`/`email` org metadata, иногда `null` | Если `null` → WebSearch (ниже) |
 | `greenhouse` | Из CSV-колонки `website` | Если пусто → WebSearch (ниже) |
 
 **Fallback если домен отсутствует:**
@@ -230,7 +232,7 @@ VALUES (
   'https://<domain>',
   'pending_enrich',
   '<segment>',
-  '<["huggingface","yc_browser"]>',   -- JSON-массив источников
+  '<["huggingface","github","yc_browser"]>',   -- JSON-массив источников
   '<url страницы в первичном источнике>',
   '<description>',
   '<linkedin_url или NULL>',
@@ -277,7 +279,7 @@ INSERT INTO signals (
 )
 VALUES (
   '<source>',
-  '<hf_org | job_posting | yc_company>',
+  '<hf_org | github_repo | job_posting | yc_company>',
   '<company_name>',
   '<domain>',
   '<evidence_url>',
@@ -307,7 +309,7 @@ VALUES (
 python scripts/notify.py --run-summary '{
   "task": "discover_verify_task",
   "segment": "<segment>",
-  "sources": ["huggingface", "yc_browser"],
+  "sources": ["huggingface", "github", "yc_browser"],
   "discovered": <из_источников>,
   "dedup_skipped": <дублей>,
   "pending_enrich": <прошло>,
