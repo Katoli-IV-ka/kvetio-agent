@@ -57,6 +57,8 @@ kvetio-agent/
 │   ├── normalize.py           # normalize_domain, fuzzy company match
 │   ├── http_client.py         # rate-limited HTTP с retries
 │   ├── greenhouse.py          # источник: Greenhouse Job Board
+│   ├── github.py              # источник: GitHub Code Search по org train.py
+│   ├── org_cache.py           # Supabase TTL-кэш GitHub org metadata
 │   ├── lever.py               # источник: Lever
 │   ├── huggingface.py         # источник: HuggingFace orgs/models
 │   ├── yc_browser.py          # источник: Y Combinator company browser
@@ -74,6 +76,7 @@ kvetio-agent/
     ├── test_normalize.py
     ├── test_scoring.py
     ├── test_greenhouse.py
+    ├── test_github.py
     ├── test_huggingface.py
     ├── test_yc_browser.py
     └── test_dedup.py
@@ -94,11 +97,10 @@ python scripts/notify.py --run-summary '{"task":"collection_task", ...}'
 
 ## Текущий статус
 
-- ✅ Greenhouse, HuggingFace, YC Browser — рабочие источники.
+- ✅ Greenhouse, GitHub, HuggingFace, YC Browser — рабочие источники.
 - ✅ Supabase — единый runtime store, дедупликация (exact + fuzzy) реализована.
 - ✅ Scoring — детерминированная функция от Company → ScoreBreakdown.
 - ✅ Telegram-уведомления.
-- ⏳ GitHub — текущий план в репозитории [kvetio](https://github.com/Katoli-IV-ka/kvetio) (`docs/superpowers/plans/`).
 - ⏳ Notion sync — каркас, нужна сверка полей с боевой базой.
 
 ## Принципы

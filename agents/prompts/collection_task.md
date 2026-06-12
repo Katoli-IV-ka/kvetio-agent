@@ -41,11 +41,12 @@ python scripts/supabase_store.py --coverage
 | Источник | Команда | Когда использовать |
 |---|---|---|
 | `huggingface` | `python scripts/huggingface.py --segment <segment> --max-models 1000` | Всегда: самый сильный сигнал намерения |
+| `github` | `python scripts/github.py --segment <segment> --limit <limit> --dry-run` | Если включён в `sources.yaml`: свежие train.py по GitHub org |
 | `yc_browser` | `python scripts/yc_browser.py --segment <segment> --limit <limit>` | Всегда: даёт сайты и описания |
 | `greenhouse` | `python scripts/greenhouse.py --segment <segment>` | Если сегмент в `known_ats_slugs.csv` |
 | `lever` | *(disabled)* | Не запускать |
 
-**Порядок запуска:** huggingface → yc_browser → greenhouse (если доступен).
+**Порядок запуска:** huggingface → github → yc_browser → greenhouse (если доступен).
 
 Если `sources` передан явно — запускать только те, что в списке.
 
@@ -85,7 +86,7 @@ WHERE domain = '<normalized_domain>'
 
 После дедупликации выведи:
 ```
-Собрано из источников: huggingface=N, yc_browser=M, greenhouse=K
+Собрано из источников: huggingface=N, github=G, yc_browser=M, greenhouse=K
 Дублей внутри сессии: X
 Уже в базе: Y
 Осталось для проверки: Z
@@ -105,6 +106,7 @@ WHERE domain = '<normalized_domain>'
 |---|---|---|
 | `yc_browser` | Всегда есть | Используй напрямую |
 | `huggingface` | Иногда `null` | Если `null` → WebSearch (см. ниже) |
+| `github` | Из `blog`/`email` org metadata, иногда `null` | Если `null` → WebSearch (см. ниже) |
 | `greenhouse` | Из CSV-колонки `website` | Если пусто → WebSearch (см. ниже) |
 
 **Если домен отсутствует (`null` / пустой):**
@@ -161,7 +163,7 @@ WebFetch: https://<domain>
 Выведи итог для подтверждения:
 
 ```
-Источники: huggingface, yc_browser, greenhouse
+Источники: huggingface, github, yc_browser, greenhouse
 Сегмент: <segment>
 
 Из источников: N компаний
@@ -171,7 +173,7 @@ WebFetch: https://<domain>
 
 Топ-10 для записи:
 1. Acme Medical AI — acme.ai | источник: huggingface | сигнал: 3 HF-модели
-2. RadarBot — radarbot.io | источник: yc_browser | batch: W24
+2. RadarBot — radarbot.io | источник: github | сигнал: recent train.py
 ...
 
 Записать K компаний в Supabase? [yes/no]
@@ -196,7 +198,7 @@ VALUES (
   '<website>',
   'new',
   '<segment>',
-  '<source>',          -- первый источник, где найдена (huggingface / yc_browser / greenhouse)
+  '<source>',          -- первый источник, где найдена (huggingface / github / yc_browser / greenhouse)
   '<website_snippet>', -- первые 200 символов с главной страницы
   NOW()
 )
@@ -232,7 +234,7 @@ store.log_run(
 python scripts/notify.py --run-summary '{
   "task": "collection_task",
   "segment": "<segment>",
-  "sources_used": ["huggingface", "yc_browser"],
+  "sources_used": ["huggingface", "github", "yc_browser"],
   "found_total": <из_источников>,
   "dedup_skipped": <дублей>,
   "quick_rejected": <отклонено_фильтром>,

@@ -22,14 +22,14 @@ import json
 import logging
 import os
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 sys.path.insert(0, str(Path(__file__).parent))
-from models import Company, Evidence, RawSignal
+from models import Company, RawSignal
 
 logger = logging.getLogger(__name__)
 

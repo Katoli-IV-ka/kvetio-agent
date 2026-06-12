@@ -80,6 +80,13 @@ sources:
     tier: A
     rate_limit_rps: 0.5
     parser_version: "2026-05"
+    description: "GitHub Code Search — train.py + ICP keyword по организациям"
+    script: scripts/github.py
+    supported_segments:
+      - medical-imaging
+      - autonomous-vehicles
+      - speech-and-audio
+    default_limit: 50
 
   papers_with_code:
     enabled: false
