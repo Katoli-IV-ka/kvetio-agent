@@ -18,5 +18,8 @@ pyyaml>=6.0
 # .env файлы
 python-dotenv>=1.0
 
+# HTML parsing
+beautifulsoup4>=4.12
+
 # Supabase
 supabase>=2.4

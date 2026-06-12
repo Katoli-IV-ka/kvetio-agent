@@ -44,7 +44,7 @@ def test_fetch_yields_signal_for_org_with_website(query: ICPQuery) -> None:
         mock.get(HF_MODELS_URL).mock(side_effect=_models_handler({
             "automatic-speech-recognition": [models[0]],  # deepgram только
         }))
-        mock.get(f"{HF_ORGS_URL}/deepgram").mock(return_value=Response(200, json=org))
+        mock.get(f"{HF_ORGS_URL}/deepgram/overview").mock(return_value=Response(200, json=org))
 
         with HuggingFaceAdapter(rate_limit_rps=0, max_models_per_tag=1000) as adapter:
             signals = list(adapter.fetch(query))
@@ -74,7 +74,7 @@ def test_org_without_website_yields_domain_none(query: ICPQuery) -> None:
         mock.get(HF_MODELS_URL).mock(side_effect=_models_handler({
             "automatic-speech-recognition": [models[1]],  # mozilla
         }))
-        mock.get(f"{HF_ORGS_URL}/mozilla").mock(return_value=Response(200, json=org_no_web))
+        mock.get(f"{HF_ORGS_URL}/mozilla/overview").mock(return_value=Response(200, json=org_no_web))
 
         with HuggingFaceAdapter(rate_limit_rps=0, max_models_per_tag=1000) as adapter:
             signals = list(adapter.fetch(query))
@@ -94,7 +94,7 @@ def test_ishf_org_is_filtered(query: ICPQuery) -> None:
         mock.get(HF_MODELS_URL).mock(side_effect=_models_handler({
             "automatic-speech-recognition": [models[2]],  # huggingface org
         }))
-        mock.get(f"{HF_ORGS_URL}/huggingface").mock(return_value=Response(200, json=org_hf))
+        mock.get(f"{HF_ORGS_URL}/huggingface/overview").mock(return_value=Response(200, json=org_hf))
 
         with HuggingFaceAdapter(rate_limit_rps=0, max_models_per_tag=1000) as adapter:
             signals = list(adapter.fetch(query))
@@ -111,7 +111,7 @@ def test_org_404_is_skipped(query: ICPQuery) -> None:
         mock.get(HF_MODELS_URL).mock(side_effect=_models_handler({
             "automatic-speech-recognition": [models[0]],  # deepgram
         }))
-        mock.get(f"{HF_ORGS_URL}/deepgram").mock(return_value=Response(404))
+        mock.get(f"{HF_ORGS_URL}/deepgram/overview").mock(return_value=Response(404))
 
         with HuggingFaceAdapter(rate_limit_rps=0, max_models_per_tag=1000) as adapter:
             signals = list(adapter.fetch(query))
@@ -132,7 +132,7 @@ def test_deduplication_same_org_two_tags(query: ICPQuery) -> None:
             "automatic-speech-recognition": [asr_model],
             "text-to-speech": [tts_model],
         }))
-        mock.get(f"{HF_ORGS_URL}/deepgram").mock(return_value=Response(200, json=org))
+        mock.get(f"{HF_ORGS_URL}/deepgram/overview").mock(return_value=Response(200, json=org))
 
         with HuggingFaceAdapter(rate_limit_rps=0, max_models_per_tag=1000) as adapter:
             signals = list(adapter.fetch(query))
@@ -185,7 +185,7 @@ def test_missing_fullname_falls_back_to_name(query: ICPQuery) -> None:
         mock.get(HF_MODELS_URL).mock(side_effect=_models_handler({
             "automatic-speech-recognition": [model],
         }))
-        mock.get(f"{HF_ORGS_URL}/some-startup").mock(
+        mock.get(f"{HF_ORGS_URL}/some-startup/overview").mock(
             return_value=Response(200, json=org_no_fullname)
         )
 
