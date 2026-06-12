@@ -83,6 +83,11 @@ CREATE TABLE IF NOT EXISTS contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_dedup
     ON contacts (company_domain, lower(full_name));
 
+-- Supabase upsert(on_conflict='company_domain,full_name') требует обычный
+-- column unique index; expression index выше оставляет case-insensitive защиту.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_upsert_key
+    ON contacts (company_domain, full_name);
+
 -- Быстрый доступ ко всем контактам компании
 CREATE INDEX IF NOT EXISTS idx_contacts_company_domain
     ON contacts (company_domain);

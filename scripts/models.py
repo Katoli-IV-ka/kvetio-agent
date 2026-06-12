@@ -133,3 +133,41 @@ class Company:
     latest_signal: str = ""
     icp_segment: str | None = None
     ai_direction: str | None = None     # LLM-обоснование скора
+
+
+# ── Contact (DM Enrichment) ──────────────────────────────────────────────────
+
+ContactSource = Literal[
+    "github", "huggingface", "team_page", "apollo", "wellfound", "arxiv"
+]
+EmailStatus = Literal["verified", "guessed", "bounced", "unknown"]
+OutreachStatus = Literal[
+    "not_contacted", "contacted", "replied", "not_interested", "converted"
+]
+
+
+@dataclass
+class ContactRecord:
+    """Decision-maker contact discovered by one or more DM vectors."""
+
+    company_domain: str
+    full_name: str
+
+    first_name: str | None = None
+    last_name: str | None = None
+    title: str | None = None
+    title_normalized: str | None = None
+    dm_priority: int = 2
+
+    email: str | None = None
+    email_status: EmailStatus = "unknown"
+    email_source: str | None = None
+    linkedin_url: str | None = None
+    twitter_handle: str | None = None
+    github_username: str | None = None
+
+    source_vector: ContactSource = "github"
+    source_url: str | None = None
+    confidence: Confidence = "medium"
+
+    raw_payload: dict = field(default_factory=dict)
