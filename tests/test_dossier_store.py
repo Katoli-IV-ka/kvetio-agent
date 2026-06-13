@@ -134,3 +134,24 @@ def test_get_dossier_returns_single_or_none(mock_store):
     )
     result = get_dossier(mock_store, "radai.com")
     assert result["company_domain"] == "radai.com"
+
+
+def test_cli_run_upsert_analysis_note(mock_store, monkeypatch):
+    import io
+    import json as _json
+
+    from dossier_store import _build_parser, _run
+
+    payload = {"company_domain": "radai.com", "section": "product", "facts": {"x": 1}}
+    monkeypatch.setattr("sys.stdin", io.StringIO(_json.dumps(payload)))
+    args = _build_parser().parse_args(["--upsert-analysis-note"])
+    _run(args, mock_store)
+    mock_store._client.table.assert_called_with("analysis_notes")
+
+
+def test_cli_run_list_analysis_notes(mock_store, capsys):
+    from dossier_store import _build_parser, _run
+
+    args = _build_parser().parse_args(["--list-analysis-notes", "radai.com"])
+    _run(args, mock_store)
+    mock_store._client.table.assert_called_with("analysis_notes")
