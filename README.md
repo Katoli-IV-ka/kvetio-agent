@@ -46,7 +46,7 @@ kvetio-agent/
 │       ├── relevance_task.md      # этап 2: анализ сайта + верификация → relevant
 │       ├── discover_verify_task.md  # УСТАРЕЛ (заменён на discovery + relevance)
 │       ├── verify_task.md
-│       ├── scoring_task.md
+│       ├── scoring_task.md       # этап 2.5: триаж-гейт, скор + qualified/triaged_out (Notion-синк → этап 5)
 │       ├── monitor_task.md
 │       └── source_expansion_task.md
 ├── config/
