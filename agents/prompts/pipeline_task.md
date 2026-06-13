@@ -43,23 +43,41 @@ python scripts/supabase_store.py --coverage
 
 ---
 
-## Шаг 4 — Scoring
+## Шаг 4 — Триаж-гейт (scoring)
 
-Прочитай инструкции: `cat agents/prompts/scoring_task.md`
-Выполни весь алгоритм из этого файла.
-Запиши итог (enriched, errors).
+Прочитай `agents/prompts/scoring_task.md` и выполни: `relevant` → `qualified`/`triaged_out`.
 
 ---
 
-## Шаг 5 — Финальное уведомление
+## Шаг 5 — Глубокие этапы для `qualified`
+
+Только для компаний в статусе `qualified`, по очереди:
+
+1. `cat agents/prompts/enrichment_task.md` → выполни (сбор ссылок → `sources_gathered`).
+2. `cat agents/prompts/analysis_task.md` → выполни (анализ по секциям → `analyzed`).
+3. `cat agents/prompts/conclusions_task.md` → выполни (досье + Notion → `dossier_ready`).
+
+Ошибка на одной компании — зафиксируй, notify, продолжай со следующей.
+
+---
+
+## Шаг 6 — Итоговое покрытие
+
+```bash
+python scripts/supabase_store.py --coverage
+```
+
+---
+
+## Шаг 7 — Финальное уведомление
 
 Подсчитай итоги по всем сегментам и отправь сводку:
 
 ```bash
-python scripts/notify.py --run-summary '{"task":"pipeline","found":<N>,"enriched":<N>,"errors":<N>}'
+python scripts/notify.py --run-summary '{"task":"pipeline","found":<N>,"qualified":<N>,"dossier_ready":<N>,"errors":<N>}'
 ```
 
-Замени `<N>` на реальные числа из шагов 3 и 4.
+Замени `<N>` на реальные числа из шагов 3–6.
 
 ---
 

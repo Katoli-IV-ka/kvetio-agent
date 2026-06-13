@@ -107,3 +107,16 @@ def test_conclusions_prompt():
     # 6 секций саммари:
     for section in ("компании", "Продукт", "Сотрудничество", "Финанс", "Новости", "удит"):
         assert section in p
+
+
+def test_pipeline_full_chain():
+    p = _read("pipeline_task.md")
+    for stage in (
+        "discovery_task",
+        "relevance_task",
+        "scoring_task",
+        "enrichment_task",
+        "analysis_task",
+        "conclusions_task",
+    ):
+        assert stage in p
