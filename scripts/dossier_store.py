@@ -117,6 +117,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--list-source-links", metavar="DOMAIN")
     parser.add_argument("--upsert-analysis-note", action="store_true")
     parser.add_argument("--list-analysis-notes", metavar="DOMAIN")
+    parser.add_argument("--upsert-dossier", action="store_true")
+    parser.add_argument("--get-dossier", metavar="DOMAIN")
     return parser
 
 
@@ -129,6 +131,10 @@ def _run(args: argparse.Namespace, store: SupabaseStore) -> None:
         upsert_analysis_note(store, json.load(sys.stdin))
     elif args.list_analysis_notes:
         print(json.dumps(get_analysis_notes(store, args.list_analysis_notes), indent=2))
+    elif args.upsert_dossier:
+        upsert_dossier(store, json.load(sys.stdin))
+    elif args.get_dossier:
+        print(json.dumps(get_dossier(store, args.get_dossier), indent=2))
 
 
 def _main() -> None:

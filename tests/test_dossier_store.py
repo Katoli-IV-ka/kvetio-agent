@@ -155,3 +155,24 @@ def test_cli_run_list_analysis_notes(mock_store, capsys):
     args = _build_parser().parse_args(["--list-analysis-notes", "radai.com"])
     _run(args, mock_store)
     mock_store._client.table.assert_called_with("analysis_notes")
+
+
+def test_cli_run_upsert_dossier(mock_store, monkeypatch):
+    import io
+    import json as _json
+
+    from dossier_store import _build_parser, _run
+
+    payload = {"company_domain": "radai.com", "summary_md": "## О компании\n..."}
+    monkeypatch.setattr("sys.stdin", io.StringIO(_json.dumps(payload)))
+    args = _build_parser().parse_args(["--upsert-dossier"])
+    _run(args, mock_store)
+    mock_store._client.table.assert_called_with("dossiers")
+
+
+def test_cli_run_get_dossier(mock_store):
+    from dossier_store import _build_parser, _run
+
+    args = _build_parser().parse_args(["--get-dossier", "radai.com"])
+    _run(args, mock_store)
+    mock_store._client.table.assert_called_with("dossiers")
