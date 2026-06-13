@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Protocol
 
 sys.path.insert(0, str(Path(__file__).parent))
+from dm_github import extract_org_login
 from dossier_store import upsert_source_link
 from http_client import HttpClient
 from supabase_store import SupabaseStore
@@ -42,6 +43,51 @@ class _DisabledStub:
 
     def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
         return None
+
+
+class GithubOrgResolver:
+    """Ссылка на GitHub-организацию из уже собранных сигналов компании."""
+
+    kind = "github_org"
+    enabled = True
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
+        for sig in store.get_signals_for_company(company["domain"]):
+            url = sig.get("source_page_url") or sig.get("evidence_url") or ""
+            login = extract_org_login(url)
+            if login:
+                return {
+                    "company_domain": company["domain"],
+                    "kind": self.kind,
+                    "url": f"https://github.com/{login}",
+                    "source": "github_org_resolver",
+                    "confidence": "high",
+                }
+        return None
+
+
+WAYBACK_API = "http://archive.org/wayback/available"
+
+
+class WaybackResolver:
+    """Ближайший снапшот сайта в Wayback Machine — для динамики позиционирования."""
+
+    kind = "wayback"
+    enabled = True
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
+        data = client.get_json(f"{WAYBACK_API}?url={company['domain']}")
+        closest = (data.get("archived_snapshots") or {}).get("closest") or {}
+        url = closest.get("url")
+        if not url:
+            return None
+        return {
+            "company_domain": company["domain"],
+            "kind": self.kind,
+            "url": url,
+            "source": "wayback_resolver",
+            "confidence": "high",
+        }
 
 
 # Стабы платных источников (tier C). Зарегистрированы, но выключены.
@@ -73,8 +119,13 @@ def run_enrichment(
     return written
 
 
-# Реестр заполняется в Task 2 реальными резолверами; пока — только стабы.
-RESOLVERS: list[Resolver] = [LINKEDIN_STUB, CRUNCHBASE_STUB, SIMILARWEB_STUB]
+RESOLVERS: list[Resolver] = [
+    GithubOrgResolver(),
+    WaybackResolver(),
+    LINKEDIN_STUB,
+    CRUNCHBASE_STUB,
+    SIMILARWEB_STUB,
+]
 
 
 def _main() -> None:
