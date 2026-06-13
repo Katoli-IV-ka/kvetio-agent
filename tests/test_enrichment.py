@@ -8,7 +8,6 @@ import pytest
 from httpx import Response
 
 from enrichment import (
-    WAYBACK_API,
     GithubOrgResolver,
     WaybackResolver,
     _DisabledStub,
