@@ -94,3 +94,16 @@ def test_analysis_orchestrator_prompt():
     assert "analyzed" in p
     for section in ("company", "product", "collaboration", "financials", "news"):
         assert section in p
+
+
+def test_conclusions_prompt():
+    p = _read("conclusions_task.md")
+    assert "ConclusionAgent" in p
+    assert "status = 'analyzed'" in p
+    assert "list-analysis-notes" in p
+    assert "upsert-dossier" in p
+    assert "Notion" in p
+    assert "dossier_ready" in p
+    # 6 секций саммари:
+    for section in ("компании", "Продукт", "Сотрудничество", "Финанс", "Новости", "удит"):
+        assert section in p
