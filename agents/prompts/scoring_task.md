@@ -8,7 +8,7 @@
 - Hot / Warm → статус `qualified` (идёт в Enrichment → Analysis → Conclusions)
 - Cold → статус `triaged_out` (остаётся в базе под мониторингом, досье не строим)
 
-Ты НЕ синхронизируешь в Notion — публикация происходит на этапе 5 (Conclusions).
+Ты НЕ публикуешь карточки — публикация происходит на этапе 5 (Conclusions).
 
 **Следующий этап:** `enrichment_task` (для `qualified`).
 
