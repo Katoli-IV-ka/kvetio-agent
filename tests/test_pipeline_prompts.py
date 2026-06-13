@@ -65,3 +65,14 @@ def test_enrichment_prompt_gathers_links_no_analysis():
     assert "sources_gathered" in p
     # Этап 3 не анализирует:
     assert "аудит" not in p.lower()
+
+
+def test_analysis_section_prompt():
+    p = _read("analysis_section_task.md")
+    assert "section" in p
+    assert "upsert-analysis-note" in p
+    # Разделение заявлений и фактов:
+    assert "заявлен" in p.lower()
+    assert "факт" in p.lower()
+    # Контекст задачи (продажа data services):
+    assert "data services" in p or "датасет" in p.lower()
