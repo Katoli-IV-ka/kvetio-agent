@@ -51,6 +51,7 @@ kvetio-agent/
 │       ├── analysis_task.md      # этап 4: оркестратор анализа → analyzed
 │       ├── analysis_section_task.md  # этап 4: секционный под-агент (company/product/...)
 │       ├── analysis_audit_task.md    # этап 4: под-агент аудита (синтез 5 нот)
+│       ├── conclusions_task.md   # этап 5: сборка досье + Notion → dossier_ready
 │       ├── monitor_task.md
 │       └── source_expansion_task.md
 ├── config/
