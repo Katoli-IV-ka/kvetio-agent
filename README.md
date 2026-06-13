@@ -42,6 +42,9 @@ kvetio-agent/
 │   └── prompts/               # один промпт = одна агентская задача
 │       ├── research_task.md
 │       ├── collection_task.md
+│       ├── discovery_task.md      # этап 1: источники + резолв сайта → discovered
+│       ├── relevance_task.md      # этап 2: анализ сайта + верификация → relevant
+│       ├── discover_verify_task.md  # УСТАРЕЛ (заменён на discovery + relevance)
 │       ├── verify_task.md
 │       ├── scoring_task.md
 │       ├── monitor_task.md
