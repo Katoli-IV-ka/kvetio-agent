@@ -83,3 +83,14 @@ def test_analysis_audit_prompt():
     assert "list-analysis-notes" in p
     assert "audit" in p
     assert "продаж" in p.lower()  # вывод для нас: продажа датасетов
+
+
+def test_analysis_orchestrator_prompt():
+    p = _read("analysis_task.md")
+    assert "AnalysisAgent" in p
+    assert "status = 'sources_gathered'" in p
+    assert "analysis_section_task" in p
+    assert "analysis_audit_task" in p
+    assert "analyzed" in p
+    for section in ("company", "product", "collaboration", "financials", "news"):
+        assert section in p
