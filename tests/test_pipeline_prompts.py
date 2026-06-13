@@ -76,3 +76,10 @@ def test_analysis_section_prompt():
     assert "факт" in p.lower()
     # Контекст задачи (продажа data services):
     assert "data services" in p or "датасет" in p.lower()
+
+
+def test_analysis_audit_prompt():
+    p = _read("analysis_audit_task.md")
+    assert "list-analysis-notes" in p
+    assert "audit" in p
+    assert "продаж" in p.lower()  # вывод для нас: продажа датасетов
