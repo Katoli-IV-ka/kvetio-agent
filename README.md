@@ -47,6 +47,7 @@ kvetio-agent/
 │       ├── discover_verify_task.md  # УСТАРЕЛ (заменён на discovery + relevance)
 │       ├── verify_task.md
 │       ├── scoring_task.md       # этап 2.5: триаж-гейт, скор + qualified/triaged_out (Notion-синк → этап 5)
+│       ├── enrichment_task.md    # этап 3: сбор ручек-источников (sources_gathered)
 │       ├── monitor_task.md
 │       └── source_expansion_task.md
 ├── config/
@@ -68,6 +69,7 @@ kvetio-agent/
 │   ├── supabase_store.py      # CRUD над Supabase + дедуп + покрытие
 │   ├── score.py               # детерминированный scoring engine
 │   ├── notify.py              # уведомления в Telegram
+│   ├── enrichment.py          # этап 3: резолверы ссылок-источников → source_links
 │   ├── dossier_store.py       # CRUD: source_links, analysis_notes, dossiers (этапы 3-5)
 │   └── telegram_routines.py   # операционные Telegram-дайджесты и очереди
 ├── sql/                       # миграции Postgres/Supabase
