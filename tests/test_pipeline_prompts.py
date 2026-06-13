@@ -54,3 +54,14 @@ def test_scoring_is_triage_gate():
     assert "threshold_manual_review" in p or "manual_review threshold" in p
     # Notion-синк уехал на этап 5:
     assert "Синхронизация в Notion" not in p
+
+
+def test_enrichment_prompt_gathers_links_no_analysis():
+    p = _read("enrichment_task.md")
+    assert "EnrichmentAgent" in p
+    assert "status = 'qualified'" in p
+    assert "scripts/enrichment.py --domain" in p
+    assert "upsert-source-link" in p
+    assert "sources_gathered" in p
+    # Этап 3 не анализирует:
+    assert "аудит" not in p.lower()
