@@ -40,3 +40,17 @@ def test_pipeline_orchestrates_discovery_then_relevance():
     p = _read("pipeline_task.md")
     assert "discovery_task" in p
     assert "relevance_task" in p
+
+
+def test_scoring_is_triage_gate():
+    p = _read("scoring_task.md")
+    # Вход — relevant (этап 2), а не старый pending_enrich:
+    assert "status = 'relevant'" in p
+    assert "pending_enrich" not in p
+    # Выход — гейт-статусы:
+    assert "'qualified'" in p
+    assert "'triaged_out'" in p
+    # Гейт по порогу manual_review (Hot+Warm проходят даже в shadow mode):
+    assert "threshold_manual_review" in p or "manual_review threshold" in p
+    # Notion-синк уехал на этап 5:
+    assert "Синхронизация в Notion" not in p
