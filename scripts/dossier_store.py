@@ -82,6 +82,35 @@ def get_analysis_notes(store: SupabaseStore, domain: str) -> list[dict]:
     return res.data or []
 
 
+def upsert_dossier(store: SupabaseStore, dossier: dict) -> None:
+    """Upsert финального досье. Conflict key: company_domain (одно на компанию)."""
+    row = {
+        "company_domain": dossier["company_domain"],
+        "summary_md": dossier.get("summary_md"),
+        "sections": dossier.get("sections", {}),
+        "audit_md": dossier.get("audit_md"),
+        "table_fields": dossier.get("table_fields", {}),
+        "version": dossier.get("version", "v1"),
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+    store._client.table("dossiers").upsert(
+        row, on_conflict="company_domain"
+    ).execute()
+    logger.debug("upsert_dossier: %s", row["company_domain"])
+
+
+def get_dossier(store: SupabaseStore, domain: str) -> dict | None:
+    """Досье компании или None."""
+    res = (
+        store._client.table("dossiers")
+        .select("*")
+        .eq("company_domain", domain)
+        .execute()
+    )
+    rows = res.data or []
+    return rows[0] if rows else None
+
+
 def _main() -> None:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()

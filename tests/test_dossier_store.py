@@ -8,8 +8,10 @@ import pytest
 
 from dossier_store import (
     get_analysis_notes,
+    get_dossier,
     get_source_links,
     upsert_analysis_note,
+    upsert_dossier,
     upsert_source_link,
 )
 
@@ -103,3 +105,32 @@ def test_get_analysis_notes_queries_by_domain(mock_store):
     mock_store._client.table.return_value.eq.assert_called_with(
         "company_domain", "radai.com"
     )
+
+
+def test_upsert_dossier_sets_fields(mock_store):
+    dossier = {
+        "company_domain": "radai.com",
+        "summary_md": "## О компании\n...",
+        "sections": {"company": "..."},
+        "audit_md": "## Аудит\n...",
+        "table_fields": {"segment": "medical-imaging"},
+        "version": "v1",
+    }
+    upsert_dossier(mock_store, dossier)
+    mock_store._client.table.assert_called_with("dossiers")
+    call = mock_store._client.table.return_value.upsert.call_args
+    row = call[0][0]
+    assert row["company_domain"] == "radai.com"
+    assert row["summary_md"].startswith("## О компании")
+    assert call[1]["on_conflict"] == "company_domain"
+
+
+def test_get_dossier_returns_single_or_none(mock_store):
+    mock_store._client.table.return_value.execute.return_value = MagicMock(data=[])
+    assert get_dossier(mock_store, "radai.com") is None
+
+    mock_store._client.table.return_value.execute.return_value = MagicMock(
+        data=[{"company_domain": "radai.com"}]
+    )
+    result = get_dossier(mock_store, "radai.com")
+    assert result["company_domain"] == "radai.com"
