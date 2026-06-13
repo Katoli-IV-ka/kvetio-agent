@@ -48,6 +48,9 @@ kvetio-agent/
 │       ├── verify_task.md
 │       ├── scoring_task.md       # этап 2.5: триаж-гейт, скор + qualified/triaged_out (Notion-синк → этап 5)
 │       ├── enrichment_task.md    # этап 3: сбор ручек-источников (sources_gathered)
+│       ├── analysis_task.md      # этап 4: оркестратор анализа → analyzed
+│       ├── analysis_section_task.md  # этап 4: секционный под-агент (company/product/...)
+│       ├── analysis_audit_task.md    # этап 4: под-агент аудита (синтез 5 нот)
 │       ├── monitor_task.md
 │       └── source_expansion_task.md
 ├── config/

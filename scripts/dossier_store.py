@@ -111,18 +111,29 @@ def get_dossier(store: SupabaseStore, domain: str) -> dict | None:
     return rows[0] if rows else None
 
 
-def _main() -> None:
-    logging.basicConfig(level=logging.INFO)
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upsert-source-link", action="store_true")
     parser.add_argument("--list-source-links", metavar="DOMAIN")
-    args = parser.parse_args()
+    parser.add_argument("--upsert-analysis-note", action="store_true")
+    parser.add_argument("--list-analysis-notes", metavar="DOMAIN")
+    return parser
 
-    store = SupabaseStore()
+
+def _run(args: argparse.Namespace, store: SupabaseStore) -> None:
     if args.upsert_source_link:
         upsert_source_link(store, json.load(sys.stdin))
     elif args.list_source_links:
         print(json.dumps(get_source_links(store, args.list_source_links), indent=2))
+    elif args.upsert_analysis_note:
+        upsert_analysis_note(store, json.load(sys.stdin))
+    elif args.list_analysis_notes:
+        print(json.dumps(get_analysis_notes(store, args.list_analysis_notes), indent=2))
+
+
+def _main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    _run(_build_parser().parse_args(), SupabaseStore())
 
 
 if __name__ == "__main__":
