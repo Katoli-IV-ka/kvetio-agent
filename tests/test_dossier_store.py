@@ -6,7 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from dossier_store import get_source_links, upsert_source_link
+from dossier_store import (
+    get_analysis_notes,
+    get_source_links,
+    upsert_analysis_note,
+    upsert_source_link,
+)
 
 
 @pytest.fixture
@@ -56,6 +61,45 @@ def test_upsert_source_link_defaults(mock_store):
 def test_get_source_links_queries_by_domain(mock_store):
     get_source_links(mock_store, "radai.com")
     mock_store._client.table.assert_called_with("source_links")
+    mock_store._client.table.return_value.eq.assert_called_with(
+        "company_domain", "radai.com"
+    )
+
+
+def test_upsert_analysis_note_sets_fields(mock_store):
+    note = {
+        "company_domain": "radai.com",
+        "section": "product",
+        "facts": {"start_date": "2021"},
+        "sources": [{"url": "https://radai.com/about", "note": "about page"}],
+        "confidence": "high",
+        "model": "claude",
+        "version": "v1",
+    }
+    upsert_analysis_note(mock_store, note)
+    mock_store._client.table.assert_called_with("analysis_notes")
+    call = mock_store._client.table.return_value.upsert.call_args
+    row = call[0][0]
+    assert row["section"] == "product"
+    assert row["facts"] == {"start_date": "2021"}
+    assert call[1]["on_conflict"] == "company_domain,section,version"
+
+
+def test_upsert_analysis_note_defaults(mock_store):
+    upsert_analysis_note(mock_store, {
+        "company_domain": "radai.com",
+        "section": "company",
+    })
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["facts"] == {}
+    assert row["sources"] == []
+    assert row["confidence"] == "medium"
+    assert row["version"] == "v1"
+
+
+def test_get_analysis_notes_queries_by_domain(mock_store):
+    get_analysis_notes(mock_store, "radai.com")
+    mock_store._client.table.assert_called_with("analysis_notes")
     mock_store._client.table.return_value.eq.assert_called_with(
         "company_domain", "radai.com"
     )
