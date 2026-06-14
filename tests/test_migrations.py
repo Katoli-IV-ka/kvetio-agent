@@ -31,3 +31,14 @@ def test_migration_010_dossiers():
     sql = _read("010_dossiers.sql")
     assert "CREATE TABLE IF NOT EXISTS dossiers" in sql
     assert "summary_md" in sql
+
+
+def test_migration_011_notion_sync_fields():
+    sql = _read("011_notion_sync_fields.sql")
+    assert "ALTER TABLE companies" in sql
+    assert "outreach_status" in sql
+    assert "outreach_note" in sql
+    assert "notion_synced_at" in sql
+    assert "ALTER TABLE contacts" in sql
+    assert "ALTER TABLE dossiers" in sql
+    assert "notion_page_id" in sql
