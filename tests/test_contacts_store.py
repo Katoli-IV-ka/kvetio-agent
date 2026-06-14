@@ -64,3 +64,24 @@ def test_list_contacts_returns_ordered_results(mock_store):
     results = list_contacts(mock_store, "radai.com")
     assert len(results) == 1
     assert results[0]["full_name"] == "Sarah Chen"
+
+
+def test_upsert_contact_includes_personal_website(mock_store):
+    """upsert_contact must write personal_website to the row."""
+    from scripts.contacts_store import upsert_contact
+    from unittest.mock import MagicMock, patch
+
+    store = MagicMock()
+    upsert_mock = MagicMock()
+    store._client.table.return_value.upsert.return_value.execute = upsert_mock
+
+    upsert_contact(store, {
+        "company_domain": "radai.com",
+        "full_name": "Sarah Chen",
+        "source_vector": "github",
+        "personal_website": "https://sarahchen.dev",
+    })
+
+    call_args = store._client.table.return_value.upsert.call_args
+    row = call_args[0][0]
+    assert row.get("personal_website") == "https://sarahchen.dev"
