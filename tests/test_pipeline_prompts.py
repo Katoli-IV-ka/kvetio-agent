@@ -54,3 +54,43 @@ def test_scoring_is_triage_gate():
     assert "threshold_manual_review" in p or "manual_review threshold" in p
     # Notion-синк уехал на этап 5:
     assert "Синхронизация в Notion" not in p
+
+
+def test_enrichment_prompt_gathers_links_no_analysis():
+    p = _read("enrichment_task.md")
+    assert "EnrichmentAgent" in p
+    assert "status = 'qualified'" in p
+    assert "scripts/enrichment.py --domain" in p
+    assert "upsert-source-link" in p
+    assert "sources_gathered" in p
+    # Этап 3 не анализирует:
+    assert "аудит" not in p.lower()
+
+
+def test_analysis_section_prompt():
+    p = _read("analysis_section_task.md")
+    assert "section" in p
+    assert "upsert-analysis-note" in p
+    # Разделение заявлений и фактов:
+    assert "заявлен" in p.lower()
+    assert "факт" in p.lower()
+    # Контекст задачи (продажа data services):
+    assert "data services" in p or "датасет" in p.lower()
+
+
+def test_analysis_audit_prompt():
+    p = _read("analysis_audit_task.md")
+    assert "list-analysis-notes" in p
+    assert "audit" in p
+    assert "продаж" in p.lower()  # вывод для нас: продажа датасетов
+
+
+def test_analysis_orchestrator_prompt():
+    p = _read("analysis_task.md")
+    assert "AnalysisAgent" in p
+    assert "status = 'sources_gathered'" in p
+    assert "analysis_section_task" in p
+    assert "analysis_audit_task" in p
+    assert "analyzed" in p
+    for section in ("company", "product", "collaboration", "financials", "news"):
+        assert section in p

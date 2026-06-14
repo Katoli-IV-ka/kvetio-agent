@@ -100,3 +100,47 @@ sources:
   arxiv:
     enabled: false
     tier: C
+
+  wayback:
+    enabled: true
+    tier: B
+    cost: free
+    description: "Wayback Machine — снапшоты сайта для динамики позиционирования"
+    script: scripts/enrichment.py
+
+  sec_edgar:
+    enabled: false
+    tier: A
+    cost: free
+    description: "SEC EDGAR — Form D (US private funding), CIK lookup (резолвер позже)"
+
+  gdelt:
+    enabled: false
+    tier: B
+    cost: free
+    description: "GDELT — новостной граф, дедуп инфоповодов (резолвер позже)"
+
+  gov_grants:
+    enabled: false
+    tier: B
+    cost: free
+    description: "NIH RePORTER + EU CORDIS — гранты (резолвер позже)"
+
+  # ── Стабы на будущее (платные, tier C) ──────────────────────────
+  linkedin:
+    enabled: false
+    tier: C
+    cost: paid
+    description: "STUB. Люди/команда. Реализовать resolve() после выбора провайдера."
+
+  crunchbase:
+    enabled: false
+    tier: C
+    cost: paid
+    description: "STUB. Раунды/инвесторы/партнёры."
+
+  similarweb:
+    enabled: false
+    tier: C
+    cost: paid
+    description: "STUB. Трафик / позиция на рынке."
