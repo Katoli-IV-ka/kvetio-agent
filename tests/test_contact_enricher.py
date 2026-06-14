@@ -101,3 +101,80 @@ def test_guess_emails_uses_first_last_fallback_when_no_pattern():
     assert len(result) == 1
     # Falls back to "first.last" as the default when no pattern is known
     assert result[0]["email"] == "john.doe@radai.com"
+
+
+# ── Hunter.io Verify ───────────────────────────────────────────────────────
+
+
+def test_verify_with_hunter_returns_valid():
+    from scripts.contact_enricher import verify_with_hunter
+    from unittest.mock import patch, MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"data": {"result": "valid"}}
+
+    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
+        result = verify_with_hunter("john@radai.com", "test-key")
+    assert result == "valid"
+
+
+def test_verify_with_hunter_returns_unknown_on_failure():
+    from scripts.contact_enricher import verify_with_hunter
+    from unittest.mock import patch
+
+    with patch("scripts.contact_enricher.httpx.get", side_effect=Exception("timeout")):
+        result = verify_with_hunter("john@radai.com", "test-key")
+    assert result == "unknown"
+
+
+def test_run_hunter_verify_updates_status_to_valid():
+    from scripts.contact_enricher import run_hunter_verify
+    from unittest.mock import patch, MagicMock
+
+    contact = {
+        "email": "john.doe@radai.com",
+        "email_status": "guessed",
+        "full_name": "John Doe",
+        "company_domain": "radai.com",
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"data": {"result": "valid"}}
+
+    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
+        result = run_hunter_verify([contact], api_key="test-key")
+
+    assert len(result) == 1
+    assert result[0]["email_status"] == "valid"
+    assert result[0]["email_source"] == "hunter_verify"
+    assert result[0]["email"] == "john.doe@radai.com"
+
+
+def test_run_hunter_verify_clears_invalid_email():
+    from scripts.contact_enricher import run_hunter_verify
+    from unittest.mock import patch, MagicMock
+
+    contact = {
+        "email": "wrong@radai.com",
+        "email_status": "guessed",
+        "full_name": "John Doe",
+        "company_domain": "radai.com",
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {"data": {"result": "invalid"}}
+
+    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
+        result = run_hunter_verify([contact], api_key="test-key")
+
+    assert result[0]["email"] is None
+    assert result[0]["email_status"] == "invalid"
+
+
+def test_run_hunter_verify_skips_non_guessed_contacts():
+    from scripts.contact_enricher import run_hunter_verify
+
+    contact = {"email": "real@radai.com", "email_status": "valid", "full_name": "Sarah"}
+    result = run_hunter_verify([contact], api_key="test-key")
+    assert result == []

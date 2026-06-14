@@ -95,3 +95,35 @@ def guess_emails(domain: str, contacts: list[dict]) -> list[dict]:
             "confidence": "low",
         })
     return updated
+
+
+# ── Step 2: Hunter.io Verify ───────────────────────────────────────────────
+
+
+def verify_with_hunter(email: str, api_key: str) -> str:
+    """Call Hunter.io Email Verifier. Returns: valid | invalid | accept_all | unknown."""
+    try:
+        resp = httpx.get(
+            f"{HUNTER_API}/email-verifier",
+            params={"email": email, "api_key": api_key},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json().get("data", {}).get("result", "unknown")
+    except Exception as exc:
+        logger.warning("Hunter.io verify failed for %s: %s", email, exc)
+        return "unknown"
+
+
+def run_hunter_verify(contacts: list[dict], api_key: str) -> list[dict]:
+    """Verify guessed emails via Hunter.io. Returns only contacts that were updated."""
+    updated: list[dict] = []
+    for contact in contacts:
+        if contact.get("email_status") != "guessed":
+            continue
+        status = verify_with_hunter(contact["email"], api_key)
+        patch: dict = {"email_status": status, "email_source": "hunter_verify"}
+        if status == "invalid":
+            patch["email"] = None
+        updated.append({**contact, **patch})
+    return updated
