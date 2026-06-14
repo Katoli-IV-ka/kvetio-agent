@@ -60,3 +60,32 @@ def test_title_keywords_covers_key_roles():
     assert any("head of data" in keyword for keyword in keywords_lower)
     assert any("cto" in keyword for keyword in keywords_lower)
     assert any("head of ml" in keyword or "machine learning" in keyword for keyword in keywords_lower)
+
+
+def test_title_keywords_include_mid_level():
+    from scripts.dm_apollo import TITLE_KEYWORDS
+    assert "ml engineer" in TITLE_KEYWORDS
+    assert "research scientist" in TITLE_KEYWORDS
+    assert "data scientist" in TITLE_KEYWORDS
+    assert "product manager" in TITLE_KEYWORDS
+
+
+def test_seniorities_include_manager():
+    from scripts.dm_apollo import SENIORITIES
+    assert "manager" in SENIORITIES
+    assert "senior" in SENIORITIES
+
+
+def test_search_people_uses_per_page_25():
+    from scripts.dm_apollo import search_people
+    from unittest.mock import patch, MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"people": []}
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch("scripts.dm_apollo.httpx.post", return_value=mock_resp) as mock_post:
+        search_people("radai.com", "fake-key")
+        # httpx.post is called with json= kwarg
+        actual_payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
+        assert actual_payload["per_page"] == 25

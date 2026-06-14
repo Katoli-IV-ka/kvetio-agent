@@ -46,9 +46,17 @@ TITLE_KEYWORDS = [
     "co-founder",
     "chief technology officer",
     "head of engineering",
+    # mid-level
+    "ml engineer",
+    "machine learning engineer",
+    "research scientist",
+    "applied scientist",
+    "data scientist",
+    "product manager",
+    "head of product",
 ]
 
-SENIORITIES = ["vp", "director", "c_suite", "founder", "partner"]
+SENIORITIES = ["vp", "director", "c_suite", "founder", "partner", "senior", "manager"]
 
 
 def search_people(domain: str, api_key: str) -> list[dict]:
@@ -59,7 +67,7 @@ def search_people(domain: str, api_key: str) -> list[dict]:
         "person_titles": TITLE_KEYWORDS,
         "person_seniorities": SENIORITIES,
         "page": 1,
-        "per_page": 10,
+        "per_page": 25,
     }
     try:
         resp = httpx.post(
