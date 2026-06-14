@@ -127,3 +127,65 @@ def run_hunter_verify(contacts: list[dict], api_key: str) -> list[dict]:
             patch["email"] = None
         updated.append({**contact, **patch})
     return updated
+
+
+# ── Step 3: Social/Website Discovery ──────────────────────────────────────
+
+
+def enrich_from_github(contacts: list[dict]) -> list[dict]:
+    """Fill twitter_handle and personal_website from GitHub profile API."""
+    token = os.getenv("GITHUB_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    updated: list[dict] = []
+    for contact in contacts:
+        username = contact.get("github_username")
+        if not username:
+            continue
+        if contact.get("twitter_handle") and contact.get("personal_website"):
+            continue
+        try:
+            resp = httpx.get(f"{GH_API}/users/{username}", headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.debug("GitHub profile fetch failed for %s: %s", username, exc)
+            continue
+        patch: dict = {}
+        if not contact.get("twitter_handle") and data.get("twitter_username"):
+            patch["twitter_handle"] = data["twitter_username"]
+        if not contact.get("personal_website") and data.get("blog"):
+            patch["personal_website"] = data["blog"]
+        if patch:
+            updated.append({**contact, **patch})
+    return updated
+
+
+def enrich_from_huggingface(contacts: list[dict]) -> list[dict]:
+    """Fill twitter_handle and personal_website by parsing HuggingFace bio."""
+    updated: list[dict] = []
+    for contact in contacts:
+        username = contact.get("hf_username")
+        if not username:
+            continue
+        if contact.get("twitter_handle") and contact.get("personal_website"):
+            continue
+        try:
+            resp = httpx.get(f"{HF_API}/users/{username}/overview", timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            logger.debug("HF overview fetch failed for %s: %s", username, exc)
+            continue
+        bio = (data.get("user") or {}).get("details") or ""
+        patch: dict = {}
+        if not contact.get("twitter_handle"):
+            m = TWITTER_RE.search(bio)
+            if m:
+                patch["twitter_handle"] = m.group(1)
+        if not contact.get("personal_website"):
+            m = re.search(r"https?://\S+", bio)
+            if m:
+                patch["personal_website"] = m.group(0)
+        if patch:
+            updated.append({**contact, **patch})
+    return updated

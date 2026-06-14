@@ -178,3 +178,86 @@ def test_run_hunter_verify_skips_non_guessed_contacts():
     contact = {"email": "real@radai.com", "email_status": "valid", "full_name": "Sarah"}
     result = run_hunter_verify([contact], api_key="test-key")
     assert result == []
+
+
+# ── GitHub Enrichment ──────────────────────────────────────────────────────
+
+
+def test_enrich_from_github_fills_twitter_and_website():
+    from scripts.contact_enricher import enrich_from_github
+    from unittest.mock import patch, MagicMock
+
+    contact = {
+        "github_username": "jdoe",
+        "twitter_handle": None,
+        "personal_website": None,
+        "full_name": "John Doe",
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "login": "jdoe",
+        "twitter_username": "jdoe_x",
+        "blog": "https://johndoe.dev",
+    }
+    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
+        result = enrich_from_github([contact])
+
+    assert len(result) == 1
+    assert result[0]["twitter_handle"] == "jdoe_x"
+    assert result[0]["personal_website"] == "https://johndoe.dev"
+
+
+def test_enrich_from_github_skips_already_enriched():
+    from scripts.contact_enricher import enrich_from_github
+
+    contact = {
+        "github_username": "jdoe",
+        "twitter_handle": "existing",
+        "personal_website": "https://x.com",
+        "full_name": "John Doe",
+    }
+    result = enrich_from_github([contact])
+    assert result == []
+
+
+def test_enrich_from_github_skips_contacts_without_username():
+    from scripts.contact_enricher import enrich_from_github
+
+    contact = {"github_username": None, "full_name": "John Doe"}
+    result = enrich_from_github([contact])
+    assert result == []
+
+
+# ── HuggingFace Enrichment ─────────────────────────────────────────────────
+
+
+def test_enrich_from_huggingface_extracts_twitter_from_bio():
+    from scripts.contact_enricher import enrich_from_huggingface
+    from unittest.mock import patch, MagicMock
+
+    contact = {
+        "hf_username": "jdoe",
+        "twitter_handle": None,
+        "personal_website": None,
+        "full_name": "John Doe",
+    }
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "user": {"details": "ML researcher. Find me @jdoe_x and https://johndoe.dev"}
+    }
+    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
+        result = enrich_from_huggingface([contact])
+
+    assert len(result) == 1
+    assert result[0]["twitter_handle"] == "jdoe_x"
+    assert result[0]["personal_website"] == "https://johndoe.dev"
+
+
+def test_enrich_from_huggingface_skips_contacts_without_username():
+    from scripts.contact_enricher import enrich_from_huggingface
+
+    contact = {"hf_username": None, "full_name": "John Doe"}
+    result = enrich_from_huggingface([contact])
+    assert result == []
