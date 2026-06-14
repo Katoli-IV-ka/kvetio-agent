@@ -1,6 +1,5 @@
 """Tests for dm_contact_page — corporate contact email scraper."""
 from unittest.mock import MagicMock, patch
-import pytest
 
 
 def test_extract_emails_finds_info_address():

@@ -261,3 +261,36 @@ def test_enrich_from_huggingface_skips_contacts_without_username():
     contact = {"hf_username": None, "full_name": "John Doe"}
     result = enrich_from_huggingface([contact])
     assert result == []
+
+
+# ── Orchestrator ───────────────────────────────────────────────────────────
+
+
+def test_run_calls_all_steps_in_order(mocker):
+    from scripts.contact_enricher import run
+
+    mock_store = mocker.MagicMock()
+    mocker.patch("scripts.contact_enricher.SupabaseStore", return_value=mock_store)
+
+    contacts = [
+        {
+            "company_domain": "radai.com",
+            "full_name": "John Doe",
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": None,
+            "github_username": None,
+            "hf_username": None,
+        }
+    ]
+    mocker.patch("scripts.contact_enricher.list_contacts", return_value=contacts)
+    mock_upsert = mocker.patch("scripts.contact_enricher.upsert_contact")
+    mocker.patch("scripts.contact_enricher.enrich_from_github", return_value=[])
+    mocker.patch("scripts.contact_enricher.enrich_from_huggingface", return_value=[])
+
+    run("radai.com", skip_hunter=True)
+
+    # upsert must have been called at least once (for the guessed email)
+    assert mock_upsert.called
+    upserted = mock_upsert.call_args_list[0][0][1]
+    assert upserted["email_status"] == "guessed"

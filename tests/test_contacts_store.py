@@ -69,7 +69,7 @@ def test_list_contacts_returns_ordered_results(mock_store):
 def test_upsert_contact_includes_personal_website(mock_store):
     """upsert_contact must write personal_website to the row."""
     from scripts.contacts_store import upsert_contact
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     store = MagicMock()
     upsert_mock = MagicMock()

@@ -57,14 +57,14 @@ def _infer_pattern(contacts_with_email: list[dict]) -> str | None:
 def _apply_pattern(pattern: str, first: str, last: str, domain: str) -> str:
     """Build an email address from a pattern and name components."""
     f = first.lower().strip()
-    l = last.lower().strip()
+    ln = last.lower().strip()
     local_map = {
-        "first.last": f"{f}.{l}",
+        "first.last": f"{f}.{ln}",
         "first": f,
-        "flast": f"{f[0]}{l}",
-        "firstlast": f"{f}{l}",
+        "flast": f"{f[0]}{ln}",
+        "firstlast": f"{f}{ln}",
     }
-    local = local_map.get(pattern, f"{f}.{l}")
+    local = local_map.get(pattern, f"{f}.{ln}")
     return f"{local}@{domain}"
 
 
@@ -189,3 +189,57 @@ def enrich_from_huggingface(contacts: list[dict]) -> list[dict]:
         if patch:
             updated.append({**contact, **patch})
     return updated
+
+
+# ── Orchestrator ───────────────────────────────────────────────────────────
+
+
+def run(domain: str, skip_hunter: bool = False) -> None:
+    """Run all enrichment steps for a domain in sequence."""
+    store = SupabaseStore()
+
+    # Step 1: guess missing emails
+    contacts = list_contacts(store, domain)
+    if not contacts:
+        logger.info("No contacts for %s, skipping enrichment", domain)
+        return
+
+    guessed = guess_emails(domain, contacts)
+    for contact in guessed:
+        upsert_contact(store, {**contact, "company_domain": domain})
+
+    # Step 2: Hunter.io verify (optional)
+    if not skip_hunter:
+        api_key = os.getenv("HUNTER_API_KEY")
+        if api_key:
+            contacts = list_contacts(store, domain)
+            verified = run_hunter_verify(contacts, api_key)
+            for contact in verified:
+                upsert_contact(store, {**contact, "company_domain": domain})
+        else:
+            logger.info("HUNTER_API_KEY not set; skipping Hunter.io verify")
+
+    # Step 3: social/website discovery from GitHub
+    contacts = list_contacts(store, domain)
+    for contact in enrich_from_github(contacts):
+        upsert_contact(store, {**contact, "company_domain": domain})
+
+    # Step 4: social/website discovery from HuggingFace
+    contacts = list_contacts(store, domain)
+    for contact in enrich_from_huggingface(contacts):
+        upsert_contact(store, {**contact, "company_domain": domain})
+
+    logger.info("Enrichment complete for %s", domain)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    parser = argparse.ArgumentParser(description="Contact enricher")
+    parser.add_argument("--domain", required=True)
+    parser.add_argument("--skip-hunter", action="store_true")
+    args = parser.parse_args()
+    run(args.domain, skip_hunter=args.skip_hunter)
+
+
+if __name__ == "__main__":
+    main()
