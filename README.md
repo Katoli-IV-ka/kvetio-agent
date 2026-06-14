@@ -65,12 +65,14 @@ kvetio-agent/
 │   ├── supabase_store.py      # CRUD над Supabase + дедуп + покрытие
 │   ├── score.py               # детерминированный scoring engine
 │   ├── notify.py              # уведомления в Telegram
+│   ├── dossier_store.py       # CRUD: source_links, analysis_notes, dossiers (этапы 3-5)
 │   └── telegram_routines.py   # операционные Telegram-дайджесты и очереди
 ├── sql/                       # миграции Postgres/Supabase
 │   ├── 001_init.sql
 │   ├── 002_github_org_cache.sql
 │   ├── 003_source_page_url.sql
-│   └── 004_signals_source_page_url.sql
+│   ├── 004_signals_source_page_url.sql
+│   └── 008_source_links.sql, 009_analysis_notes.sql, 010_dossiers.sql  # данные досье
 └── tests/
     ├── conftest.py
     ├── fixtures/

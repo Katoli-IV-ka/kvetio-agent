@@ -28,6 +28,37 @@ SignalType = Literal[
 ]
 Bucket = Literal["not_relevant", "manual_review", "qualified"]
 
+Status = Literal[
+    "discovered",
+    "relevant",
+    "not_relevant",
+    "manual_review",
+    "triaged_out",
+    "qualified",
+    "sources_gathered",
+    "analyzed",
+    "dossier_ready",
+    "needs_update",
+    "pending_verify",
+]
+
+# Канонический список статусов 5-этапного пайплайна.
+# discovered → relevant/not_relevant/manual_review → triaged_out/qualified →
+# sources_gathered → analyzed → dossier_ready; needs_update/pending_verify — петля Monitor.
+ALL_STATUSES: tuple[str, ...] = (
+    "discovered",
+    "relevant",
+    "not_relevant",
+    "manual_review",
+    "triaged_out",
+    "qualified",
+    "sources_gathered",
+    "analyzed",
+    "dossier_ready",
+    "needs_update",
+    "pending_verify",
+)
+
 
 @dataclass(frozen=True)
 class ICPQuery:
