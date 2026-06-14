@@ -30,21 +30,16 @@ python scripts/supabase_store.py --coverage
 
 ---
 
-## Шаг 3 — Discover & Verify для каждого сегмента
+## Шаг 3 — Discovery → Relevance для каждого сегмента
 
 Для каждого сегмента из списка:
 
-1. Прочитай инструкции: `cat agents/prompts/discover_verify_task.md`
-2. Выполни весь алгоритм из этого файла для текущего сегмента с параметрами:
-   - `segment` = текущий сегмент
-   - `limit` = 30 (по умолчанию)
-   - `sources` = auto (из config/sources.yaml)
-3. Запиши итог (segment, found, verified, errors) для финального отчёта.
+1. Прочитай инструкции: `cat agents/prompts/discovery_task.md`
+2. Выполни Discovery для сегмента (`segment` = текущий, `limit` = 30) → компании в статусе `discovered`.
+3. Прочитай инструкции: `cat agents/prompts/relevance_task.md`
+4. Выполни Relevance для тех же `discovered`-компаний → `relevant`/`not_relevant`/`manual_review`.
 
-При ошибке сегмента:
-```bash
-python scripts/notify.py --error '{"task":"discover_verify/<segment>","error":"<краткое описание>"}'
-```
+Если на каком-то сегменте критическая ошибка — зафиксируй, notify об ошибке, продолжай со следующего.
 
 ---
 
