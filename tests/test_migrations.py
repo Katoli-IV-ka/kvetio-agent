@@ -44,6 +44,18 @@ def test_migration_011_notion_sync_fields():
     assert "notion_page_id" in sql
 
 
+def test_migration_013_reconcile_schema_drift():
+    sql = _read("013_reconcile_schema_drift.sql")
+    assert "ALTER TABLE companies" in sql
+    assert "source_page_url" in sql
+    assert "ALTER TABLE signals" in sql
+    assert "company_name" in sql
+    assert "domain" in sql
+    assert "linkedin_url" in sql
+    assert "ALTER TABLE contacts" in sql
+    assert "outreach_note" in sql
+
+
 def test_migration_013_contacts_v2():
     sql = _read("013_contacts_v2.sql")
     assert "ADD COLUMN IF NOT EXISTS contact_type" in sql
