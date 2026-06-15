@@ -266,3 +266,17 @@ def test_ensure_schema_leaves_existing_untouched():
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
     result = sync.ensure_schema("companies")
     assert result["created"] == 0
+
+
+def test_backfill_imports_reverse_fields_by_page_id():
+    rows = [{"domain": "acme.com", "name": "Acme", "status": "qualified",
+             "notion_page_id": "page-1", "outreach_status": None}]
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {
+        "Статус анализа": {"select": {"name": "Won"}}}, "children": []}
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.backfill("companies")
+    assert result["updated"] == 1
+    assert db.tables["companies"][0]["outreach_status"] == "Won"

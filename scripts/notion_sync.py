@@ -286,3 +286,8 @@ class NotionSync:
             self.notion.update_database(db_id, to_create)
         return {"entity": entity, "created": len(to_create),
                 "created_props": sorted(to_create.keys())}
+
+    def backfill(self, entity, dry_run=False) -> dict:
+        """Одноразовый импорт reverse-полей из Notion в БД. Сейчас = sync_reverse,
+        выделен отдельной командой для явности при миграции."""
+        return self.sync_reverse(entity, dry_run=dry_run)
