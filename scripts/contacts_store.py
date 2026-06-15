@@ -38,6 +38,8 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> None:
         "linkedin_url": contact.get("linkedin_url"),
         "twitter_handle": contact.get("twitter_handle"),
         "github_username": contact.get("github_username"),
+        "hf_username": contact.get("hf_username"),
+        "personal_website": contact.get("personal_website"),
         "source_vector": contact.get("source_vector", "github"),
         "source_url": contact.get("source_url"),
         "confidence": contact.get("confidence", "medium"),

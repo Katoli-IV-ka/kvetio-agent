@@ -144,3 +144,17 @@ sources:
     tier: C
     cost: paid
     description: "STUB. Трафик / позиция на рынке."
+
+  contact_page:
+    enabled: true
+    tier: A
+    rate_limit_rps: 1
+    description: "Corporate contact emails scraped from /contact pages"
+    script: scripts/dm_contact_page.py
+
+  contact_enricher:
+    enabled: true
+    tier: A
+    description: "Email pattern guesser + Hunter.io verify + Twitter/site discovery"
+    script: scripts/contact_enricher.py
+    hunter_verify: false  # auto-enabled when HUNTER_API_KEY is present in .env

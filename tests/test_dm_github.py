@@ -115,3 +115,39 @@ def test_fetch_commit_authors_filters_noreply(respx_mock):
     assert len(authors) == 1
     assert authors[0]["email"] == "real@company.com"
     assert authors[0]["source"] == "github_commit"
+
+
+def test_fetch_user_profile_includes_twitter_handle():
+    from scripts.dm_github import fetch_user_profile
+    from unittest.mock import MagicMock
+
+    fake_client = MagicMock()
+    fake_client.get_json.return_value = {
+        "login": "jdoe",
+        "name": "John Doe",
+        "email": "john@radai.com",
+        "twitter_username": "johndoe_x",
+        "blog": "https://johndoe.dev",
+        "bio": "ML at Rad AI",
+        "company": "Rad AI",
+    }
+    result = fetch_user_profile("jdoe", fake_client)
+    assert result["twitter_handle"] == "johndoe_x"
+
+
+def test_fetch_user_profile_twitter_handle_none_when_absent():
+    from scripts.dm_github import fetch_user_profile
+    from unittest.mock import MagicMock
+
+    fake_client = MagicMock()
+    fake_client.get_json.return_value = {
+        "login": "jdoe",
+        "name": "John Doe",
+        "twitter_username": None,
+        "blog": None,
+        "email": None,
+        "bio": None,
+        "company": None,
+    }
+    result = fetch_user_profile("jdoe", fake_client)
+    assert result["twitter_handle"] is None
