@@ -1,10 +1,10 @@
-"""FastAPI gateway: Telegram webhook + internal /runs API.
+"""FastAPI gateway: Telegram webhook.
 
 Environment variables:
     SUPABASE_URL, SUPABASE_KEY
     TELEGRAM_BOT_TOKEN
     TELEGRAM_WEBHOOK_SECRET     — X-Telegram-Bot-Api-Secret-Token header value
-    INTERNAL_API_TOKEN          — Bearer token for POST /runs
+    ROUTINE_FIRE_URL, ROUTINE_TOKEN — Claude Code Routine credentials
     KVETIO_LOG_LEVEL            — default INFO
 
 Run locally:
@@ -21,22 +21,22 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 load_dotenv(ROOT / ".env")
 
-from bot.access import AccessStore
-from bot.dialog import DialogStore, apply_callback, build_step_message
-from bot.presets import PresetsStore
-from bot.runs import RunConfig, RunsStore
+from bot.access import AccessStore  # noqa: E402
+from bot.config import RunConfig  # noqa: E402
+from bot.dialog import DialogStore, apply_callback, build_step_message  # noqa: E402
+from bot.presets import PresetsStore  # noqa: E402
+from bot.routine import config_to_text, fire  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="kvetio-bot-gateway", version="1.0.0")
+app = FastAPI(title="kvetio-bot-gateway", version="2.0.0")
 
 
 def _make_supabase():
@@ -47,7 +47,6 @@ def _make_supabase():
 def _deps():
     client = _make_supabase()
     return (
-        RunsStore(client),
         AccessStore(client),
         PresetsStore(client),
         DialogStore(client),
@@ -62,75 +61,12 @@ async def healthz():
     return {"status": "ok"}
 
 
-# ── Internal Run API ──────────────────────────────────────────────────────────
-
-class RunRequest(BaseModel):
-    segments: list[str]
-    limit_per_segment: int = 30
-    stages: str | list[str] = "full"
-    dry_run: bool = False
-    notion_sync: bool = True
-    triggered_by: str = ""
-    trigger_type: str = "manual"
-    tg_chat_id: str | None = None
-
-
-@app.post("/runs", status_code=201)
-async def create_run(
-    body: RunRequest,
-    authorization: str = Header(default=""),
-):
-    _verify_internal_token(authorization)
-    runs, _, _, _, _ = _deps()
-    cfg = RunConfig(
-        segments=body.segments,
-        limit_per_segment=body.limit_per_segment,
-        stages=body.stages,
-        dry_run=body.dry_run,
-        notion_sync=body.notion_sync,
-        triggered_by=body.triggered_by,
-        trigger_type=body.trigger_type,  # type: ignore[arg-type]
-    )
-    try:
-        cfg.validate()
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-    run_id = runs.enqueue(
-        cfg,
-        trigger_type=body.trigger_type,  # type: ignore[arg-type]
-        triggered_by=body.triggered_by,
-        tg_chat_id=body.tg_chat_id,
-    )
-    return {"run_id": run_id, "status": "queued"}
-
-
-@app.get("/runs/{run_id}")
-async def get_run(run_id: str, authorization: str = Header(default="")):
-    _verify_internal_token(authorization)
-    runs, _, _, _, _ = _deps()
-    run = runs.get(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="run not found")
-    return run
-
-
-@app.post("/runs/{run_id}/cancel")
-async def cancel_run(run_id: str, authorization: str = Header(default="")):
-    _verify_internal_token(authorization)
-    runs, _, _, _, _ = _deps()
-    ok = runs.cancel(run_id)
-    if not ok:
-        raise HTTPException(status_code=409, detail="run not cancellable")
-    return {"run_id": run_id, "status": "cancelled"}
-
-
 # ── Telegram Webhook ──────────────────────────────────────────────────────────
 
 @app.post("/telegram/webhook")
 async def telegram_webhook(
     request: Request,
-    x_telegram_bot_api_secret_token: str = Header(default=""),
+    x_telegram_bot_api_secret_token: str = "",
 ):
     _verify_webhook_secret(x_telegram_bot_api_secret_token)
     update = await request.json()
@@ -145,26 +81,25 @@ async def telegram_webhook(
 
 
 async def _handle_update(update: dict[str, Any]) -> None:
-    runs, access, presets, dialog, client = _deps()
+    access, presets, dialog, client = _deps()
     tg = TelegramSender()
 
     if "message" in update:
-        await _handle_message(update["message"], runs, access, presets, dialog, tg)
+        await _handle_message(update["message"], access, presets, dialog, client, tg)
     elif "callback_query" in update:
-        await _handle_callback(update["callback_query"], runs, access, presets, dialog, tg)
+        await _handle_callback(update["callback_query"], access, presets, dialog, tg)
 
 
 async def _handle_message(
     msg: dict[str, Any],
-    runs: RunsStore,
     access: AccessStore,
     presets: PresetsStore,
     dialog: DialogStore,
+    client: Any,
     tg: "TelegramSender",
 ) -> None:
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
-    username = msg.get("from", {}).get("username", "")
 
     if not chat_id or not text.startswith("/"):
         return
@@ -172,7 +107,6 @@ async def _handle_message(
     command = text.split()[0].lower().rstrip("@")
     args = text.split()[1:]
 
-    # Health / info commands — no auth needed for /ping
     if command == "/ping":
         await tg.send(chat_id, "🏓 pong")
         return
@@ -191,41 +125,29 @@ async def _handle_message(
         await tg.send(chat_id, f"Ваш chat_id: <code>{chat_id}</code>\nРоль: <b>{role}</b>")
 
     elif command == "/status":
-        run = runs.get_active()
-        if run:
-            run_id_short = str(run["id"])[:8]
-            status_text = run.get("status", "?")
-            await tg.send(chat_id, f"🔵 Активный ран: <code>{run_id_short}</code> — {status_text}")
+        row = _fetch_active_run(client)
+        if row:
+            task = row.get("task_name", "?")
+            started = (row.get("started_at") or "")[:16]
+            await tg.send(chat_id, f"🔵 Активный ран: <b>{task}</b> с {started}")
         else:
             await tg.send(chat_id, "✅ Активных ранов нет")
 
     elif command == "/last":
         n = int(args[0]) if args and args[0].isdigit() else 5
         n = min(n, 20)
-        recent = runs.list_recent(n)
-        if not recent:
+        rows = _fetch_recent_runs(client, n)
+        if not rows:
             await tg.send(chat_id, "Истории ранов нет")
         else:
             lines = ["<b>Последние раны:</b>"]
-            for r in recent:
-                rid = str(r["id"])[:8]
-                st = r.get("status", "?")
-                ts = (r.get("queued_at") or "")[:16]
-                lines.append(f"· <code>{rid}</code> {st} {ts}")
+            for r in rows:
+                task = r.get("task_name", "?")
+                started = (r.get("started_at") or "")[:16]
+                finished = r.get("finished_at")
+                status_icon = "✅" if finished else "🔵"
+                lines.append(f"{status_icon} <b>{task}</b> {started}")
             await tg.send(chat_id, "\n".join(lines))
-
-    elif command == "/cancel":
-        if not is_admin:
-            await tg.send(chat_id, "⛔ Только администраторы могут отменять раны")
-            return
-        run = runs.get_active()
-        if not run:
-            await tg.send(chat_id, "Нет активных ранов для отмены")
-            return
-        if runs.cancel(run["id"]):
-            await tg.send(chat_id, f"✅ Ран <code>{str(run['id'])[:8]}</code> отменён")
-        else:
-            await tg.send(chat_id, "❌ Не удалось отменить ран")
 
     elif command == "/presets":
         await _handle_presets_command(chat_id, args, is_admin, presets, tg)
@@ -243,8 +165,18 @@ async def _handle_message(
         cfg_dict["triggered_by"] = f"chat:{chat_id}"
         cfg_dict["trigger_type"] = "manual"
         cfg = RunConfig.from_dict(cfg_dict)
-        run_id = runs.enqueue(cfg, trigger_type="manual", triggered_by=f"chat:{chat_id}", tg_chat_id=chat_id)
-        await tg.send(chat_id, f"🟡 Ран <code>{run_id[:8]}</code> поставлен в очередь (пресет: {preset['name']})")
+        result = fire(config_to_text(cfg))
+        if result.get("dev_mode"):
+            await tg.send(chat_id, f"🟡 [dev] Рутина запущена (пресет: {preset['name']})")
+        elif "error" in result:
+            await tg.send(chat_id, f"❌ Ошибка запуска: {result['error']}")
+        else:
+            session_id = result.get("claude_code_session_id", "?")
+            await tg.send(
+                chat_id,
+                f"🟢 Рутина запущена (пресет: {preset['name']})\n"
+                f"Session: <code>{session_id}</code>",
+            )
 
     elif command == "/run":
         if not is_admin:
@@ -271,7 +203,6 @@ async def _handle_message(
 
 async def _handle_callback(
     cq: dict[str, Any],
-    runs: RunsStore,
     access: AccessStore,
     presets: PresetsStore,
     dialog: DialogStore,
@@ -311,12 +242,17 @@ async def _handle_callback(
         except ValueError as exc:
             await tg.edit_message(chat_id, message_id, f"❌ Ошибка конфига: {exc}")
             return
-        run_id = runs.enqueue(cfg, trigger_type="manual", triggered_by=f"chat:{chat_id}", tg_chat_id=chat_id)
-        await tg.edit_message(
-            chat_id, message_id,
-            f"🟡 <b>Ран принят</b> — <code>{run_id[:8]}</code>\nПоставлен в очередь выполнения."
-        )
-        runs.set_tg_message_id(run_id, message_id)
+        result = fire(config_to_text(cfg))
+        if result.get("dev_mode"):
+            await tg.edit_message(chat_id, message_id, "🟡 <b>[dev] Рутина запущена</b>")
+        elif "error" in result:
+            await tg.edit_message(chat_id, message_id, f"❌ Ошибка запуска: {result['error']}")
+        else:
+            session_id = result.get("claude_code_session_id", "?")
+            await tg.edit_message(
+                chat_id, message_id,
+                f"🟢 <b>Рутина запущена</b>\nSession: <code>{session_id}</code>",
+            )
 
     elif next_step == "cancelled":
         dialog.clear(chat_id)
@@ -370,7 +306,6 @@ async def _handle_routine_command(
     try:
         from supabase_store import SupabaseStore
         from telegram_routines import run_routine
-        from notify import send
 
         routine_map = {"/digest": "daily_digest", "/hot": "hot_leads", "/stale": "stale_review"}
         routine_name = routine_map[command]
@@ -382,6 +317,31 @@ async def _handle_routine_command(
     except Exception as exc:  # noqa: BLE001
         logger.error("Routine %s failed: %s", command, exc)
         await tg.send(chat_id, f"❌ Ошибка рутины: {exc}")
+
+
+def _fetch_active_run(client: Any) -> dict[str, Any] | None:
+    """Return the most recent run_log with no finished_at (in progress)."""
+    result = (
+        client.table("run_logs")
+        .select("task_name,started_at,finished_at")
+        .is_("finished_at", "null")
+        .order("started_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
+def _fetch_recent_runs(client: Any, limit: int = 5) -> list[dict[str, Any]]:
+    """Return recent run_log entries ordered by start time."""
+    result = (
+        client.table("run_logs")
+        .select("task_name,started_at,finished_at")
+        .order("started_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data or []
 
 
 def _help_text(is_admin: bool) -> str:
@@ -404,7 +364,6 @@ def _help_text(is_admin: bool) -> str:
             "<b>Только для администраторов:</b>",
             "/run — запуск pipeline (мастер на кнопках)",
             "/quickrun [preset] — быстрый запуск по пресету",
-            "/cancel — отменить активный ран",
             "/presets save/delete — управление пресетами",
         ]
     return "\n".join(lines)
@@ -485,18 +444,6 @@ def _verify_webhook_secret(token: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="invalid webhook secret",
-        )
-
-
-def _verify_internal_token(authorization: str) -> None:
-    expected = os.environ.get("INTERNAL_API_TOKEN", "")
-    if not expected:
-        return  # no auth configured — dev mode
-    provided = authorization.removeprefix("Bearer ").strip()
-    if provided != expected:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="invalid or missing internal API token",
         )
 
 
