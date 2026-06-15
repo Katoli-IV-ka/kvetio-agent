@@ -57,7 +57,8 @@ kvetio-agent/
 ├── config/
 │   ├── icp.yaml               # сегменты ICP (Stage 0)
 │   ├── scoring.yaml           # веса score (Stage 2)
-│   └── sources.yaml           # registry источников и их настроек
+│   ├── sources.yaml           # registry источников и их настроек
+│   └── notion_mapping.yaml    # декларативный маппинг полей БД → Notion
 ├── data/
 │   └── known_ats_slugs.csv    # ручной seed-list slug → company
 ├── scripts/                   # ★ канонические скрипты — то, что вызывают агенты
@@ -75,6 +76,7 @@ kvetio-agent/
 │   ├── notify.py              # уведомления в Telegram
 │   ├── enrichment.py          # этап 3: резолверы ссылок-источников → source_links
 │   ├── dossier_store.py       # CRUD: source_links, analysis_notes, dossiers (этапы 3-5)
+│   ├── notion_sync.py         # синк Supabase ↔ Notion (config-driven)
 │   └── telegram_routines.py   # операционные Telegram-дайджесты и очереди
 ├── sql/                       # миграции Postgres/Supabase
 │   ├── 001_init.sql
@@ -135,7 +137,10 @@ python scripts/telegram_routines.py stale_review --days 30 --limit 10
 - ✅ Scoring — детерминированная функция от Company → ScoreBreakdown.
 - ✅ Telegram-уведомления.
 - ✅ Telegram routines для ежедневных дайджестов и review-очередей.
-- ⏳ Notion sync — каркас, нужна сверка полей с боевой базой.
+- ✅ Notion sync — детерминированный `scripts/notion_sync.py` + конфиг
+  `config/notion_mapping.yaml`. БД — источник истины; Notion — курируемая витрина
+  (forward), reverse-синк whitelist ручных полей. Поля настраиваются правкой YAML
+  + `--ensure-schema`.
 
 ## Принципы
 
