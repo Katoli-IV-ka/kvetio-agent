@@ -62,15 +62,22 @@ echo '{
 > Полный список полней таблицы ещё не финализирован — `table_fields` провизорный.
 > При обновлении набора полей менять только этот блок.
 
-## Шаг 5 — Публикация в Notion
-Через Notion MCP создай или обнови страницу компании (схема — живая база
-`Компании Test`). Поля: Company Name, Website, Score, Score Bucket, ICP Segment,
-а также rich-text с `summary_md` и `audit_md`. Идемпотентность: если
-`notion_page_id` пуст — создать страницу; иначе — обновить.
+## Шаг 5 — Синхронизация в Notion
 
-После создания запиши id обратно:
-```sql
-UPDATE companies SET notion_page_id = '<page_id>' WHERE domain = '<domain>';
+Публикация в Notion полностью детерминирована и вынесена в скрипт — ad-hoc MCP-вызовы
+здесь не используем. Запусти синк компаний (reverse+forward) и публикацию досье в тело
+страницы:
+
+```bash
+python scripts/notion_sync.py --entity companies --all
+python scripts/notion_sync.py --entity dossiers
+```
+
+`notion_page_id` записывается скриптом в БД автоматически — отдельный UPDATE не нужен.
+Если поле в Notion ещё не создано (после правки `config/notion_mapping.yaml`):
+
+```bash
+python scripts/notion_sync.py --ensure-schema --entity companies
 ```
 
 ## Шаг 6 — Перевести статус

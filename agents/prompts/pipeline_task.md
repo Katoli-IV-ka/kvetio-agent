@@ -55,7 +55,13 @@ python scripts/supabase_store.py --coverage
 
 1. `cat agents/prompts/enrichment_task.md` → выполни (сбор ссылок → `sources_gathered`).
 2. `cat agents/prompts/analysis_task.md` → выполни (анализ по секциям → `analyzed`).
-3. `cat agents/prompts/conclusions_task.md` → выполни (досье + Notion → `dossier_ready`).
+3. `cat agents/prompts/conclusions_task.md` → выполни (досье → `dossier_ready`).
+4. Синхронизация в Notion (детерминированный скрипт, не MCP):
+   ```bash
+   python scripts/notion_sync.py --entity companies --all
+   python scripts/notion_sync.py --entity contacts --all
+   python scripts/notion_sync.py --entity dossiers
+   ```
 
 Ошибка на одной компании — зафиксируй, notify, продолжай со следующей.
 
