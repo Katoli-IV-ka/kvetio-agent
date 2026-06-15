@@ -231,3 +231,38 @@ def test_sync_all_runs_reverse_then_forward():
     assert db.tables["companies"][0]["outreach_status"] == "Replied"
     # forward обновил страницу:
     assert result["forward"]["updated"] == 1
+
+
+NOTION_TYPE_SCHEMA = {
+    "title": {"title": {}}, "rich_text": {"rich_text": {}}, "url": {"url": {}},
+    "email": {"email": {}}, "number": {"number": {}}, "select": {"select": {}},
+    "multi_select": {"multi_select": {}}, "date": {"date": {}},
+}
+
+
+def test_ensure_schema_creates_missing_props():
+    notion = FakeNotion()
+    notion.databases["DBID"] = {"properties": {"Company name": {"type": "title"}}}
+    db = FakeDb([])
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.ensure_schema("companies")
+    props = notion.databases["DBID"]["properties"]
+    assert "Score" in props          # создано
+    assert "Статус анализа" in props # создано
+    assert result["created"] == 2
+    assert "Score" in result["created_props"]
+
+
+def test_ensure_schema_leaves_existing_untouched():
+    notion = FakeNotion()
+    notion.databases["DBID"] = {"properties": {
+        "Company name": {"type": "title"},
+        "Score": {"type": "number"},
+        "Статус анализа": {"type": "select"},
+    }}
+    db = FakeDb([])
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.ensure_schema("companies")
+    assert result["created"] == 0

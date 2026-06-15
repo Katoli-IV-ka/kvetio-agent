@@ -41,6 +41,17 @@ VALID_NOTION_TYPES = {
 }
 VALID_DIRECTIONS = {"forward", "reverse"}
 
+NOTION_TYPE_SCHEMA = {
+    "title": {"title": {}},
+    "rich_text": {"rich_text": {}},
+    "url": {"url": {}},
+    "email": {"email": {}},
+    "number": {"number": {}},
+    "select": {"select": {}},
+    "multi_select": {"multi_select": {}},
+    "date": {"date": {}},
+}
+
 
 def load_mapping(path: Path = MAPPING_PATH) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -260,3 +271,18 @@ class NotionSync:
         rev = self.sync_reverse(entity, dry_run=dry_run)
         fwd = self.sync_forward(entity, dry_run=dry_run)
         return {"entity": entity, "reverse": rev, "forward": fwd}
+
+    def ensure_schema(self, entity, dry_run=False) -> dict:
+        cfg = self._cfg(entity)
+        db_id = self._db_id(entity)
+        existing = self.notion.retrieve_database(db_id)["properties"]
+        to_create = {}
+        for f in cfg["fields"]:
+            name = f["notion_property"]
+            if name not in existing and f["notion_type"] != "title":
+                # title-свойство в Notion-базе всегда существует; не создаём.
+                to_create[name] = NOTION_TYPE_SCHEMA[f["notion_type"]]
+        if to_create and not dry_run:
+            self.notion.update_database(db_id, to_create)
+        return {"entity": entity, "created": len(to_create),
+                "created_props": sorted(to_create.keys())}
