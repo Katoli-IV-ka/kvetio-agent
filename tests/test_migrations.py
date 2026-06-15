@@ -1,4 +1,4 @@
-"""Contract-тесты для foundation-миграций 008–010.
+"""Contract-тесты для foundation-миграций 008–014.
 
 Миграции применяются вручную в Supabase SQL Editor, поэтому здесь мы
 проверяем не живую БД, а что SQL-файлы существуют и содержат ключевой DDL.
@@ -44,6 +44,14 @@ def test_migration_011_notion_sync_fields():
     assert "notion_page_id" in sql
 
 
+def test_migration_012_bot():
+    sql = _read("012_bot.sql")
+    assert "CREATE TABLE IF NOT EXISTS pipeline_runs" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_users" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_presets" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_dialog_state" in sql
+
+
 def test_migration_013_contacts_v2():
     sql = _read("013_contacts_v2.sql")
     assert "ADD COLUMN IF NOT EXISTS contact_type" in sql
@@ -54,3 +62,12 @@ def test_migration_013_contacts_v2():
     assert "ADD COLUMN IF NOT EXISTS contact_result" in sql
     assert "CREATE TABLE IF NOT EXISTS contact_companies" in sql
     assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
+
+
+
+def test_migration_014_drop_pipeline_runs():
+    sql = _read("014_drop_pipeline_runs.sql")
+    assert "DROP TABLE IF EXISTS pipeline_runs" in sql
+    # run_logs must NOT be dropped — only pipeline_runs goes away
+    assert "DROP TABLE IF EXISTS run_logs" not in sql
+

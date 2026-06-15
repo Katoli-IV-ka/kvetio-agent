@@ -38,3 +38,6 @@ data/*.sqlite
 
 # Allow seed data
 !data/known_ats_slugs.csv
+
+# Git worktrees
+.worktrees/

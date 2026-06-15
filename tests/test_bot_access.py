@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bot.access import AccessStore, ADMIN_COMMANDS
+from bot.access import AccessStore
 
 
 def _make_store(user_row: dict | None = None) -> tuple[AccessStore, MagicMock]:
