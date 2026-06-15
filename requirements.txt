@@ -24,5 +24,12 @@ beautifulsoup4>=4.12
 # Supabase
 supabase>=2.4
 
+# Notion (прямой API-доступ из notion_sync.py; MCP здесь не используется)
+notion-client>=2.2
+
 # LLM fallback для GitHub domain inference
 anthropic>=0.39
+
+# Telegram management bot (bot/)
+fastapi>=0.111
+uvicorn[standard]>=0.30

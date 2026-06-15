@@ -83,6 +83,86 @@ def notify_error(task_name: str, error: str) -> bool:
     return send(text)
 
 
+def notify_pipeline_summary(
+    run_id: str,
+    *,
+    trigger_type: str = "manual",
+    triggered_by: str = "",
+    segments: list[str] | None = None,
+    found: int = 0,
+    qualified: int = 0,
+    errors: int = 0,
+    error_details: list[dict] | None = None,
+    hot_leads: list[dict] | None = None,
+    duration_sec: int = 0,
+    chat_ids: list[str] | None = None,
+) -> int:
+    """Send pipeline summary to one or more chats. Returns count of successful sends.
+
+    If chat_ids is None, falls back to TELEGRAM_CHAT_ID env var.
+    """
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token:
+        logger.error("TELEGRAM_BOT_TOKEN не задан")
+        return 0
+
+    fallback_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+    targets = chat_ids if chat_ids else ([fallback_chat] if fallback_chat else [])
+    if not targets:
+        logger.warning("notify_pipeline_summary: нет получателей")
+        return 0
+
+    run_id_short = run_id[:8] if len(run_id) > 8 else run_id
+    status_icon = "✅" if errors == 0 else "⚠️"
+    dur = f" · {duration_sec // 60}m {duration_sec % 60}s" if duration_sec else ""
+    seg_str = ", ".join(segments or []) or "—"
+
+    lines = [
+        f"{status_icon} <b>Pipeline завершён</b> · ран {run_id_short}{dur}",
+        f"Триггер: {trigger_type}" + (f" ({triggered_by})" if triggered_by else ""),
+        f"Сегменты: {seg_str}",
+        "",
+        f"Найдено: {found} · qualified: {qualified} · ошибок: {errors}",
+    ]
+
+    if hot_leads:
+        lines.append("")
+        lines.append("🔥 <b>Топ Hot:</b>")
+        for i, lead in enumerate(hot_leads[:5], 1):
+            domain = lead.get("domain", "")
+            score = lead.get("score", 0)
+            seg = lead.get("icp_segment", "")
+            lines.append(f"{i}. {domain} — {score}" + (f" ({seg})" if seg else ""))
+
+    if error_details:
+        lines.append("")
+        lines.append(f"⚠️ <b>Ошибки ({errors}):</b>")
+        for e in (error_details or [])[:3]:
+            stage = e.get("stage", "?")
+            seg = e.get("segment", "?")
+            err = (e.get("error") or "")[:60]
+            lines.append(f"  {stage}/{seg} — {err}")
+
+    lines.append("")
+    lines.append(f"🔗 run_id: <code>{run_id}</code> · /last для истории")
+    text = "\n".join(lines)
+
+    url = TELEGRAM_API.format(token=token)
+    sent = 0
+    for chat_id in targets:
+        try:
+            resp = httpx.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            sent += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Telegram sendMessage to %s failed: %s", chat_id, exc)
+    return sent
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
 
