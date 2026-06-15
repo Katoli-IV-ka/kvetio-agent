@@ -106,3 +106,107 @@ def from_notion_property(notion_type: str, prop: dict):
         d = prop.get("date")
         return d.get("start") if d else None
     raise ValueError(f"unsupported notion_type: {notion_type}")
+
+
+class NotionGateway:
+    """Обёртка над notion-client. Изолирует API для тестируемости."""
+    def __init__(self, client):
+        self._c = client
+
+    def query_database(self, db_id):
+        pages, cursor = [], None
+        while True:
+            resp = self._c.databases.query(database_id=db_id, start_cursor=cursor) \
+                if cursor else self._c.databases.query(database_id=db_id)
+            pages.extend(resp["results"])
+            if not resp.get("has_more"):
+                break
+            cursor = resp["next_cursor"]
+        return pages
+
+    def create_page(self, db_id, properties, children=None):
+        payload = {"parent": {"database_id": db_id}, "properties": properties}
+        if children:
+            payload["children"] = children
+        return self._c.pages.create(**payload)
+
+    def update_page(self, page_id, properties):
+        return self._c.pages.update(page_id=page_id, properties=properties)
+
+    def append_children(self, page_id, children):
+        return self._c.blocks.children.append(block_id=page_id, children=children)
+
+    def retrieve_database(self, db_id):
+        return self._c.databases.retrieve(database_id=db_id)
+
+    def update_database(self, db_id, properties):
+        return self._c.databases.update(database_id=db_id, properties=properties)
+
+
+class DbGateway:
+    """Обёртка над supabase-клиентом для notion_sync."""
+    def __init__(self, client):
+        self._c = client
+
+    def fetch(self, table, status_filter=None):
+        q = self._c.table(table).select("*")
+        if status_filter:
+            q = q.in_("status", status_filter)
+        return q.execute().data or []
+
+    def update(self, table, key_col, key_val, fields):
+        self._c.table(table).update(fields).eq(key_col, key_val).execute()
+
+
+class NotionSync:
+    def __init__(self, notion, db, mapping=None, env=None):
+        self.notion = notion
+        self.db = db
+        self.mapping = mapping if mapping is not None else load_mapping()
+        self.env = env if env is not None else os.environ
+
+    def _cfg(self, entity):
+        return self.mapping[entity]
+
+    def _db_id(self, entity):
+        env_key = self._cfg(entity)["notion_database_id_env"]
+        db_id = self.env.get(env_key)
+        if not db_id:
+            raise RuntimeError(f"{env_key} не задан в окружении")
+        return db_id
+
+    def _fields(self, entity, direction):
+        return [f for f in self._cfg(entity)["fields"] if f["direction"] == direction]
+
+    def sync_forward(self, entity, dry_run=False) -> dict:
+        cfg = self._cfg(entity)
+        db_id = self._db_id(entity)
+        fields = self._fields(entity, "forward")
+        rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
+        created = updated = errors = 0
+        for row in rows:
+            try:
+                props = {
+                    f["notion_property"]: to_notion_property(f["notion_type"],
+                                                             row.get(f["db_column"]))
+                    for f in fields
+                }
+                page_id = row.get("notion_page_id")
+                if dry_run:
+                    updated += 1 if page_id else 0
+                    created += 0 if page_id else 1
+                    continue
+                if page_id:
+                    self.notion.update_page(page_id, props)
+                    updated += 1
+                else:
+                    page = self.notion.create_page(db_id, props)
+                    self.db.update(cfg["db_table"], cfg["db_key"],
+                                   row[cfg["db_key"]],
+                                   {"notion_page_id": page["id"],
+                                    "notion_synced_at": datetime.utcnow().isoformat()})
+                    created += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("forward %s %s: %s", entity, row.get(cfg["db_key"]), exc)
+                errors += 1
+        return {"entity": entity, "created": created, "updated": updated, "errors": errors}

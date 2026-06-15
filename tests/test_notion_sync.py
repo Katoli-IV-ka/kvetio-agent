@@ -74,3 +74,116 @@ def test_from_notion_property_roundtrip():
         {"rich_text": [{"plain_text": "note"}]}) == "note"
     assert ns.from_notion_property("select", {"select": None}) is None
     assert ns.from_notion_property("rich_text", {"rich_text": []}) is None
+
+
+class FakeNotion:
+    """In-memory Notion gateway double."""
+    def __init__(self):
+        self.pages = {}       # page_id -> {"properties": {...}, "children": [...]}
+        self.databases = {}   # db_id -> {"properties": {name: {"type": ...}}}
+        self._seq = 0
+
+    def query_database(self, db_id):
+        return [{"id": pid, **p} for pid, p in self.pages.items()
+                if p.get("_db") == db_id]
+
+    def create_page(self, db_id, properties, children=None):
+        self._seq += 1
+        pid = f"page-{self._seq}"
+        self.pages[pid] = {"_db": db_id, "properties": properties,
+                           "children": list(children or [])}
+        return {"id": pid}
+
+    def update_page(self, page_id, properties):
+        self.pages[page_id]["properties"].update(properties)
+        return {"id": page_id}
+
+    def append_children(self, page_id, children):
+        self.pages[page_id].setdefault("children", []).extend(children)
+
+    def retrieve_database(self, db_id):
+        return {"properties": self.databases.get(db_id, {}).get("properties", {})}
+
+    def update_database(self, db_id, properties):
+        db = self.databases.setdefault(db_id, {"properties": {}})
+        db["properties"].update(properties)
+
+
+class FakeDb:
+    """In-memory DB gateway double."""
+    def __init__(self, rows=None):
+        self.tables = {"companies": list(rows or [])}
+
+    def fetch(self, table, status_filter=None):
+        rows = self.tables.get(table, [])
+        if status_filter:
+            rows = [r for r in rows if r.get("status") in status_filter]
+        return [dict(r) for r in rows]
+
+    def update(self, table, key_col, key_val, fields):
+        for r in self.tables.setdefault(table, []):
+            if r.get(key_col) == key_val:
+                r.update(fields)
+                return
+
+
+COMPANIES_MAPPING = {
+    "companies": {
+        "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+        "db_table": "companies",
+        "db_key": "domain",
+        "db_status_filter": ["qualified"],
+        "fields": [
+            {"db_column": "name", "notion_property": "Company name",
+             "notion_type": "title", "direction": "forward"},
+            {"db_column": "score", "notion_property": "Score",
+             "notion_type": "number", "direction": "forward"},
+            {"db_column": "outreach_status", "notion_property": "Статус анализа",
+             "notion_type": "select", "direction": "reverse"},
+        ],
+    }
+}
+
+
+def _engine(rows):
+    notion = FakeNotion()
+    notion.databases["DBID"] = {"properties": {
+        "Company name": {"type": "title"},
+        "Score": {"type": "number"},
+        "Статус анализа": {"type": "select"},
+    }}
+    db = FakeDb(rows)
+    monkey_env = {"NOTION_COMPANIES_DB_ID": "DBID"}
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env=monkey_env)
+    return sync, notion, db
+
+
+def test_forward_creates_page_and_writes_back_id():
+    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
+             "status": "qualified", "notion_page_id": None}]
+    sync, notion, db = _engine(rows)
+    result = sync.sync_forward("companies")
+    assert result["created"] == 1
+    page_id = db.tables["companies"][0]["notion_page_id"]
+    assert page_id is not None
+    props = notion.pages[page_id]["properties"]
+    assert props["Company name"] == {"title": [{"text": {"content": "Acme"}}]}
+    assert props["Score"] == {"number": 80}
+    # forward не пишет reverse-поле:
+    assert "Статус анализа" not in props
+
+
+def test_forward_is_idempotent():
+    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
+             "status": "qualified", "notion_page_id": "page-1"}]
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    r1 = sync.sync_forward("companies")
+    r2 = sync.sync_forward("companies")
+    assert r1["updated"] == 1
+    assert r2["updated"] == 1
+    assert len(notion.pages) == 1  # без дублей
