@@ -305,3 +305,21 @@ def test_sync_dossier_appends_blocks_to_company_page():
     assert result["updated"] == 1
     children = notion.pages["page-1"]["children"]
     assert any(b["type"] == "heading_2" for b in children)
+
+
+def test_list_fields_human_readable():
+    sync = ns.NotionSync(notion=FakeNotion(), db=FakeDb([]),
+                         mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    text = sync.list_fields("companies")
+    assert "name" in text
+    assert "forward" in text
+    assert "Статус анализа" in text
+
+
+def test_build_arg_parser_accepts_flags():
+    parser = ns.build_arg_parser()
+    args = parser.parse_args(["--entity", "companies", "--all", "--dry-run"])
+    assert args.entity == "companies"
+    assert args.all is True
+    assert args.dry_run is True

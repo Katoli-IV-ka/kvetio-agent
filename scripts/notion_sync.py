@@ -330,3 +330,84 @@ class NotionSync:
                 logger.error("dossier %s: %s", d["company_domain"], exc)
                 errors += 1
         return {"entity": "dossiers", "updated": updated, "errors": errors}
+
+    def list_fields(self, entity) -> str:
+        lines = [f"# {entity}"]
+        for f in self._cfg(entity)["fields"]:
+            lines.append(f"  {f['db_column']:<16} -> {f['notion_property']:<18} "
+                         f"[{f['notion_type']}, {f['direction']}]")
+        return "\n".join(lines)
+
+
+def _make_notion() -> NotionGateway:
+    from notion_client import Client  # noqa: PLC0415
+    token = os.environ.get("NOTION_TOKEN")
+    if not token:
+        raise RuntimeError("NOTION_TOKEN не задан в .env")
+    return NotionGateway(Client(auth=token))
+
+
+def _make_db() -> DbGateway:
+    from supabase import create_client  # noqa: PLC0415
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        raise RuntimeError("SUPABASE_URL и SUPABASE_KEY должны быть в .env")
+    return DbGateway(create_client(url, key))
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="Supabase ↔ Notion sync")
+    p.add_argument("--entity", choices=["companies", "contacts", "dossiers"])
+    p.add_argument("--forward", action="store_true")
+    p.add_argument("--reverse", action="store_true")
+    p.add_argument("--all", action="store_true")
+    p.add_argument("--ensure-schema", dest="ensure_schema", action="store_true")
+    p.add_argument("--validate", action="store_true")
+    p.add_argument("--backfill", action="store_true")
+    p.add_argument("--prune", action="store_true",
+                   help="(зарезервировано) удалять свойства Notion вне конфига")
+    p.add_argument("--list-fields", dest="list_fields", action="store_true")
+    p.add_argument("--dry-run", dest="dry_run", action="store_true")
+    return p
+
+
+def main(argv=None) -> int:
+    logging.basicConfig(level=os.environ.get("KVETIO_LOG_LEVEL", "INFO"))
+    args = build_arg_parser().parse_args(argv)
+    mapping = load_mapping()
+
+    if args.validate:
+        errors = validate_mapping(mapping)
+        if errors:
+            print(json.dumps({"valid": False, "errors": errors}, ensure_ascii=False))
+            return 1
+        print(json.dumps({"valid": True}, ensure_ascii=False))
+        return 0
+
+    if args.list_fields:
+        sync = NotionSync(notion=None, db=None, mapping=mapping)
+        print(sync.list_fields(args.entity))
+        return 0
+
+    sync = NotionSync(notion=_make_notion(), db=_make_db(), mapping=mapping)
+
+    if args.entity == "dossiers":
+        result = sync.sync_dossiers(dry_run=args.dry_run)
+    elif args.ensure_schema:
+        result = sync.ensure_schema(args.entity, dry_run=args.dry_run)
+    elif args.backfill:
+        result = sync.backfill(args.entity, dry_run=args.dry_run)
+    elif args.reverse:
+        result = sync.sync_reverse(args.entity, dry_run=args.dry_run)
+    elif args.forward:
+        result = sync.sync_forward(args.entity, dry_run=args.dry_run)
+    else:  # --all (default)
+        result = sync.sync_all(args.entity, dry_run=args.dry_run)
+
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
