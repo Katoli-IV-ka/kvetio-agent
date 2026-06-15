@@ -1,4 +1,4 @@
-"""Contract-тесты для foundation-миграций 008–010.
+"""Contract-тесты для foundation-миграций 008–014.
 
 Миграции применяются вручную в Supabase SQL Editor, поэтому здесь мы
 проверяем не живую БД, а что SQL-файлы существуют и содержат ключевой DDL.
@@ -52,8 +52,20 @@ def test_migration_012_bot():
     assert "CREATE TABLE IF NOT EXISTS bot_dialog_state" in sql
 
 
-def test_migration_013_drop_pipeline_runs():
-    sql = _read("013_drop_pipeline_runs.sql")
+def test_migration_013_contacts_v2():
+    sql = _read("013_contacts_v2.sql")
+    assert "ADD COLUMN IF NOT EXISTS contact_type" in sql
+    assert "ADD COLUMN IF NOT EXISTS phone" in sql
+    assert "ADD COLUMN IF NOT EXISTS instagram_url" in sql
+    assert "ADD COLUMN IF NOT EXISTS facebook_url" in sql
+    assert "ADD COLUMN IF NOT EXISTS info" in sql
+    assert "ADD COLUMN IF NOT EXISTS contact_result" in sql
+    assert "CREATE TABLE IF NOT EXISTS contact_companies" in sql
+    assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
+
+
+def test_migration_014_drop_pipeline_runs():
+    sql = _read("014_drop_pipeline_runs.sql")
     assert "DROP TABLE IF EXISTS pipeline_runs" in sql
     # run_logs must NOT be dropped — only pipeline_runs goes away
     assert "DROP TABLE IF EXISTS run_logs" not in sql
