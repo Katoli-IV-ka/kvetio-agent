@@ -42,3 +42,18 @@ def test_migration_011_notion_sync_fields():
     assert "ALTER TABLE contacts" in sql
     assert "ALTER TABLE dossiers" in sql
     assert "notion_page_id" in sql
+
+
+def test_migration_012_bot():
+    sql = _read("012_bot.sql")
+    assert "CREATE TABLE IF NOT EXISTS pipeline_runs" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_users" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_presets" in sql
+    assert "CREATE TABLE IF NOT EXISTS bot_dialog_state" in sql
+
+
+def test_migration_013_drop_pipeline_runs():
+    sql = _read("013_drop_pipeline_runs.sql")
+    assert "DROP TABLE IF EXISTS pipeline_runs" in sql
+    # run_logs must NOT be dropped — only pipeline_runs goes away
+    assert "DROP TABLE IF EXISTS run_logs" not in sql
