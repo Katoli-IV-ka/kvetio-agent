@@ -280,3 +280,28 @@ def test_backfill_imports_reverse_fields_by_page_id():
     result = sync.backfill("companies")
     assert result["updated"] == 1
     assert db.tables["companies"][0]["outreach_status"] == "Won"
+
+
+def test_md_to_blocks_makes_heading_and_paragraphs():
+    blocks = ns.md_to_blocks("О компании", "Строка 1\n\nСтрока 2")
+    assert blocks[0]["type"] == "heading_2"
+    assert blocks[0]["heading_2"]["rich_text"][0]["text"]["content"] == "О компании"
+    paras = [b for b in blocks if b["type"] == "paragraph"]
+    assert len(paras) == 2
+    assert paras[0]["paragraph"]["rich_text"][0]["text"]["content"] == "Строка 1"
+
+
+def test_sync_dossier_appends_blocks_to_company_page():
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb([])
+    db.tables["companies"] = [{"domain": "acme.com", "notion_page_id": "page-1"}]
+    db.tables["dossiers"] = [{"company_domain": "acme.com",
+                              "summary_md": "## О компании\nтекст",
+                              "audit_md": "вывод"}]
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.sync_dossiers()
+    assert result["updated"] == 1
+    children = notion.pages["page-1"]["children"]
+    assert any(b["type"] == "heading_2" for b in children)

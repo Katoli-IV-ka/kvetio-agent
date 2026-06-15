@@ -119,6 +119,20 @@ def from_notion_property(notion_type: str, prop: dict):
     raise ValueError(f"unsupported notion_type: {notion_type}")
 
 
+def md_to_blocks(heading: str, body: str) -> list[dict]:
+    """Минимальный рендер: heading_2 + по абзацу paragraph на каждый блок текста."""
+    blocks = [{
+        "object": "block", "type": "heading_2",
+        "heading_2": {"rich_text": [{"type": "text", "text": {"content": heading}}]},
+    }]
+    for para in [p.strip() for p in (body or "").split("\n\n") if p.strip()]:
+        blocks.append({
+            "object": "block", "type": "paragraph",
+            "paragraph": {"rich_text": [{"type": "text", "text": {"content": para}}]},
+        })
+    return blocks
+
+
 class NotionGateway:
     """Обёртка над notion-client. Изолирует API для тестируемости."""
     def __init__(self, client):
@@ -291,3 +305,28 @@ class NotionSync:
         """Одноразовый импорт reverse-полей из Notion в БД. Сейчас = sync_reverse,
         выделен отдельной командой для явности при миграции."""
         return self.sync_reverse(entity, dry_run=dry_run)
+
+    def sync_dossiers(self, dry_run=False) -> dict:
+        """Пишет summary_md + audit_md в тело страницы компании."""
+        companies = {c["domain"]: c for c in self.db.fetch("companies")
+                     if c.get("notion_page_id")}
+        dossiers = self.db.fetch("dossiers")
+        updated = errors = 0
+        for d in dossiers:
+            company = companies.get(d["company_domain"])
+            if not company:
+                continue
+            try:
+                blocks = []
+                if d.get("summary_md"):
+                    blocks += md_to_blocks("Досье — саммари", d["summary_md"])
+                if d.get("audit_md"):
+                    blocks += md_to_blocks("Аудит", d["audit_md"])
+                if blocks and not dry_run:
+                    self.notion.append_children(company["notion_page_id"], blocks)
+                if blocks:
+                    updated += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("dossier %s: %s", d["company_domain"], exc)
+                errors += 1
+        return {"entity": "dossiers", "updated": updated, "errors": errors}
