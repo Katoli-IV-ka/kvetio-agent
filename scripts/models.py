@@ -166,7 +166,7 @@ class Company:
     ai_direction: str | None = None     # LLM-обоснование скора
 
 
-# ── Contact (DM Enrichment) ──────────────────────────────────────────────────
+# ── Contact ──────────────────────────────────────────────────────────────────
 
 ContactSource = Literal[
     "github", "huggingface", "team_page", "apollo", "wellfound", "arxiv"
@@ -175,13 +175,22 @@ EmailStatus = Literal["verified", "guessed", "bounced", "unknown"]
 OutreachStatus = Literal[
     "not_contacted", "contacted", "replied", "not_interested", "converted"
 ]
+ContactType = Literal["Person", "Company", "Other"]
+ContactResult = Literal[
+    "Не связывались",
+    "Не удалось связаться",
+    "Не релевантный контакт",
+    "Начат диалог",
+    "В процессе",
+    "Другое",
+]
 
 
 @dataclass
 class ContactRecord:
     """Decision-maker contact discovered by one or more DM vectors."""
 
-    company_domain: str
+    company_domain: str          # primary company (backward compat с DM pipeline)
     full_name: str
 
     first_name: str | None = None
@@ -202,3 +211,15 @@ class ContactRecord:
     confidence: Confidence = "medium"
 
     raw_payload: dict = field(default_factory=dict)
+
+    # ── V2: новые поля для ручного управления контактами ─────────────────────
+    contact_type: ContactType = "Person"
+    phone: str | None = None
+    instagram_url: str | None = None
+    facebook_url: str | None = None
+    info: str | None = None
+    contact_result: ContactResult | None = None
+    # Список company_domain для many-to-many (заполняется из contact_companies)
+    company_domains: list[str] = field(default_factory=list)
+    # notion_page_id компаний — заполняется при синке для поля "Компании"
+    company_page_ids: list[str] = field(default_factory=list)
