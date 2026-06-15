@@ -38,6 +38,7 @@ MAPPING_PATH = _REPO_ROOT / "config" / "notion_mapping.yaml"
 
 VALID_NOTION_TYPES = {
     "title", "rich_text", "url", "email", "number", "select", "multi_select", "date",
+    "phone_number", "relation",
 }
 VALID_DIRECTIONS = {"forward", "reverse"}
 
@@ -50,6 +51,8 @@ NOTION_TYPE_SCHEMA = {
     "select": {"select": {}},
     "multi_select": {"multi_select": {}},
     "date": {"date": {}},
+    "phone_number": {"phone_number": {}},
+    "relation": {"relation": {}},
 }
 
 
@@ -93,6 +96,11 @@ def to_notion_property(notion_type: str, value) -> dict:
         return {"multi_select": [{"name": str(v)} for v in items]}
     if notion_type == "date":
         return {"date": {"start": str(value)} if value else None}
+    if notion_type == "phone_number":
+        return {"phone_number": value if value else None}
+    if notion_type == "relation":
+        page_ids = value or []
+        return {"relation": [{"id": pid} for pid in page_ids]}
     raise ValueError(f"unsupported notion_type: {notion_type}")
 
 
@@ -116,6 +124,10 @@ def from_notion_property(notion_type: str, prop: dict):
     if notion_type == "date":
         d = prop.get("date")
         return d.get("start") if d else None
+    if notion_type == "phone_number":
+        return prop.get("phone_number")
+    if notion_type == "relation":
+        return [item["id"] for item in prop.get("relation", [])]
     raise ValueError(f"unsupported notion_type: {notion_type}")
 
 
@@ -131,6 +143,37 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
             "paragraph": {"rich_text": [{"type": "text", "text": {"content": para}}]},
         })
     return blocks
+
+
+def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
+    """Добавляет company_page_ids к каждой строке контакта.
+
+    Делает два запроса:
+      1. contact_companies → строит mapping contact_id -> [domain]
+      2. companies -> строит mapping domain -> notion_page_id
+
+    Используется в sync_forward для entity='contacts'.
+    """
+    contact_companies = db.fetch("contact_companies")
+    companies = db.fetch("companies")
+
+    page_id_by_domain: dict[str, str] = {
+        c["domain"]: c["notion_page_id"]
+        for c in companies
+        if c.get("notion_page_id")
+    }
+
+    domains_by_contact: dict[str, list[str]] = {}
+    for cc in contact_companies:
+        cid = cc["contact_id"]
+        domains_by_contact.setdefault(cid, []).append(cc["company_domain"])
+
+    enriched = []
+    for row in rows:
+        domains = domains_by_contact.get(row.get("id", ""), [])
+        page_ids = [page_id_by_domain[d] for d in domains if d in page_id_by_domain]
+        enriched.append({**row, "company_page_ids": page_ids})
+    return enriched
 
 
 class NotionGateway:
@@ -208,6 +251,8 @@ class NotionSync:
         db_id = self._db_id(entity)
         fields = self._fields(entity, "forward")
         rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
+        if entity == "contacts":
+            rows = enrich_contact_rows(rows, self.db)
         created = updated = errors = 0
         for row in rows:
             try:

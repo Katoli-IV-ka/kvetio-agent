@@ -6,7 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from contacts_store import list_contacts, mark_enriched, upsert_contact
+from contacts_store import (
+    get_company_domains_for_contact,
+    link_contact_to_companies,
+    list_contacts,
+    mark_enriched,
+    upsert_contact,
+)
 
 
 @pytest.fixture
@@ -85,3 +91,39 @@ def test_upsert_contact_includes_personal_website(mock_store):
     call_args = store._client.table.return_value.upsert.call_args
     row = call_args[0][0]
     assert row.get("personal_website") == "https://sarahchen.dev"
+
+
+def test_upsert_contact_saves_v2_fields(mock_store):
+    contact = {
+        "company_domain": "acme.com",
+        "full_name": "Alice Kim",
+        "contact_type": "Person",
+        "phone": "+1-555-0100",
+        "instagram_url": "https://instagram.com/alicekim",
+        "facebook_url": "https://facebook.com/alicekim",
+        "info": "Head of ML at Acme, ex-Google Brain",
+        "contact_result": "Не связывались",
+    }
+    upsert_contact(mock_store, contact)
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["contact_type"] == "Person"
+    assert row["phone"] == "+1-555-0100"
+    assert row["instagram_url"] == "https://instagram.com/alicekim"
+    assert row["facebook_url"] == "https://facebook.com/alicekim"
+    assert row["info"] == "Head of ML at Acme, ex-Google Brain"
+    assert row["contact_result"] == "Не связывались"
+
+
+def test_link_contact_to_companies(mock_store):
+    link_contact_to_companies(mock_store, "uuid-123", ["acme.com", "beta.io"])
+    calls = mock_store._client.table.call_args_list
+    table_names = [c[0][0] for c in calls]
+    assert "contact_companies" in table_names
+
+
+def test_get_company_domains_for_contact(mock_store):
+    mock_store._client.table.return_value.execute.return_value = MagicMock(
+        data=[{"company_domain": "acme.com"}, {"company_domain": "beta.io"}]
+    )
+    domains = get_company_domains_for_contact(mock_store, "uuid-123")
+    assert domains == ["acme.com", "beta.io"]
