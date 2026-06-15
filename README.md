@@ -1,204 +1,214 @@
 # kvetio-agent
 
-Рабочий Python-проект Kvetio. Скрипты, которые вызывают агенты Claude, чтобы собирать и квалифицировать компании-кандидаты в покупатели данных.
+Pipeline лидогенерации Kvetio: агент Claude собирает и квалифицирует компании —
+кандидаты в покупатели данных. Запускается как **Claude Code Routine** в облаке
+Anthropic (по подписке, без Anthropic API), детерминированную работу выполняют
+Python-скрипты, данные живут в Supabase, витрина — Notion, управление и
+уведомления — Telegram.
 
-Полная архитектура и бизнес-контекст — в репозитории [kvetio](https://github.com/Katoli-IV-ka/kvetio) (`docs/context/`).
+> Статус документа: целевая архитектура на **Claude Code Routines**. Часть кода в
+> репозитории ещё относится к старой схеме (worker + очередь + `claude -p` по API).
+> Что и как мигрировать — см. [docs/RUNBOOK.md](docs/RUNBOOK.md).
 
-## Принцип работы
+---
 
-- **Промпты в `agents/prompts/*.md`** определяют, что делает каждый агент (research, collection, verify, scoring, monitor, source_expansion).
-- **Python-скрипты в `scripts/`** — детерминированный слой, который агенты вызывают через `Bash`. Это **источник истины** для рабочего кода. Никакой параллельной упаковки в Python-пакет нет.
-- **Supabase** — единое runtime-хранилище (`companies`, `signals`, `run_logs`). Схема — в `sql/`.
-- **Notion** — рабочий интерфейс для ручного аутрича. Синхронизация — отдельный шаг pipeline.
+## Как это работает
 
-## Быстрый старт
-
-```bash
-# 1. Окружение
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Конфигурация
-cp .env.example .env
-# заполнить: SUPABASE_URL, SUPABASE_KEY, NOTION_TOKEN, NOTION_COMPANIES_DB_ID,
-#            ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-
-# 3. Применить миграции Supabase (выполнить SQL из sql/ в порядке номеров)
-
-# 4. Sanity check
-pytest
+```
+                         ┌──────────────────────────────────────────┐
+   Telegram (ты)         │     Claude Code Routine (облако Anthropic) │
+        │                │     промпт = agents/prompts/pipeline_task  │
+        │ /run, /quickrun │     репо = kvetio-agent (клонируется)      │
+        ▼                │     env = секреты + network + setup script │
+  bot/gateway.py  ──POST /fire──►  агент по шагам зовёт scripts/*.py   │
+  (Railway, web)         │              │                              │
+        ▲                │              ▼                              │
+        │                │   Supabase (companies, signals, run_logs)  │
+        │                │   Notion (витрина) · источники (GH/HF/YC)  │
+        │                │              │                              │
+        └──── Telegram ◄──── scripts/notify.py (последний шаг рутины) │
+                         └──────────────────────────────────────────┘
+        ▲
+        │ Schedule-триггер (ежедневно) запускает ту же рутину сам
 ```
 
-## Раскладка
+Три факта, которые определяют всю схему:
+
+1. **Рутина крутится в облаке Anthropic** и расходует подписку (Pro/Max/Team), а не
+   API-ключ. Ноутбук может быть выключен.
+2. **`/fire` — fire-and-forget.** POST на endpoint рутины возвращает только
+   `session_id`; callback о завершении не приходит. Поэтому уведомление о
+   результате шлёт **сама рутина последним шагом** (`scripts/notify.py`), а не
+   внешний процесс.
+3. **Бот ничего не исполняет.** `bot/gateway.py` только принимает твои команды,
+   проверяет allowlist и дёргает `/fire`. Очереди и поллера (`worker`) в этой
+   модели нет.
+
+### Два триггера на одну рутину
+
+- **Schedule** — ежедневный автозапуск (настраивается в claude.ai/code, мин. интервал 1 час).
+- **API (`/fire`)** — ручной запуск: Telegram-бот POST-ит на endpoint, опционально
+  передавая в поле `text` параметры (сегменты, лимит) поверх сохранённого промпта.
+
+---
+
+## Раскладка репозитория
 
 ```
 kvetio-agent/
-├── pyproject.toml             # конфиг ruff/pytest
-├── requirements.txt           # runtime + dev зависимости
-├── .env.example               # шаблон секретов
 ├── agents/
-│   ├── context/icp_summary.md # короткий справочник ICP для агентов
-│   └── prompts/               # один промпт = одна агентская задача
-│       ├── research_task.md
-│       ├── collection_task.md
+│   ├── context/icp_summary.md     # короткий справочник ICP для агента
+│   └── prompts/                   # один промпт = одна задача агента
+│       ├── pipeline_task.md       # ★ промпт рутины: полный прогон + финальный notify
 │       ├── discovery_task.md      # этап 1: источники + резолв сайта → discovered
 │       ├── relevance_task.md      # этап 2: анализ сайта + верификация → relevant
-│       ├── discover_verify_task.md  # УСТАРЕЛ (заменён на discovery + relevance)
-│       ├── verify_task.md
-│       ├── scoring_task.md       # этап 2.5: триаж-гейт, скор + qualified/triaged_out (Notion-синк → этап 5)
-│       ├── enrichment_task.md    # этап 3: сбор ручек-источников (sources_gathered)
-│       ├── analysis_task.md      # этап 4: оркестратор анализа → analyzed
-│       ├── analysis_section_task.md  # этап 4: секционный под-агент (company/product/...)
-│       ├── analysis_audit_task.md    # этап 4: под-агент аудита (синтез 5 нот)
-│       ├── conclusions_task.md   # этап 5: сборка досье + Notion → dossier_ready
-│       ├── monitor_task.md
-│       └── source_expansion_task.md
+│       ├── scoring_task.md        # этап 2.5: триаж-гейт → qualified/triaged_out
+│       ├── enrichment_task.md     # этап 3: сбор ссылок-источников → sources_gathered
+│       ├── dm_enrich_task.md      # этап 3: обогащение контактов (decision makers)
+│       ├── analysis_task.md       # этап 4: оркестратор анализа → analyzed
+│       ├── analysis_section_task.md / analysis_audit_task.md  # под-агенты этапа 4
+│       ├── conclusions_task.md    # этап 5: сборка досье + Notion → dossier_ready
+│       ├── monitor_task.md        # мониторинг изменений
+│       ├── research_task.md / collection_task.md / verify_task.md / source_expansion_task.md
+│       └── discover_verify_task.md  # УСТАРЕЛ (заменён discovery + relevance)
 ├── config/
-│   ├── icp.yaml               # сегменты ICP (Stage 0)
-│   ├── scoring.yaml           # веса score (Stage 2)
-│   ├── sources.yaml           # registry источников и их настроек
-│   └── notion_mapping.yaml    # декларативный маппинг полей БД → Notion
-├── data/
-│   └── known_ats_slugs.csv    # ручной seed-list slug → company
-├── scripts/                   # ★ канонические скрипты — то, что вызывают агенты
-│   ├── models.py              # доменные типы (RawSignal, Company, Evidence, …)
-│   ├── normalize.py           # normalize_domain, fuzzy company match
-│   ├── http_client.py         # rate-limited HTTP с retries
-│   ├── greenhouse.py          # источник: Greenhouse Job Board
-│   ├── github.py              # источник: GitHub Code Search по org train.py
-│   ├── org_cache.py           # Supabase TTL-кэш GitHub org metadata
-│   ├── lever.py               # источник: Lever
-│   ├── huggingface.py         # источник: HuggingFace orgs/models
-│   ├── yc_browser.py          # источник: Y Combinator company browser
-│   ├── supabase_store.py      # CRUD над Supabase + дедуп + покрытие
-│   ├── score.py               # детерминированный scoring engine
-│   ├── notify.py              # уведомления в Telegram
-│   ├── enrichment.py          # этап 3: резолверы ссылок-источников → source_links
-│   ├── dossier_store.py       # CRUD: source_links, analysis_notes, dossiers (этапы 3-5)
-│   ├── notion_sync.py         # синк Supabase ↔ Notion (config-driven)
-│   └── telegram_routines.py   # операционные Telegram-дайджесты и очереди
-├── sql/                       # миграции Postgres/Supabase
-│   ├── 001_init.sql
-│   ├── 002_github_org_cache.sql
-│   ├── 003_source_page_url.sql
-│   ├── 004_signals_source_page_url.sql
-│   └── 008_source_links.sql, 009_analysis_notes.sql, 010_dossiers.sql  # данные досье
-└── tests/
-    ├── conftest.py
-    ├── fixtures/
-    ├── test_normalize.py
-    ├── test_scoring.py
-    ├── test_greenhouse.py
-    ├── test_github.py
-    ├── test_huggingface.py
-    ├── test_yc_browser.py
-    └── test_dedup.py
+│   ├── icp.yaml                   # сегменты ICP (Stage 0)
+│   ├── scoring.yaml               # веса score (Stage 2)
+│   ├── sources.yaml               # registry источников
+│   └── notion_mapping.yaml        # маппинг полей БД → Notion
+├── data/known_ats_slugs.csv       # ручной seed-list slug → company
+├── scripts/                       # ★ канонические CLI-скрипты — то, что зовёт агент
+│   ├── models.py · normalize.py · http_client.py   # ядро
+│   ├── greenhouse.py · lever.py · github.py · huggingface.py · yc_browser.py  # источники
+│   ├── org_cache.py               # TTL-кэш GitHub org metadata в Supabase
+│   ├── supabase_store.py          # CRUD над Supabase + дедуп + покрытие + run_logs
+│   ├── score.py                   # детерминированный scoring engine
+│   ├── enrichment.py · dossier_store.py            # этапы 3–5
+│   ├── contact_enricher.py · contacts_store.py · dm_*.py  # контакты / decision makers
+│   ├── notion_sync.py             # синк Supabase ↔ Notion (config-driven, не MCP)
+│   ├── notify.py                  # уведомления в Telegram (финальный шаг рутины)
+│   └── telegram_routines.py       # дайджесты/очереди (daily_digest, hot_leads, stale_review)
+├── bot/                           # Telegram-бот-триггер (хостится на Railway)
+│   ├── gateway.py                 # FastAPI: webhook, команды, allowlist, POST /fire
+│   ├── access.py                  # allowlist + роли (admin/viewer) из bot_users
+│   ├── dialog.py · presets.py     # мастер /run и пресеты параметров запуска
+│   └── set_webhook.py             # идемпотентный setWebhook при деплое
+├── sql/                           # миграции Supabase (применять по номерам)
+├── tests/                         # pytest: источники, скоринг, дедуп, синк, бот
+├── railway.toml                   # сервис web (бот-триггер)
+└── requirements.txt
 ```
 
-## Как агент использует скрипты
+Источник истины: код — это `scripts/`; данные — Supabase; промпты — `agents/prompts/`.
 
-Каждый промпт в `agents/prompts/` описывает задачу и явно перечисляет команды:
+---
+
+## Настройка рутины (claude.ai/code)
+
+1. Открыть [claude.ai/code/routines](https://claude.ai/code/routines) → **New routine**.
+2. **Промпт** — содержимое `agents/prompts/pipeline_task.md`. Промпт самодостаточен:
+   читает сегменты, прогоняет этапы, последним шагом вызывает `notify.py`.
+3. **Репозиторий** — `kvetio-agent` (клонируется при каждом запуске; ветка по умолчанию).
+4. **Environment** (см. таблицу секретов ниже):
+   - **Network access** — уровень с выходом к Supabase, Notion, Telegram и источникам
+     (Greenhouse, GitHub, HuggingFace, YC).
+   - **Environment variables** — все секреты из таблицы.
+   - **Setup script** — `pip install -r requirements.txt` (результат кэшируется).
+5. **Триггеры**: добавить **Schedule** (ежедневно) и **API**. После сохранения у
+   API-триггера сгенерировать токен — он показывается один раз, сохранить в секреты бота.
+6. **Коннекторы** — отключить все, что рутине не нужно.
+
+Ручной разовый прогон — кнопка **Run now** на странице рутины.
+
+### Запуск рутины через `/fire`
 
 ```bash
-# Пример из collection_task.md
-python scripts/yc_browser.py --segment medical-imaging --limit 100
-python scripts/supabase_store.py --coverage
-python scripts/notify.py --run-summary '{"task":"collection_task", ...}'
+curl -X POST https://api.anthropic.com/v1/claude_code/routines/<ROUTINE_ID>/fire \
+  -H "Authorization: Bearer <ROUTINE_TOKEN>" \
+  -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "segments=medical-imaging,robotics-ai; limit=30"}'
 ```
 
-Скрипты пишут в stdout JSON-совместимый вывод и читают stdin/аргументы. Никаких импортов между скриптами в обход явных API — каждый скрипт самодостаточен.
+Поле `text` — свободная строка с контекстом запуска поверх сохранённого промпта.
+Именно этот POST делает Telegram-бот по команде `/run`/`/quickrun`.
 
-## Telegram routines
+---
 
-`scripts/telegram_routines.py` собирает операционные сообщения из Supabase и отправляет их через существующий Telegram Bot API слой.
+## Telegram-бот-триггер (Railway)
+
+Бот только принимает команды и дёргает `/fire`. Деплоится отдельным сервисом на Railway.
 
 ```bash
-# Проверить текст и payload без отправки в Telegram
-python scripts/telegram_routines.py daily_digest --dry-run
-python scripts/telegram_routines.py hot_leads --limit 5 --dry-run
-python scripts/telegram_routines.py stale_review --days 30 --limit 10 --dry-run
+# Локальная отладка команд:
+uvicorn bot.gateway:app --host 0.0.0.0 --port 8000
+curl localhost:8000/healthz
 
-# Отправить в Telegram-чат из TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
-python scripts/telegram_routines.py daily_digest
-python scripts/telegram_routines.py hot_leads --limit 5
-python scripts/telegram_routines.py stale_review --days 30 --limit 10
+# После деплоя — выставить Telegram webhook (идемпотентно):
+python -m bot.set_webhook
 ```
 
-Доступные routines:
-- `daily_digest` — total/by-status статистика и покрытие по ICP-сегментам.
-- `hot_leads` — enriched + Hot компании, отсортированные по score.
-- `stale_review` — компании без проверки или с устаревшим `last_verified`.
+Пользователей завести в таблице `bot_users` (роль `admin` — право запускать рутину).
 
-## Telegram Management Bot
-
-`bot/` — Telegram-бот для управления pipeline-агентом. Поддерживает ручной запуск pipeline через inline-кнопки, уведомления о результатах, историю ранов и пресеты.
-
-### Компоненты
-
-| Файл | Ответственность |
-|---|---|
-| `bot/gateway.py` | FastAPI: webhook, команды, allowlist, `/runs`, `/healthz` |
-| `bot/dialog.py` | Мастер `/run` на inline-кнопках, состояние в `bot_dialog_state` |
-| `bot/runs.py` | `RunConfig`, CRUD `pipeline_runs`, status-машина, concurrency lock |
-| `bot/worker.py` | Поллер очереди, триггер агента, heartbeat, сбор Summary |
-| `bot/access.py` | Allowlist + роли (`admin`/`viewer`) из `bot_users` |
-| `bot/presets.py` | Именованные пресеты `RunConfig`, `/quickrun`, default |
-| `bot/set_webhook.py` | Идемпотентный `setWebhook` при деплое |
-| `sql/012_bot.sql` | Миграция: `pipeline_runs`, `bot_users`, `bot_presets`, `bot_dialog_state` |
-
-### Команды
+Команды:
 
 | Команда | Роль | Назначение |
 |---|---|---|
-| `/run` | admin | Мастер запуска (inline-кнопки: сегменты → лимит → стадии → флаги → подтверждение) |
-| `/quickrun [preset]` | admin | Быстрый запуск по пресету |
-| `/status` | all | Текущий активный ран |
-| `/cancel` | admin | Отменить очередной/активный ран |
-| `/last [n]` | all | История последних n ранов |
-| `/presets` | all | Список пресетов; `save`/`delete` для admin |
-| `/digest`, `/hot`, `/stale` | all | Дайджест, Hot-лиды, очередь проверки |
+| `/run` | admin | Мастер запуска (кнопки), собирает параметры → POST `/fire` |
+| `/quickrun [preset]` | admin | Быстрый запуск по пресету → POST `/fire` |
+| `/status`, `/last [n]` | all | Состояние/история из `run_logs` (пишутся скриптами внутри рутины) |
+| `/digest`, `/hot`, `/stale` | all | Дайджест, Hot-лиды, очередь проверки (чтение из Supabase) |
 | `/whoami`, `/help`, `/ping` | all | Инфо, справка, health-check |
 
-### Переменные окружения (Railway)
+---
 
-```
-TELEGRAM_BOT_TOKEN          — токен бота от @BotFather
-TELEGRAM_WEBHOOK_SECRET     — секрет для X-Telegram-Bot-Api-Secret-Token
-INTERNAL_API_TOKEN          — Bearer-токен для POST /runs (bot ↔ worker)
-BOT_WEBHOOK_URL             — https://<app>.up.railway.app/telegram/webhook
-SUPABASE_URL / SUPABASE_KEY
-ANTHROPIC_API_KEY
-```
+## Секреты
 
-### Деплой на Railway
+В новой схеме секреты живут в **двух местах**:
+
+| Переменная | В Environment рутины | В Railway (бот) | Зачем |
+|---|:--:|:--:|---|
+| `SUPABASE_URL`, `SUPABASE_KEY` | ✅ | ✅ | хранилище (рутина пишет; бот читает для дайджестов) |
+| `NOTION_TOKEN`, `NOTION_COMPANIES_DB_ID`, `NOTION_CONTACTS_DB_ID` | ✅ | — | синк-витрина |
+| `GITHUB_TOKEN`, `HF_TOKEN` | ✅ | — | источники сигналов |
+| `TELEGRAM_BOT_TOKEN` | ✅ | ✅ | рутина шлёт уведомления; бот отвечает на команды |
+| `TELEGRAM_CHAT_ID` | ✅ | — | куда рутина шлёт сводку |
+| `ROUTINE_FIRE_URL`, `ROUTINE_TOKEN` | — | ✅ | бот дёргает `/fire` рутины |
+| `TELEGRAM_WEBHOOK_SECRET`, `BOT_WEBHOOK_URL` | — | ✅ | приём webhook от Telegram |
+
+`ANTHROPIC_API_KEY` и `INTERNAL_API_TOKEN` в новой схеме **не нужны** (API-запуска и
+внутренней очереди больше нет).
+
+---
+
+## Локальная разработка и тесты
 
 ```bash
-# После деплоя — выставить webhook (идемпотентно)
-python -m bot.set_webhook
-
-# Применить миграцию БД
-# Выполнить sql/012_bot.sql в Supabase SQL Editor
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # заполнить для локального прогона скриптов/бота
+pytest                      # источники, скоринг, дедуп, синк, бот
+ruff check .
 ```
 
-`railway.toml` описывает два сервиса: `web` (FastAPI) и `worker` (поллер очереди).
+Отдельные скрипты можно гонять напрямую — это полезно для отладки этапов:
 
-## Текущий статус
+```bash
+python scripts/supabase_store.py --coverage
+python scripts/yc_browser.py --segment medical-imaging --limit 100
+python scripts/notion_sync.py --entity companies --all
+python scripts/telegram_routines.py daily_digest --dry-run
+```
 
-- ✅ Greenhouse, GitHub, HuggingFace, YC Browser — рабочие источники.
-- ✅ Supabase — единый runtime store, дедупликация (exact + fuzzy) реализована.
-- ✅ Scoring — детерминированная функция от Company → ScoreBreakdown.
-- ✅ Telegram-уведомления.
-- ✅ Telegram routines для ежедневных дайджестов и review-очередей.
-- ✅ Notion sync — детерминированный `scripts/notion_sync.py` + конфиг
-  `config/notion_mapping.yaml`. БД — источник истины; Notion — курируемая витрина
-  (forward), reverse-синк whitelist ручных полей. Поля настраиваются правкой YAML
-  + `--ensure-schema`.
+---
 
 ## Принципы
 
-1. **Скрипт = pure CLI.** Вход через args/stdin, выход через stdout JSON. Никаких скрытых side-effect-ов кроме явно заявленных (запись в Supabase, отправка в Telegram).
+1. **Скрипт = pure CLI.** Вход через args/stdin, выход через stdout JSON. Side-effect'ы
+   только явные (запись в Supabase, отправка в Telegram).
 2. **Scoring = pure function.** Тестируется табличными тестами на фикстурах.
-3. **Supabase = source of truth** для runtime-данных. SQLite/файлы не используются.
-4. **Идемпотентность.** Повторный запуск с тем же входом не порождает дубликатов.
+3. **Supabase = source of truth** для runtime-данных.
+4. **Идемпотентность.** Повторный запуск с тем же входом не плодит дубликаты.
 5. **Evidence обязателен.** Без `evidence_url` и `signal_date` сигнал невалиден.
+6. **Уведомляет сама рутина.** Финальный шаг промпта — `notify.py`; внешнего callback нет.
