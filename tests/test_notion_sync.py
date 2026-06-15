@@ -321,3 +321,82 @@ def test_build_arg_parser_accepts_flags():
     assert args.entity == "companies"
     assert args.all is True
     assert args.dry_run is True
+
+
+def test_contacts_mapping_has_v2_fields():
+    mapping = ns.load_mapping()
+    contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
+    assert "Name" in contacts_fields
+    assert "Тип контакта" in contacts_fields
+    assert "Phone" in contacts_fields
+    assert "Instagram" in contacts_fields
+    assert "Facebook" in contacts_fields
+    assert "Источник" in contacts_fields
+    assert "Информация о контакте" in contacts_fields
+    assert "Результаты связи" in contacts_fields
+    assert "Компании" in contacts_fields
+
+
+def test_to_notion_property_phone_number():
+    result = ns.to_notion_property("phone_number", "+1-555-0100")
+    assert result == {"phone_number": "+1-555-0100"}
+
+
+def test_to_notion_property_phone_number_none():
+    result = ns.to_notion_property("phone_number", None)
+    assert result == {"phone_number": None}
+
+
+def test_to_notion_property_relation():
+    result = ns.to_notion_property("relation", ["page-1", "page-2"])
+    assert result == {"relation": [{"id": "page-1"}, {"id": "page-2"}]}
+
+
+def test_to_notion_property_relation_empty():
+    result = ns.to_notion_property("relation", [])
+    assert result == {"relation": []}
+
+
+def test_validate_mapping_accepts_phone_number_and_relation():
+    mapping = {
+        "contacts": {
+            "notion_database_id_env": "NOTION_CONTACTS_DB_ID",
+            "fields": [
+                {"db_column": "full_name",        "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
+                {"db_column": "phone",            "notion_property": "Phone",     "notion_type": "phone_number", "direction": "forward"},
+                {"db_column": "company_page_ids", "notion_property": "Компании",  "notion_type": "relation",     "direction": "forward"},
+            ],
+        }
+    }
+    errors = ns.validate_mapping(mapping)
+    assert errors == []
+
+
+def test_enrich_contact_rows_adds_company_page_ids():
+    rows = [
+        {"id": "c1", "full_name": "Alice", "company_domain": "acme.com"},
+        {"id": "c2", "full_name": "Bob",   "company_domain": "beta.io"},
+    ]
+    contact_companies = [
+        {"contact_id": "c1", "company_domain": "acme.com"},
+        {"contact_id": "c1", "company_domain": "beta.io"},
+        {"contact_id": "c2", "company_domain": "beta.io"},
+    ]
+    companies = [
+        {"domain": "acme.com", "notion_page_id": "np-acme"},
+        {"domain": "beta.io",  "notion_page_id": "np-beta"},
+    ]
+
+    class FakeDb2:
+        def fetch(self, table, status_filter=None):
+            if table == "contact_companies":
+                return contact_companies
+            if table == "companies":
+                return companies
+            return []
+
+    enriched = ns.enrich_contact_rows(rows, FakeDb2())
+    c1 = next(r for r in enriched if r["id"] == "c1")
+    c2 = next(r for r in enriched if r["id"] == "c2")
+    assert set(c1["company_page_ids"]) == {"np-acme", "np-beta"}
+    assert c2["company_page_ids"] == ["np-beta"]

@@ -64,8 +64,10 @@ def test_migration_013_contacts_v2():
     assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
 
 
+
 def test_migration_014_drop_pipeline_runs():
     sql = _read("014_drop_pipeline_runs.sql")
     assert "DROP TABLE IF EXISTS pipeline_runs" in sql
     # run_logs must NOT be dropped — only pipeline_runs goes away
     assert "DROP TABLE IF EXISTS run_logs" not in sql
+
