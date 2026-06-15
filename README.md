@@ -130,6 +130,59 @@ python scripts/telegram_routines.py stale_review --days 30 --limit 10
 - `hot_leads` — enriched + Hot компании, отсортированные по score.
 - `stale_review` — компании без проверки или с устаревшим `last_verified`.
 
+## Telegram Management Bot
+
+`bot/` — Telegram-бот для управления pipeline-агентом. Поддерживает ручной запуск pipeline через inline-кнопки, уведомления о результатах, историю ранов и пресеты.
+
+### Компоненты
+
+| Файл | Ответственность |
+|---|---|
+| `bot/gateway.py` | FastAPI: webhook, команды, allowlist, `/runs`, `/healthz` |
+| `bot/dialog.py` | Мастер `/run` на inline-кнопках, состояние в `bot_dialog_state` |
+| `bot/runs.py` | `RunConfig`, CRUD `pipeline_runs`, status-машина, concurrency lock |
+| `bot/worker.py` | Поллер очереди, триггер агента, heartbeat, сбор Summary |
+| `bot/access.py` | Allowlist + роли (`admin`/`viewer`) из `bot_users` |
+| `bot/presets.py` | Именованные пресеты `RunConfig`, `/quickrun`, default |
+| `bot/set_webhook.py` | Идемпотентный `setWebhook` при деплое |
+| `sql/012_bot.sql` | Миграция: `pipeline_runs`, `bot_users`, `bot_presets`, `bot_dialog_state` |
+
+### Команды
+
+| Команда | Роль | Назначение |
+|---|---|---|
+| `/run` | admin | Мастер запуска (inline-кнопки: сегменты → лимит → стадии → флаги → подтверждение) |
+| `/quickrun [preset]` | admin | Быстрый запуск по пресету |
+| `/status` | all | Текущий активный ран |
+| `/cancel` | admin | Отменить очередной/активный ран |
+| `/last [n]` | all | История последних n ранов |
+| `/presets` | all | Список пресетов; `save`/`delete` для admin |
+| `/digest`, `/hot`, `/stale` | all | Дайджест, Hot-лиды, очередь проверки |
+| `/whoami`, `/help`, `/ping` | all | Инфо, справка, health-check |
+
+### Переменные окружения (Railway)
+
+```
+TELEGRAM_BOT_TOKEN          — токен бота от @BotFather
+TELEGRAM_WEBHOOK_SECRET     — секрет для X-Telegram-Bot-Api-Secret-Token
+INTERNAL_API_TOKEN          — Bearer-токен для POST /runs (bot ↔ worker)
+BOT_WEBHOOK_URL             — https://<app>.up.railway.app/telegram/webhook
+SUPABASE_URL / SUPABASE_KEY
+ANTHROPIC_API_KEY
+```
+
+### Деплой на Railway
+
+```bash
+# После деплоя — выставить webhook (идемпотентно)
+python -m bot.set_webhook
+
+# Применить миграцию БД
+# Выполнить sql/012_bot.sql в Supabase SQL Editor
+```
+
+`railway.toml` описывает два сервиса: `web` (FastAPI) и `worker` (поллер очереди).
+
 ## Текущий статус
 
 - ✅ Greenhouse, GitHub, HuggingFace, YC Browser — рабочие источники.
