@@ -42,3 +42,15 @@ def test_migration_011_notion_sync_fields():
     assert "ALTER TABLE contacts" in sql
     assert "ALTER TABLE dossiers" in sql
     assert "notion_page_id" in sql
+
+
+def test_migration_013_contacts_v2():
+    sql = _read("013_contacts_v2.sql")
+    assert "ADD COLUMN IF NOT EXISTS contact_type" in sql
+    assert "ADD COLUMN IF NOT EXISTS phone" in sql
+    assert "ADD COLUMN IF NOT EXISTS instagram_url" in sql
+    assert "ADD COLUMN IF NOT EXISTS facebook_url" in sql
+    assert "ADD COLUMN IF NOT EXISTS info" in sql
+    assert "ADD COLUMN IF NOT EXISTS contact_result" in sql
+    assert "CREATE TABLE IF NOT EXISTS contact_companies" in sql
+    assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
