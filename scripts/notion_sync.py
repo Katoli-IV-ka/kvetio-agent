@@ -210,3 +210,53 @@ class NotionSync:
                 logger.error("forward %s %s: %s", entity, row.get(cfg["db_key"]), exc)
                 errors += 1
         return {"entity": entity, "created": created, "updated": updated, "errors": errors}
+
+    def _page_index(self, entity):
+        """notion_page_id → row, для записей, у которых он есть."""
+        cfg = self._cfg(entity)
+        rows = self.db.fetch(cfg["db_table"])
+        return {r["notion_page_id"]: r for r in rows if r.get("notion_page_id")}
+
+    def sync_reverse(self, entity, dry_run=False) -> dict:
+        cfg = self._cfg(entity)
+        fields = self._fields(entity, "reverse")
+        if not fields:
+            return {"entity": entity, "updated": 0, "errors": 0}
+        index = self._page_index(entity)
+        updated = errors = 0
+        for page_id, row in index.items():
+            try:
+                props = self._read_page_props(page_id)
+                changes = {}
+                for f in fields:
+                    val = from_notion_property(f["notion_type"],
+                                               props.get(f["notion_property"]))
+                    if val != row.get(f["db_column"]):
+                        changes[f["db_column"]] = val
+                if changes and not dry_run:
+                    self.db.update(cfg["db_table"], cfg["db_key"],
+                                   row[cfg["db_key"]], changes)
+                if changes:
+                    updated += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("reverse %s %s: %s", entity, page_id, exc)
+                errors += 1
+        return {"entity": entity, "updated": updated, "errors": errors}
+
+    def _read_page_props(self, page_id):
+        """Свойства страницы из закэшированного query_database."""
+        db_id = None
+        for entity in self.mapping:
+            try:
+                db_id = self._db_id(entity)
+            except RuntimeError:
+                continue
+            for page in self.notion.query_database(db_id):
+                if page["id"] == page_id:
+                    return page.get("properties", {})
+        return {}
+
+    def sync_all(self, entity, dry_run=False) -> dict:
+        rev = self.sync_reverse(entity, dry_run=dry_run)
+        fwd = self.sync_forward(entity, dry_run=dry_run)
+        return {"entity": entity, "reverse": rev, "forward": fwd}

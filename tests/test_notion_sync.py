@@ -187,3 +187,47 @@ def test_forward_is_idempotent():
     assert r1["updated"] == 1
     assert r2["updated"] == 1
     assert len(notion.pages) == 1  # без дублей
+
+
+def test_reverse_pulls_whitelist_into_db():
+    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
+             "status": "qualified", "notion_page_id": "page-1",
+             "outreach_status": None}]
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {
+        "Статус анализа": {"select": {"name": "Contacted"}},
+    }, "children": []}
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.sync_reverse("companies")
+    assert result["updated"] == 1
+    assert db.tables["companies"][0]["outreach_status"] == "Contacted"
+
+
+def test_reverse_skips_rows_without_page_id():
+    rows = [{"domain": "acme.com", "name": "Acme", "notion_page_id": None,
+             "status": "qualified"}]
+    notion = FakeNotion()
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.sync_reverse("companies")
+    assert result["updated"] == 0
+
+
+def test_sync_all_runs_reverse_then_forward():
+    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
+             "status": "qualified", "notion_page_id": "page-1",
+             "outreach_status": None}]
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {
+        "Статус анализа": {"select": {"name": "Replied"}}}, "children": []}
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+    result = sync.sync_all("companies")
+    # reverse подтянул статус в БД:
+    assert db.tables["companies"][0]["outreach_status"] == "Replied"
+    # forward обновил страницу:
+    assert result["forward"]["updated"] == 1
