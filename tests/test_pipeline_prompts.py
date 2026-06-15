@@ -120,3 +120,16 @@ def test_pipeline_full_chain():
         "conclusions_task",
     ):
         assert stage in p
+
+
+def test_conclusions_uses_notion_sync_script_not_mcp():
+    p = _read("conclusions_task.md")
+    assert "scripts/notion_sync.py" in p
+    # Ad-hoc MCP-публикация ушла:
+    assert "Notion MCP" not in p
+    assert "через Notion MCP создай" not in p
+
+
+def test_pipeline_calls_notion_sync_stage():
+    p = _read("pipeline_task.md")
+    assert "scripts/notion_sync.py" in p
