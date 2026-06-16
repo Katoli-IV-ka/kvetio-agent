@@ -79,6 +79,26 @@ class TestFire:
         assert headers["anthropic-beta"] == "experimental-cc-routine-2026-04-01"
         assert headers["anthropic-version"] == "2023-06-01"
 
+    def test_strips_common_env_copy_paste_wrappers(self, monkeypatch) -> None:
+        monkeypatch.setenv("ROUTINE_FIRE_URL", "  https://example.com/fire  ")
+        monkeypatch.setenv("ROUTINE_TOKEN", ' "test-token" ')
+
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"claude_code_session_id": "sess-123"}
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_resp
+
+        with patch("bot.routine.httpx.Client", return_value=mock_client):
+            fire("segments=medical-imaging; limit=5")
+
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.args[0] == "https://example.com/fire"
+        assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer test-token"
+
     def test_sends_correct_body(self, monkeypatch) -> None:
         monkeypatch.setenv("ROUTINE_FIRE_URL", "https://example.com/fire")
         monkeypatch.setenv("ROUTINE_TOKEN", "test-token")
@@ -138,6 +158,29 @@ class TestFire:
 
         assert "error" in result
         assert "403" in result["error"]
+
+    def test_auth_error_returns_actionable_hint(self, monkeypatch) -> None:
+        import httpx as _httpx
+
+        monkeypatch.setenv("ROUTINE_FIRE_URL", "https://example.com/fire")
+        monkeypatch.setenv("ROUTINE_TOKEN", "bad-token")
+
+        err_response = MagicMock()
+        err_response.status_code = 401
+        err_response.text = '{"type":"error","error":{"type":"authentication_error"}}'
+
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.post.side_effect = _httpx.HTTPStatusError(
+            "401", request=MagicMock(), response=err_response
+        )
+
+        with patch("bot.routine.httpx.Client", return_value=mock_client):
+            result = fire("x")
+
+        assert result["error"] == "HTTP 401: ROUTINE_TOKEN rejected by Anthropic"
+        assert "Regenerate the API trigger token" in result["hint"]
 
     def test_network_error_returns_error_dict(self, monkeypatch) -> None:
         monkeypatch.setenv("ROUTINE_FIRE_URL", "https://example.com/fire")
