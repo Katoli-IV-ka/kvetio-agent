@@ -28,9 +28,9 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 load_dotenv(ROOT / ".env")
 
-from bot.access import AccessStore  # noqa: E402
 from bot.config import RunConfig  # noqa: E402
-from bot.dialog import DialogStore, apply_callback, build_step_message  # noqa: E402
+from bot.dialog import apply_encoded_callback, build_step_message  # noqa: E402
+from bot.preset_args import parse_preset_save_args  # noqa: E402
 from bot.presets import PresetsStore  # noqa: E402
 from bot.routine import config_to_text, fire  # noqa: E402
 
@@ -46,10 +46,10 @@ def _make_supabase():
 
 def _deps():
     client = _make_supabase()
+    presets = PresetsStore(client)
+    presets.ensure_seed_presets()
     return (
-        AccessStore(client),
-        PresetsStore(client),
-        DialogStore(client),
+        presets,
         client,
     )
 
@@ -81,20 +81,18 @@ async def telegram_webhook(
 
 
 async def _handle_update(update: dict[str, Any]) -> None:
-    access, presets, dialog, client = _deps()
+    presets, client = _deps()
     tg = TelegramSender()
 
     if "message" in update:
-        await _handle_message(update["message"], access, presets, dialog, client, tg)
+        await _handle_message(update["message"], presets, client, tg)
     elif "callback_query" in update:
-        await _handle_callback(update["callback_query"], access, presets, dialog, tg)
+        await _handle_callback(update["callback_query"], tg)
 
 
 async def _handle_message(
     msg: dict[str, Any],
-    access: AccessStore,
     presets: PresetsStore,
-    dialog: DialogStore,
     client: Any,
     tg: "TelegramSender",
 ) -> None:
@@ -111,18 +109,14 @@ async def _handle_message(
         await tg.send(chat_id, "🏓 pong")
         return
 
-    if not access.is_allowed(chat_id):
-        logger.info("Ignored message from unknown chat_id %s", chat_id)
-        return
+    if command == "/start":
+        await tg.send(chat_id, _start_text())
 
-    role = access.get_role(chat_id)
-    is_admin = (role == "admin")
-
-    if command == "/help":
-        await tg.send(chat_id, _help_text(is_admin))
+    elif command == "/help":
+        await tg.send(chat_id, _help_text())
 
     elif command == "/whoami":
-        await tg.send(chat_id, f"Ваш chat_id: <code>{chat_id}</code>\nРоль: <b>{role}</b>")
+        await tg.send(chat_id, f"Ваш chat_id: <code>{chat_id}</code>")
 
     elif command == "/status":
         row = _fetch_active_run(client)
@@ -150,12 +144,9 @@ async def _handle_message(
             await tg.send(chat_id, "\n".join(lines))
 
     elif command == "/presets":
-        await _handle_presets_command(chat_id, args, is_admin, presets, tg)
+        await _handle_presets_command(chat_id, args, presets, tg)
 
     elif command == "/quickrun":
-        if not is_admin:
-            await tg.send(chat_id, "⛔ Только администраторы могут запускать pipeline")
-            return
         preset_name = args[0] if args else None
         preset = presets.get(preset_name) if preset_name else presets.get_default()
         if not preset:
@@ -179,10 +170,6 @@ async def _handle_message(
             )
 
     elif command == "/run":
-        if not is_admin:
-            await tg.send(chat_id, "⛔ Только администраторы могут запускать pipeline")
-            return
-        dialog.clear(chat_id)
         draft: dict[str, Any] = {
             "segments": [],
             "limit_per_segment": 30,
@@ -190,7 +177,6 @@ async def _handle_message(
             "dry_run": False,
             "notion_sync": True,
         }
-        dialog.save(chat_id, "segments", draft)
         text_out, keyboard = build_step_message("segments", draft)
         await tg.send_with_keyboard(chat_id, text_out, keyboard)
 
@@ -198,14 +184,15 @@ async def _handle_message(
         await _handle_routine_command(command, chat_id, args, tg)
 
     elif command == "/settings":
-        await tg.send(chat_id, "⚙️ Настройки через /presets. Используйте /quickrun [preset] для быстрого запуска.")
+        await tg.send(
+            chat_id,
+            "⚙️ Настройки через /presets. Используйте /run для пошагового запуска "
+            "или /quickrun [preset] для быстрого запуска.",
+        )
 
 
 async def _handle_callback(
     cq: dict[str, Any],
-    access: AccessStore,
-    presets: PresetsStore,
-    dialog: DialogStore,
     tg: "TelegramSender",
 ) -> None:
     chat_id = str(cq.get("message", {}).get("chat", {}).get("id", ""))
@@ -215,21 +202,13 @@ async def _handle_callback(
 
     await tg.answer_callback(cq_id)
 
-    if not access.is_allowed(chat_id):
+    try:
+        next_step, new_draft = apply_encoded_callback(data)
+    except ValueError:
+        await tg.edit_message(chat_id, message_id, "Сессия устарела. Используйте /run заново.")
         return
-
-    state = dialog.get(chat_id)
-    if not state:
-        await tg.edit_message(chat_id, message_id, "Сессия истекла. Используйте /run заново.")
-        return
-
-    step = state["step"]
-    draft = state.get("draft") or {}
-
-    next_step, new_draft = apply_callback(step, draft, data)
 
     if next_step == "done":
-        dialog.clear(chat_id)
         cfg = RunConfig(
             segments=new_draft.get("segments", []),
             limit_per_segment=new_draft.get("limit_per_segment", 30),
@@ -255,17 +234,15 @@ async def _handle_callback(
             )
 
     elif next_step == "cancelled":
-        dialog.clear(chat_id)
         await tg.edit_message(chat_id, message_id, "❌ Запуск отменён")
 
     else:
-        dialog.save(chat_id, next_step, new_draft)
         text_out, keyboard = build_step_message(next_step, new_draft)
         await tg.edit_message_with_keyboard(chat_id, message_id, text_out, keyboard)
 
 
 async def _handle_presets_command(
-    chat_id: str, args: list[str], is_admin: bool, presets: PresetsStore, tg: "TelegramSender"
+    chat_id: str, args: list[str], presets: PresetsStore, tg: "TelegramSender"
 ) -> None:
     if not args:
         items = presets.list_all()
@@ -288,16 +265,40 @@ async def _handle_presets_command(
         else:
             await tg.send(chat_id, f"Используйте /quickrun {args[1]} для запуска")
 
-    elif sub == "delete" and len(args) >= 2 and is_admin:
+    elif sub == "save":
+        try:
+            name, config, is_default = parse_preset_save_args(args)
+        except ValueError as exc:
+            await tg.send(chat_id, f"❌ {exc}")
+            return
+        presets.save(name, config, owner=f"chat:{chat_id}", is_default=is_default)
+        suffix = " и назначен default" if is_default else ""
+        await tg.send(chat_id, f"✅ Пресет {name} сохранён{suffix}")
+
+    elif sub == "default" and len(args) >= 2:
+        if presets.set_default(args[1]):
+            await tg.send(chat_id, f"✅ Пресет {args[1]} назначен default")
+        else:
+            await tg.send(chat_id, f"Пресет не найден: {args[1]}")
+
+    elif sub == "delete" and len(args) >= 2:
         if presets.delete(args[1]):
             await tg.send(chat_id, f"✅ Пресет {args[1]} удалён")
         else:
             await tg.send(chat_id, f"Пресет не найден: {args[1]}")
 
-    elif sub in ("save", "delete") and not is_admin:
-        await tg.send(chat_id, "⛔ Только администраторы могут изменять пресеты")
     else:
-        await tg.send(chat_id, "Использование: /presets | /presets use <name> | /presets delete <name>")
+        await tg.send(
+            chat_id,
+            "Использование:\n"
+            "/presets\n"
+            "/presets use <name>\n"
+            "/presets save <name> segments=<seg1,seg2> limit=<n> "
+            "stages=<full|stage1,stage2> [dry_run=true|false] "
+            "[notion_sync=true|false] [default=true|false]\n"
+            "/presets default <name>\n"
+            "/presets delete <name>",
+        )
 
 
 async def _handle_routine_command(
@@ -344,29 +345,55 @@ def _fetch_recent_runs(client: Any, limit: int = 5) -> list[dict[str, Any]]:
     return result.data or []
 
 
-def _help_text(is_admin: bool) -> str:
-    lines = [
-        "🤖 <b>Kvetio Agent Bot</b>\n",
-        "<b>Команды для всех:</b>",
-        "/status — текущий ран",
-        "/last [n] — история ранов",
-        "/digest — дайджест за сегодня",
-        "/hot — топ Hot-лиды",
-        "/stale — очередь на проверку",
-        "/presets — список пресетов",
-        "/whoami — ваш chat_id и роль",
-        "/ping — проверка бота",
-        "/help — эта справка",
-    ]
-    if is_admin:
-        lines += [
+def _start_text() -> str:
+    return "\n".join(
+        [
+            "🤖 <b>Kvetio Agent Bot</b>",
             "",
-            "<b>Только для администраторов:</b>",
-            "/run — запуск pipeline (мастер на кнопках)",
+            "Этот бот запускает Kvetio Agent Pipeline: агент ищет компании по ICP-сегментам, проверяет релевантность, скорит лиды, обогащает данные и готовит результат для Supabase/Notion.",
+            "",
+            "Бот сам не выполняет pipeline. Он собирает параметры и отправляет запуск в Claude Code Routine через /fire. После завершения рутина сама присылает сводку в Telegram.",
+            "",
+            "/run — подробный мастер запуска",
             "/quickrun [preset] — быстрый запуск по пресету",
-            "/presets save/delete — управление пресетами",
+            "/presets — сохранение и настройка пресетов",
+            "/help — все команды",
         ]
-    return "\n".join(lines)
+    )
+
+
+def _help_text() -> str:
+    return "\n".join(
+        [
+            "🤖 <b>Kvetio Agent Bot: команды</b>",
+            "",
+            "/start — что делает бот и как работает запуск",
+            "/help — эта справка",
+            "/ping — проверка доступности бота",
+            "/whoami — показать chat_id текущего чата",
+            "",
+            "<b>Запуск агента</b>",
+            "/run — подробный мастер запуска с выбором параметров",
+            "/quickrun — быстрый запуск default-пресета",
+            "/quickrun &lt;preset&gt; — быстрый запуск выбранного пресета",
+            "",
+            "<b>Пресеты</b>",
+            "/presets — список пресетов",
+            "/presets use &lt;name&gt; — подсказка для запуска пресета",
+            "/presets save &lt;name&gt; segments=&lt;seg1,seg2&gt; limit=&lt;n&gt; stages=&lt;full|stage1,stage2&gt; [dry_run=true|false] [notion_sync=true|false] [default=true|false] — сохранить пресет",
+            "/presets default &lt;name&gt; — назначить default-пресет",
+            "/presets delete &lt;name&gt; — удалить пресет",
+            "",
+            "<b>Статус и отчеты</b>",
+            "/status — текущий активный ран",
+            "/last [n] — последние n запусков, максимум 20",
+            "/digest [limit] — дайджест",
+            "/hot [limit] — горячие лиды",
+            "/stale [limit] — очередь на проверку",
+            "",
+            "/settings — где менять параметры запуска",
+        ]
+    )
 
 
 # ── Telegram sender helper ────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 """GitHub Code Search source adapter.
 
 Finds organizations with recent Python training scripts for ICP keywords,
-fetches organization metadata through a Supabase-backed TTL cache, and yields
+fetches organization metadata from the GitHub API, and yields
 RawSignal objects compatible with the other Kvetio source adapters.
 """
 
@@ -22,7 +22,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from http_client import HttpClient
 from models import ICPQuery, RawSignal
 from normalize import normalize_domain
-from org_cache import OrgCache
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +55,12 @@ class GitHubAdapter:
     def __init__(
         self,
         *,
-        org_cache: OrgCache | None = None,
         parser_version: str = "2026-05",
         rate_limit_rps: float = 0.5,
         github_token: str | None = None,
         active_within_days: int = ACTIVE_WITHIN_DAYS,
     ) -> None:
         self.parser_version = parser_version
-        self._cache = org_cache if org_cache is not None else OrgCache()
         self._active_within_days = active_within_days
 
         token = github_token if github_token is not None else os.environ.get("GITHUB_TOKEN", "")
@@ -152,14 +149,10 @@ class GitHubAdapter:
         return org_activity
 
     def _build_signal(self, org_login: str, last_pushed: datetime) -> RawSignal | None:
-        org_data = self._cache.get(org_login)
-        if org_data is None:
-            raw = self._http.get_json(f"{ORGS_API}/orgs/{org_login}")
-            if not isinstance(raw, dict) or not raw:
-                logger.debug("github: org %s returned empty metadata", org_login)
-                return None
-            self._cache.set(org_login, raw)
-            org_data = raw
+        org_data = self._http.get_json(f"{ORGS_API}/orgs/{org_login}")
+        if not isinstance(org_data, dict) or not org_data:
+            logger.debug("github: org %s returned empty metadata", org_login)
+            return None
 
         company_name = (org_data.get("name") or org_login).strip()
         domain = self._extract_domain(org_data, org_login)

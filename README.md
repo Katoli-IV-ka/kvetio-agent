@@ -40,9 +40,9 @@ Python-скрипты, данные живут в Supabase, витрина — N
    `session_id`; callback о завершении не приходит. Поэтому уведомление о
    результате шлёт **сама рутина последним шагом** (`scripts/notify.py`), а не
    внешний процесс.
-3. **Бот ничего не исполняет.** `bot/gateway.py` только принимает твои команды,
-   проверяет allowlist и дёргает `/fire`. Очереди и поллера (`worker`) в этой
-   модели нет.
+3. **Бот ничего не исполняет.** `bot/gateway.py` только принимает команды,
+   собирает параметры запуска и дёргает `/fire`. Очереди и поллера (`worker`) в
+   этой модели нет.
 
 ### Два триггера на одну рутину
 
@@ -80,7 +80,6 @@ kvetio-agent/
 ├── scripts/                       # ★ канонические CLI-скрипты — то, что зовёт агент
 │   ├── models.py · normalize.py · http_client.py   # ядро
 │   ├── greenhouse.py · lever.py · github.py · huggingface.py · yc_browser.py  # источники
-│   ├── org_cache.py               # TTL-кэш GitHub org metadata в Supabase
 │   ├── supabase_store.py          # CRUD над Supabase + дедуп + покрытие + run_logs
 │   ├── score.py                   # детерминированный scoring engine
 │   ├── enrichment.py · dossier_store.py            # этапы 3–5
@@ -89,9 +88,9 @@ kvetio-agent/
 │   ├── notify.py                  # уведомления в Telegram (финальный шаг рутины)
 │   └── telegram_routines.py       # дайджесты/очереди (daily_digest, hot_leads, stale_review)
 ├── bot/                           # Telegram-бот-триггер (хостится на Railway)
-│   ├── gateway.py                 # FastAPI: webhook, команды, allowlist, POST /fire
-│   ├── access.py                  # allowlist + роли (admin/viewer) из bot_users
-│   ├── dialog.py · presets.py     # мастер /run и пресеты параметров запуска
+│   ├── gateway.py                 # FastAPI: webhook, команды, POST /fire
+│   ├── dialog.py                  # stateless-мастер /run на callback_data
+│   ├── presets.py · preset_args.py # пресеты параметров запуска
 │   └── set_webhook.py             # идемпотентный setWebhook при деплое
 ├── sql/                           # миграции Supabase (применять по номерам)
 ├── tests/                         # pytest: источники, скоринг, дедуп, синк, бот
@@ -149,17 +148,17 @@ curl localhost:8000/healthz
 python -m bot.set_webhook
 ```
 
-Пользователей завести в таблице `bot_users` (роль `admin` — право запускать рутину).
-
 Команды:
 
-| Команда | Роль | Назначение |
-|---|---|---|
-| `/run` | admin | Мастер запуска (кнопки), собирает параметры → POST `/fire` |
-| `/quickrun [preset]` | admin | Быстрый запуск по пресету → POST `/fire` |
-| `/status`, `/last [n]` | all | Состояние/история из `run_logs` (пишутся скриптами внутри рутины) |
-| `/digest`, `/hot`, `/stale` | all | Дайджест, Hot-лиды, очередь проверки (чтение из Supabase) |
-| `/whoami`, `/help`, `/ping` | all | Инфо, справка, health-check |
+| Команда | Назначение |
+|---|---|
+| `/start` | Объясняет назначение бота и схему запуска routine |
+| `/run` | Stateless-мастер запуска на кнопках, собирает параметры → POST `/fire` |
+| `/quickrun [preset]` | Быстрый запуск default или named-пресета из `bot_presets` → POST `/fire` |
+| `/presets` | Список, сохранение, default-настройка и удаление пресетов |
+| `/status`, `/last [n]` | Состояние/история из `run_logs` (пишутся скриптами внутри рутины) |
+| `/digest`, `/hot`, `/stale` | Дайджест, Hot-лиды, очередь проверки (чтение из Supabase) |
+| `/whoami`, `/help`, `/ping` | Инфо, справка, health-check |
 
 ---
 
