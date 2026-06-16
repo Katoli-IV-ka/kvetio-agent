@@ -121,8 +121,11 @@ python -m bot.set_webhook
 
 ## Если что-то не работает
 
-- **`/quickrun` пишет ошибку `/fire`** → проверь `ROUTINE_FIRE_URL`/`ROUTINE_TOKEN`,
-  что токен не отозван и бета-заголовок актуален.
+- **`/quickrun` пишет `HTTP 401` от `/fire`** → Anthropic отверг bearer-токен.
+  Сгенерируй новый token в API-trigger рутины на claude.ai/code, вставь его в
+  `ROUTINE_TOKEN` в Railway без кавычек и пробелов, затем redeploy/restart бота.
+- **`/quickrun` пишет другую ошибку `/fire`** → проверь `ROUTINE_FIRE_URL`,
+  что API-trigger рутины включен и бета-заголовок актуален.
 - **Telegram не доставляет апдейты** → неверный `BOT_WEBHOOK_URL` или рассинхрон
   `TELEGRAM_WEBHOOK_SECRET`; перезапусти `python -m bot.set_webhook` и глянь
   `https://api.telegram.org/bot<TOKEN>/getWebhookInfo`.

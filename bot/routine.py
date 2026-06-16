@@ -12,6 +12,11 @@ from bot.config import RunConfig
 logger = logging.getLogger(__name__)
 
 
+def _routine_env(name: str) -> str:
+    """Read Routine env values and tolerate common copy-paste wrappers."""
+    return os.environ.get(name, "").strip().strip('"').strip("'")
+
+
 def config_to_text(cfg: RunConfig) -> str:
     """Serialize RunConfig to a text string for the routine's `text` field."""
     stages = cfg.stages if cfg.stages == "full" else ",".join(cfg.stages)
@@ -31,8 +36,8 @@ def fire(text: str = "") -> dict:
     Returns {"dev_mode": True} when credentials are not configured.
     Returns {"error": "..."} on failure.
     """
-    url = os.environ.get("ROUTINE_FIRE_URL", "")
-    token = os.environ.get("ROUTINE_TOKEN", "")
+    url = _routine_env("ROUTINE_FIRE_URL")
+    token = _routine_env("ROUTINE_TOKEN")
 
     if not url or not token:
         logger.warning("ROUTINE_FIRE_URL or ROUTINE_TOKEN not set — dev mode, skipping fire")
@@ -50,12 +55,23 @@ def fire(text: str = "") -> dict:
             resp.raise_for_status()
             return resp.json()
     except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        detail = exc.response.text[:200]
         logger.error(
             "Routine fire HTTP error %s: %s",
-            exc.response.status_code,
+            status,
             exc.response.text[:500],
         )
-        return {"error": f"HTTP {exc.response.status_code}", "detail": exc.response.text[:200]}
+        if status == 401:
+            return {
+                "error": "HTTP 401: ROUTINE_TOKEN rejected by Anthropic",
+                "detail": detail,
+                "hint": (
+                    "Regenerate the API trigger token in claude.ai/code Routine "
+                    "settings and update ROUTINE_TOKEN in the bot environment."
+                ),
+            }
+        return {"error": f"HTTP {status}", "detail": detail}
     except Exception as exc:  # noqa: BLE001
         logger.error("Routine fire failed: %s", exc)
         return {"error": str(exc)}
