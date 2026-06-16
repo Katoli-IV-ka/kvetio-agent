@@ -5,8 +5,12 @@ RunConfig dataclass. It has no external dependencies and is safe to import
 without triggering database initialization.
 
 Usage:
-    from bot.config import RunConfig, VALID_STAGES, VALID_SEGMENTS
-    cfg = RunConfig(segments=["medical-imaging"], limit_per_segment=30)
+    from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig, VALID_STAGES, VALID_SEGMENTS
+    cfg = RunConfig(
+        segments=["medical-imaging"],
+        limit_per_segment=DEFAULT_LIMIT_PER_SEGMENT,
+        stages="full",
+    )
     cfg.validate()
 """
 
@@ -30,6 +34,7 @@ VALID_SEGMENTS = frozenset(
         "video-photo-ai",
     ]
 )
+DEFAULT_LIMIT_PER_SEGMENT = 5
 
 RunStatus = Literal["draft", "queued", "running", "succeeded", "failed", "cancelled"]
 TriggerType = Literal["manual", "scheduled", "api"]
@@ -77,7 +82,7 @@ class RunConfig:
     def from_dict(cls, data: dict[str, Any]) -> "RunConfig":
         return cls(
             segments=data["segments"],
-            limit_per_segment=data["limit_per_segment"],
+            limit_per_segment=data.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT),
             stages=data.get("stages", "full"),
             dry_run=data.get("dry_run", False),
             notion_sync=data.get("notion_sync", True),

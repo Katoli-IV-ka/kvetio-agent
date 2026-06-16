@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT
 from bot.dialog import apply_callback, apply_encoded_callback, build_step_message, decode_callback
 
 
@@ -21,7 +22,7 @@ def test_run_buttons_include_compact_state_in_callback_data() -> None:
         "segments",
         {
             "segments": ["medical-imaging"],
-            "limit_per_segment": 30,
+            "limit_per_segment": DEFAULT_LIMIT_PER_SEGMENT,
             "stages": "full",
             "dry_run": False,
             "notion_sync": True,
@@ -34,7 +35,7 @@ def test_run_buttons_include_compact_state_in_callback_data() -> None:
     assert len(callback_data.encode("utf-8")) <= 64
     decoded_draft, action = decode_callback(callback_data)
     assert decoded_draft["segments"] == ["medical-imaging"]
-    assert decoded_draft["limit_per_segment"] == 30
+    assert decoded_draft["limit_per_segment"] == DEFAULT_LIMIT_PER_SEGMENT
     assert decoded_draft["stages"] == "full"
     assert decoded_draft["dry_run"] is False
     assert decoded_draft["notion_sync"] is True
@@ -46,7 +47,7 @@ def test_apply_encoded_callback_toggles_segment_without_store() -> None:
         "segments",
         {
             "segments": [],
-            "limit_per_segment": 30,
+            "limit_per_segment": DEFAULT_LIMIT_PER_SEGMENT,
             "stages": "full",
             "dry_run": False,
             "notion_sync": True,

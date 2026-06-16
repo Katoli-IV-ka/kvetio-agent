@@ -87,3 +87,11 @@ def test_migration_015_drop_unused_db_objects():
     assert "DROP TABLE IF EXISTS companies" not in sql
     assert "DROP TABLE IF EXISTS signals" not in sql
     assert "DROP TABLE IF EXISTS run_logs" not in sql
+
+
+def test_migration_016_bot_default_limit_5():
+    sql = _read("016_bot_default_limit_5.sql")
+    assert "UPDATE bot_presets" in sql
+    assert "nightly-full" in sql
+    assert "limit_per_segment" in sql
+    assert "'5'::jsonb" in sql

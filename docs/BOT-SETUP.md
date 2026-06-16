@@ -20,6 +20,9 @@
 - `ROUTINE_TOKEN` — `sk-ant-oat01-...`
 
 Если рутины ещё нет — сначала создай её по разделу «Настройка рутины» в README.
+В hosted Routine вставляется стабильный bootstrap prompt из
+`agents/prompts/pipeline_task.md`; рабочая логика pipeline читается из
+`agents/prompts/pipeline_main_task.md` при каждом запуске.
 
 ---
 
@@ -124,8 +127,8 @@ python -m bot.set_webhook
   `TELEGRAM_WEBHOOK_SECRET`; перезапусти `python -m bot.set_webhook` и глянь
   `https://api.telegram.org/bot<TOKEN>/getWebhookInfo`.
 - **Сводка не приходит после рутины** → проблема не в боте: проверь, что в Environment
-  рутины заданы `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`, и что финальный шаг
-  `pipeline_task.md` зовёт `notify.py`.
+  рутины заданы `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID`, и что основной prompt
+  `pipeline_main_task.md` зовёт `notify.py`.
 
 > Примечание: команды `/run`, `/quickrun`, `/status`, `/last` и клиент `/fire`
 > появляются после Фаз 2–3 плана чистки (`docs/CLEANUP-PLAN.md`). До этого в коде ещё

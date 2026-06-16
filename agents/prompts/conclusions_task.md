@@ -7,11 +7,21 @@
 
 **Это финальный этап pipeline.** Аутрич остаётся ручным.
 
+## Параметры запуска
+
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `segment` | все | Фильтр по сегменту |
+| `limit` | 5 | Максимум компаний на сегмент |
+| `notion_sync` | true | Запускать Notion sync после записи досье |
+
 ## Шаг 1 — Список компаний
 ```sql
 SELECT domain, name, website, icp_segment, score, score_bucket, ai_direction
 FROM companies WHERE status = 'analyzed'
-ORDER BY score DESC NULLS LAST LIMIT 5;
+  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
+ORDER BY score DESC NULLS LAST
+LIMIT <limit>;
 ```
 
 ## Шаг 2 — Загрузить ноты
@@ -65,8 +75,11 @@ echo '{
 ## Шаг 5 — Синхронизация в Notion
 
 Публикация в Notion полностью детерминирована и вынесена в скрипт — ad-hoc MCP-вызовы
-здесь не используем. Запусти синк компаний (reverse+forward) и публикацию досье в тело
-страницы:
+здесь не используем. Запускай этот шаг только если orchestration-параметр
+`notion_sync=true` и запуск не находится в `dry_run`.
+
+Если `notion_sync=true`, запусти синк компаний (reverse+forward) и публикацию досье
+в тело страницы:
 
 ```bash
 python scripts/notion_sync.py --entity companies --all

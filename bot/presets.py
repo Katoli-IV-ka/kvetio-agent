@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT
+
 logger = logging.getLogger(__name__)
 
 # Seed presets created on first use if no presets exist
@@ -22,7 +24,7 @@ DEFAULT_SEED_PRESETS = [
                 "medical-imaging", "autonomous-vehicles", "speech-and-audio",
                 "generative-ai", "agriculture-ai", "robotics-ai", "video-photo-ai",
             ],
-            "limit_per_segment": 30,
+            "limit_per_segment": DEFAULT_LIMIT_PER_SEGMENT,
             "stages": "full",
             "dry_run": False,
             "notion_sync": True,

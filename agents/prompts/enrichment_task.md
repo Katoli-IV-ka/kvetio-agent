@@ -9,13 +9,21 @@
 
 **Следующий этап:** `analysis_task`.
 
+## Параметры запуска
+
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `segment` | все | Фильтр по сегменту |
+| `limit` | 5 | Максимум компаний на сегмент |
+
 ## Шаг 1 — Список компаний
 ```sql
 SELECT domain, name, website, icp_segment
 FROM companies
 WHERE status = 'qualified'
+  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
 ORDER BY score DESC NULLS LAST
-LIMIT 10;
+LIMIT <limit>;
 ```
 
 ## Шаг 2 — Детерминированные резолверы

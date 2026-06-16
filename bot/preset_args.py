@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bot.config import RunConfig
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig
 
 
 def parse_preset_save_args(args: list[str]) -> tuple[str, dict, bool]:
@@ -21,7 +21,12 @@ def parse_preset_save_args(args: list[str]) -> tuple[str, dict, bool]:
     segments = _split_csv(values.get("segments", ""))
     stages_raw = values.get("stages", "full")
     stages: str | list[str] = "full" if stages_raw == "full" else _split_csv(stages_raw)
-    limit = int(values.get("limit", values.get("limit_per_segment", "30")))
+    limit = int(
+        values.get(
+            "limit",
+            values.get("limit_per_segment", str(DEFAULT_LIMIT_PER_SEGMENT)),
+        )
+    )
     dry_run = _parse_bool(values.get("dry_run", "false"))
     notion_sync = _parse_bool(values.get("notion_sync", "true"))
     is_default = _parse_bool(values.get("default", "false"))
