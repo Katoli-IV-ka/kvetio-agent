@@ -16,14 +16,14 @@ from bot.routine import config_to_text, fire
 
 class TestConfigToText:
     def _cfg(self, **kwargs) -> RunConfig:
-        defaults = dict(segments=["medical-imaging"], limit_per_segment=30, stages="full")
+        defaults = dict(segments=["medical-imaging"], limit_per_segment=5, stages="full")
         defaults.update(kwargs)
         return RunConfig(**defaults)
 
     def test_full_stages(self) -> None:
         text = config_to_text(self._cfg())
         assert "segments=medical-imaging" in text
-        assert "limit=30" in text
+        assert "limit=5" in text
         assert "stages=full" in text
 
     def test_partial_stages(self) -> None:
@@ -40,6 +40,11 @@ class TestConfigToText:
 
     def test_notion_sync_flag(self) -> None:
         assert "notion_sync=false" in config_to_text(self._cfg(notion_sync=False))
+
+    def test_from_dict_defaults_limit_to_five(self) -> None:
+        cfg = RunConfig.from_dict({"segments": ["medical-imaging"]})
+        assert cfg.limit_per_segment == 5
+        assert "limit=5" in config_to_text(cfg)
 
 
 # ── fire() ────────────────────────────────────────────────────────────────────

@@ -17,7 +17,8 @@ Python-скрипты, данные живут в Supabase, витрина — N
 ```
                          ┌──────────────────────────────────────────┐
    Telegram (ты)         │     Claude Code Routine (облако Anthropic) │
-        │                │     промпт = agents/prompts/pipeline_task  │
+        │                │     bootstrap = pipeline_task.md             │
+        │                │     main prompt = pipeline_main_task.md      │
         │ /run, /quickrun │     репо = kvetio-agent (клонируется)      │
         ▼                │     env = секреты + network + setup script │
   bot/gateway.py  ──POST /fire──►  агент по шагам зовёт scripts/*.py   │
@@ -59,7 +60,8 @@ kvetio-agent/
 ├── agents/
 │   ├── context/icp_summary.md     # короткий справочник ICP для агента
 │   └── prompts/                   # один промпт = одна задача агента
-│       ├── pipeline_task.md       # ★ промпт рутины: полный прогон + финальный notify
+│       ├── pipeline_task.md       # ★ стабильный bootstrap-промпт рутины
+│       ├── pipeline_main_task.md  # основной repo-managed prompt полного pipeline
 │       ├── discovery_task.md      # этап 1: источники + резолв сайта → discovered
 │       ├── relevance_task.md      # этап 2: анализ сайта + верификация → relevant
 │       ├── scoring_task.md        # этап 2.5: триаж-гейт → qualified/triaged_out
@@ -105,8 +107,10 @@ kvetio-agent/
 ## Настройка рутины (claude.ai/code)
 
 1. Открыть [claude.ai/code/routines](https://claude.ai/code/routines) → **New routine**.
-2. **Промпт** — содержимое `agents/prompts/pipeline_task.md`. Промпт самодостаточен:
-   читает сегменты, прогоняет этапы, последним шагом вызывает `notify.py`.
+2. **Промпт** — содержимое `agents/prompts/pipeline_task.md`. Это стабильный
+   bootstrap-промпт: при каждом запуске он читает основной prompt из
+   `agents/prompts/pipeline_main_task.md` в свежем checkout репозитория и следует ему.
+   Поэтому дальнейшие изменения логики pipeline делаются в Git, а не в UI рутины.
 3. **Репозиторий** — `kvetio-agent` (клонируется при каждом запуске; ветка по умолчанию).
 4. **Environment** (см. таблицу секретов ниже):
    - **Network access** — уровень с выходом к Supabase, Notion, Telegram и источникам
@@ -127,11 +131,13 @@ curl -X POST https://api.anthropic.com/v1/claude_code/routines/<ROUTINE_ID>/fire
   -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
-  -d '{"text": "segments=medical-imaging,robotics-ai; limit=30"}'
+  -d '{"text": "segments=medical-imaging,robotics-ai; limit=5"}'
 ```
 
-Поле `text` — свободная строка с контекстом запуска поверх сохранённого промпта.
-Именно этот POST делает Telegram-бот по команде `/run`/`/quickrun`.
+Поле `text` — строка параметров запуска поверх сохранённого bootstrap-промпта.
+Основной prompt принимает `segments`, `limit`/`limit_per_segment`, `stages`,
+`dry_run`, `notion_sync`. Default `limit` — 5 компаний на сегмент. Именно этот
+POST делает Telegram-бот по команде `/run`/`/quickrun`.
 
 ---
 

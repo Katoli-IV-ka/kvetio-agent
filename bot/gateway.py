@@ -28,7 +28,7 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 load_dotenv(ROOT / ".env")
 
-from bot.config import RunConfig  # noqa: E402
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig  # noqa: E402
 from bot.dialog import apply_encoded_callback, build_step_message  # noqa: E402
 from bot.preset_args import parse_preset_save_args  # noqa: E402
 from bot.presets import PresetsStore  # noqa: E402
@@ -172,7 +172,7 @@ async def _handle_message(
     elif command == "/run":
         draft: dict[str, Any] = {
             "segments": [],
-            "limit_per_segment": 30,
+            "limit_per_segment": DEFAULT_LIMIT_PER_SEGMENT,
             "stages": "full",
             "dry_run": False,
             "notion_sync": True,
@@ -211,7 +211,10 @@ async def _handle_callback(
     if next_step == "done":
         cfg = RunConfig(
             segments=new_draft.get("segments", []),
-            limit_per_segment=new_draft.get("limit_per_segment", 30),
+            limit_per_segment=new_draft.get(
+                "limit_per_segment",
+                DEFAULT_LIMIT_PER_SEGMENT,
+            ),
             stages=new_draft.get("stages", "full"),
             dry_run=new_draft.get("dry_run", False),
             notion_sync=new_draft.get("notion_sync", True),

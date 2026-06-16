@@ -37,9 +37,16 @@ def test_discover_verify_is_deprecated():
 
 
 def test_pipeline_orchestrates_discovery_then_relevance():
-    p = _read("pipeline_task.md")
+    p = _read("pipeline_main_task.md")
     assert "discovery_task" in p
     assert "relevance_task" in p
+
+
+def test_pipeline_bootstrap_loads_repo_managed_prompt():
+    p = _read("pipeline_task.md")
+    assert "pipeline_main_task.md" in p
+    assert "cat agents/prompts/pipeline_main_task.md" in p
+    assert "pipeline_bootstrap" in p
 
 
 def test_scoring_is_triage_gate():
@@ -110,7 +117,7 @@ def test_conclusions_prompt():
 
 
 def test_pipeline_full_chain():
-    p = _read("pipeline_task.md")
+    p = _read("pipeline_main_task.md")
     for stage in (
         "discovery_task",
         "relevance_task",
@@ -131,5 +138,13 @@ def test_conclusions_uses_notion_sync_script_not_mcp():
 
 
 def test_pipeline_calls_notion_sync_stage():
-    p = _read("pipeline_task.md")
+    p = _read("pipeline_main_task.md")
     assert "scripts/notion_sync.py" in p
+
+
+def test_pipeline_main_applies_bot_runtime_params():
+    p = _read("pipeline_main_task.md")
+    for param in ("segments", "limit", "stages", "dry_run", "notion_sync"):
+        assert f"`{param}`" in p
+    assert "| `limit` | `5` |" in p
+    assert "максимум компаний на сегмент" in p

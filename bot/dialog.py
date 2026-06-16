@@ -11,6 +11,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT
+
 logger = logging.getLogger(__name__)
 
 STEPS = ["segments", "limit", "stages", "flags", "confirm"]
@@ -26,7 +28,7 @@ ALL_SEGMENTS = [
 ]
 
 ALL_STAGES = ["discovery", "relevance", "scoring", "enrichment", "analysis", "conclusions"]
-LIMIT_PRESETS = [10, 30, 50]
+LIMIT_PRESETS = [5, 10, 30]
 
 
 def encode_callback(draft: dict[str, Any], action: str) -> str:
@@ -34,7 +36,7 @@ def encode_callback(draft: dict[str, Any], action: str) -> str:
     segments_mask = _segments_to_mask(draft.get("segments") or [])
     stages = draft.get("stages", "full")
     stages_value = "F" if stages == "full" else format(_stages_to_mask(stages or []), "x")
-    limit = int(draft.get("limit_per_segment", 30))
+    limit = int(draft.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT))
     dry_run = "1" if draft.get("dry_run", False) else "0"
     notion_sync = "1" if draft.get("notion_sync", True) else "0"
     payload = (
@@ -287,7 +289,7 @@ def _flags_step(draft: dict) -> tuple[str, list[list[dict]]]:
 
 def _confirm_step(draft: dict) -> tuple[str, list[list[dict]]]:
     segs = ", ".join(draft.get("segments") or []) or "—"
-    limit = draft.get("limit_per_segment", 30)
+    limit = draft.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT)
     stages = draft.get("stages", "full")
     stages_str = stages if isinstance(stages, str) else " → ".join(stages)
     dry_run = "✅ да" if draft.get("dry_run") else "нет"

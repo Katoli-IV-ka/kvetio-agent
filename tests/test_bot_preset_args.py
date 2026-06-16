@@ -48,6 +48,19 @@ def test_parse_preset_save_args_accepts_full_stages() -> None:
     assert config["notion_sync"] is True
 
 
+def test_parse_preset_save_args_defaults_to_five_companies_per_segment() -> None:
+    _, config, _ = parse_preset_save_args(
+        [
+            "save",
+            "default-limit",
+            "segments=medical-imaging",
+            "stages=full",
+        ]
+    )
+
+    assert config["limit_per_segment"] == 5
+
+
 def test_parse_preset_save_args_rejects_invalid_config() -> None:
     with pytest.raises(ValueError, match="unknown segments"):
         parse_preset_save_args(

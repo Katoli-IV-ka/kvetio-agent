@@ -14,13 +14,21 @@
 
 ---
 
+## Параметры запуска
+
+| Параметр | По умолчанию | Описание |
+|---|---|---|
+| `segment` | все | Фильтр по сегменту |
+| `limit` | 5 | Максимум компаний на сегмент |
+
 ## Шаг 1 — Получить компании для скоринга
 ```sql
 SELECT *
 FROM companies
 WHERE status = 'relevant'
+  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
 ORDER BY created_at DESC
-LIMIT 10;
+LIMIT <limit>;
 ```
 
 ## Шаг 2 — Детерминированный скор

@@ -17,6 +17,7 @@
 |---|---|---|
 | `batch_size` | 5 | Компаний за итерацию |
 | `segment` | все | Фильтр по сегменту (опционально) |
+| `limit` | 5 | Максимум компаний на сегмент |
 
 ## Шаг 1 — Список для проверки
 
@@ -24,8 +25,9 @@
 SELECT domain, name, website, icp_segment, sources, source_page_url
 FROM companies
 WHERE status = 'discovered'
+  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
 ORDER BY created_at DESC
-LIMIT 30;
+LIMIT <limit>;
 ```
 
 Обрабатывай батчами по `batch_size`. После каждого батча — промежуточный итог.
