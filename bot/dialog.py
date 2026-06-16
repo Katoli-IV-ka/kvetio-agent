@@ -107,9 +107,11 @@ def apply_callback(
             return "flags", draft
         elif data.startswith("stages_toggle:"):
             stage = data.split(":", 1)[1]
-            stages = set(draft.get("stages") or [])
-            if isinstance(stages, str):
+            current_stages = draft.get("stages") or []
+            if isinstance(current_stages, str):
                 stages = set()
+            else:
+                stages = set(current_stages)
             if stage in stages:
                 stages.discard(stage)
             else:
