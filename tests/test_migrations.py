@@ -71,3 +71,19 @@ def test_migration_014_drop_pipeline_runs():
     # run_logs must NOT be dropped — only pipeline_runs goes away
     assert "DROP TABLE IF EXISTS run_logs" not in sql
 
+
+def test_migration_015_drop_bot_runtime_state():
+    sql = _read("015_drop_bot_runtime_state.sql")
+    assert "DROP TABLE IF EXISTS bot_users" in sql
+    assert "DROP TABLE IF EXISTS bot_dialog_state" in sql
+    assert "DROP TABLE IF EXISTS bot_presets" not in sql
+
+
+def test_migration_015_drop_unused_db_objects():
+    sql = _read("015_drop_unused_db_objects.sql")
+    assert "DROP VIEW IF EXISTS recent_leads" in sql
+    assert "DROP VIEW IF EXISTS pipeline_stats" in sql
+    assert "DROP TABLE IF EXISTS github_org_cache" in sql
+    assert "DROP TABLE IF EXISTS companies" not in sql
+    assert "DROP TABLE IF EXISTS signals" not in sql
+    assert "DROP TABLE IF EXISTS run_logs" not in sql

@@ -33,7 +33,7 @@ Legend:
 2. Low-risk field removals from `companies`: `funding_amount`, `funding_date`, `team_size`, `website_snippet`, `score_version`, `notion_synced_at`, possibly `linkedin_url`.
 3. Remove or keep the whole empty dossier pipeline as one product decision: `source_links`, `analysis_notes`, `dossiers`.
 4. Remove or keep the whole empty contacts pipeline as one product decision: `contacts`, `contact_companies`, `companies.dm_enriched_at`, contact scripts, and Notion contacts mapping.
-5. Keep `bot_users` if the Telegram bot remains enabled; it has 1 active row.
+5. Drop `bot_users` and `bot_dialog_state`; keep `bot_presets` for saved launch presets.
 6. Enable RLS/policies before exposing or continuing to use the empty public tables.
 
 ## `companies` — core lead table, 328 rows
@@ -206,9 +206,9 @@ Used by `scripts/dossier_store.py`; `notion_sync.py` appends `summary_md` and `a
 
 Best individual candidates: `table_fields`, `notion_page_id`, maybe `version`.
 
-## `bot_users` — Telegram bot allowlist, 1 row
+## `bot_users` — obsolete Telegram bot allowlist, 1 row
 
-Used by `bot/access.py`.
+Superseded by external access control; remove with the bot runtime-state cleanup migration.
 
 | Field | Use | Type | Removal |
 |---|---|---|---|
@@ -231,9 +231,9 @@ Used by `bot/presets.py`; code seeds defaults on first use.
 | `is_default` | Default preset flag. | Technical | Medium |
 | `created_at` | Creation audit. | Audit | Low |
 
-## `bot_dialog_state` — Telegram `/run` wizard state, 0 rows
+## `bot_dialog_state` — obsolete Telegram `/run` wizard state, 0 rows
 
-Used by `bot/dialog.py`.
+Superseded by stateless callback payloads in `bot/dialog.py`.
 
 | Field | Use | Type | Removal |
 |---|---|---|---|
@@ -244,7 +244,7 @@ Used by `bot/dialog.py`.
 
 ## Views
 
-### `pipeline_stats`
+### `pipeline_stats` — selected for removal
 
 Definition: groups `companies` by `status`.
 
@@ -253,7 +253,7 @@ Definition: groups `companies` by `status`.
 | `status` | `companies.status` | Pipeline count grouping. |
 | `count` | `count(*)` | Count per status. |
 
-### `recent_leads`
+### `recent_leads` — selected for removal
 
 Definition: selects Hot/Warm companies from last 30 days or with no `last_signal_date`, ordered by score.
 
@@ -273,9 +273,11 @@ Supabase security advisor flags both views as `SECURITY DEFINER` views.
 
 ## Local-only / Missing Live Tables
 
-### `github_org_cache`
+### `github_org_cache` — selected for removal
 
 Exists in `sql/002_github_org_cache.sql` and `scripts/org_cache.py`, but is not present in live DB.
+
+Decision 2026-06-16: remove this cache layer instead of applying the missing table. GitHub org metadata will be fetched directly by `scripts/github.py`.
 
 | Field | Intended use | Type | Removal |
 |---|---|---|---|
@@ -283,7 +285,7 @@ Exists in `sql/002_github_org_cache.sql` and `scripts/org_cache.py`, but is not 
 | `data` | Raw GitHub org API payload. | Technical/Audit | Medium |
 | `cached_at` | TTL timestamp. | Technical | Low |
 
-Decision: either apply/create it if GitHub org caching is needed, or delete `scripts/org_cache.py` integration/tests if not.
+Decision: delete `scripts/org_cache.py` integration/tests and remove the local SQL definition.
 
 ## Practical Drop Candidates
 

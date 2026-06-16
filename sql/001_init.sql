@@ -81,6 +81,3 @@ CREATE TABLE IF NOT EXISTS run_logs (
 
 CREATE INDEX IF NOT EXISTS idx_run_logs_task_name ON run_logs (task_name);
 CREATE INDEX IF NOT EXISTS idx_run_logs_started_at ON run_logs (started_at DESC);
-
--- NOTE: `github_org_cache` intentionally lives in sql/002_github_org_cache.sql.
--- Keep it split from runtime bootstrap schema to isolate GitHub-specific cache lifecycle.
