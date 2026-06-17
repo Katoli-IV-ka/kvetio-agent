@@ -135,6 +135,25 @@ monitor_news
 Notion and Telegram should derive "latest signal" displays from `signals`, not from
 `companies.latest_signal`.
 
+### Monitoring Under The Status Model
+
+The cleanup keeps the seven-status company model. Monitoring must not reintroduce
+`needs_update`, `pending_verify`, or score-based queues.
+
+Monitor behavior:
+
+- Select stale companies from `relevant`, `sources_gathered`, `analyzed`, `dossier_ready`, and
+  `manual_review`.
+- Write new evidence as `signals` rows with `monitor_*` signal types.
+- Update `companies.last_verified` after a check.
+- Leave `companies.status` unchanged when a new signal does not change the classification.
+- Set `companies.status = 'manual_review'` only when a new signal creates ambiguity or suggests
+  the company should be re-evaluated by a human/agent.
+- Set `companies.status = 'not_relevant'` only when the monitor has clear evidence that the
+  company no longer fits.
+
+Monitoring is a signal refresh loop, not a separate status machine.
+
 ---
 
 ## Telegram Bot

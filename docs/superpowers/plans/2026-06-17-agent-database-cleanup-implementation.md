@@ -41,7 +41,6 @@ docs/DB-RUNTIME-USAGE-AUDIT-2026-06-17.md
   - Stop writing score fields, `latest_signal`, and `ai_direction`.
   - Replace score-based hot lead queries with status/signal based queries.
   - Keep `get_signals_for_company()`.
-  - Add a small helper for latest-signal display rows.
 - Modify: `scripts/contacts_store.py`
   - Resolve domain input to `companies.id`.
   - Write `contacts.company_id`.
@@ -73,10 +72,23 @@ docs/DB-RUNTIME-USAGE-AUDIT-2026-06-17.md
 
 ### Prompts And Docs
 
-- Modify: `agents/prompts/*.md`
+- Modify: `agents/prompts/discovery_task.md`
+- Modify: `agents/prompts/discover_verify_task.md`
+- Modify: `agents/prompts/relevance_task.md`
+- Modify: `agents/prompts/research_task.md`
+- Modify: `agents/prompts/source_expansion_task.md`
+- Modify: `agents/prompts/collection_task.md`
+- Modify: `agents/prompts/verify_task.md`
+- Modify: `agents/prompts/enrichment_task.md`
+- Modify: `agents/prompts/analysis_task.md`
+- Modify: `agents/prompts/conclusions_task.md`
+- Modify: `agents/prompts/dm_enrich_task.md`
+- Modify: `agents/prompts/monitor_task.md`
+- Modify: `agents/prompts/pipeline_main_task.md`
   - Remove scoring stage, `source_page_url`, `companies.sources`, `companies.latest_signal`, and `reject_reason`.
   - Document/use `signals.signal_type` prefixes.
   - Move relevance output to `status = relevant | not_relevant | manual_review`.
+  - Move monitoring to `monitor_*` signals without `needs_update` or `pending_verify`.
 - Modify: `docs/AGENT-ECOSYSTEM.md`
   - Align with the approved design.
 - Modify: `README.md`
@@ -84,14 +96,16 @@ docs/DB-RUNTIME-USAGE-AUDIT-2026-06-17.md
 
 ### SQL
 
-- Modify: `sql/001_init.sql`
-  - Align bootstrap schema with the new clean model.
 - Add: `sql/017_agent_database_cleanup.sql`
   - Add `contacts.company_id`.
   - Add FK to `companies(id)`.
+  - Update CHECK constraints for `contact_type`, `email_status`, and `source_vector`.
   - Migrate legacy statuses.
   - Drop obsolete fields/tables after code compatibility is in place.
-- Modify: old SQL comments/tests that claim `bot_presets` and `contact_companies` are retained.
+- Do not modify historical SQL files `sql/001_init.sql`, `sql/006_contacts.sql`,
+  `sql/012_bot.sql`, `sql/013_contacts_v2.sql`, or `sql/016_bot_default_limit_5.sql` in this
+  plan. They represent already-applied historical migrations. The live schema change happens in
+  `sql/017_agent_database_cleanup.sql`.
 
 ### Tests
 
@@ -114,6 +128,40 @@ docs/DB-RUNTIME-USAGE-AUDIT-2026-06-17.md
 - Modify: `scripts/models.py`
 
 - [ ] **Step 1: Add the failing status/model tests**
+
+Replace `tests/test_status.py` with:
+
+```python
+"""Canonical company statuses for the cleaned pipeline."""
+
+from __future__ import annotations
+
+from models import ALL_STATUSES
+
+
+def test_all_pipeline_statuses_match_cleanup_design():
+    assert ALL_STATUSES == (
+        "discovered",
+        "relevant",
+        "not_relevant",
+        "manual_review",
+        "sources_gathered",
+        "analyzed",
+        "dossier_ready",
+    )
+
+
+def test_removed_monitor_statuses_are_not_pipeline_statuses():
+    assert "triaged_out" not in ALL_STATUSES
+    assert "qualified" not in ALL_STATUSES
+    assert "needs_update" not in ALL_STATUSES
+    assert "pending_verify" not in ALL_STATUSES
+
+
+def test_all_statuses_is_tuple_of_str():
+    assert isinstance(ALL_STATUSES, tuple)
+    assert all(isinstance(s, str) for s in ALL_STATUSES)
+```
 
 Create `tests/test_models_cleanup.py` with:
 
@@ -155,7 +203,7 @@ def test_contact_record_supports_company_id_and_related_person() -> None:
 Run:
 
 ```bash
-pytest tests/test_models_cleanup.py -q
+pytest tests/test_models_cleanup.py tests/test_status.py -q
 ```
 
 Expected: fail because `ALL_STATUSES` still contains legacy values and `ContactRecord` does not accept `company_id` or `Related Person`.
@@ -266,7 +314,7 @@ Run:
 pytest tests/test_models_cleanup.py tests/test_status.py -q
 ```
 
-Expected: pass after updating any old status test expectations to the new `ALL_STATUSES` tuple.
+Expected: pass.
 
 - [ ] **Step 7: Commit**
 
@@ -464,6 +512,14 @@ In `_stale_review()`, remove score formatting and replace the second line with:
 
 Delete `_format_score()`.
 
+Search the file after editing:
+
+```bash
+rg -n "_format_score|Score:" scripts/telegram_routines.py
+```
+
+Expected: no matches.
+
 - [ ] **Step 9: Delete scoring files and tests**
 
 Remove:
@@ -501,6 +557,11 @@ git commit -m "refactor: remove score runtime model"
 - Modify: `scripts/contacts_store.py`
 - Modify: `scripts/contact_enricher.py` only if tests expose direct `company_domain` assumptions.
 
+Runtime rule: contacts are valid only in the context of an existing company. DM prompts must select
+companies from `companies` first and pass both `companies.id` and `companies.domain` into contact
+writes. `contacts_store.upsert_contact()` should fail with a clear `ValueError` if that ordering is
+violated; it should not create orphan contacts.
+
 - [ ] **Step 1: Add failing contacts store tests**
 
 Append to `tests/test_contacts_store.py`:
@@ -517,6 +578,15 @@ def test_resolve_company_ref_by_domain(mock_store):
 
     assert result == {"id": "company-uuid", "domain": "acme.ai"}
     mock_store._client.table.assert_called_with("companies")
+
+
+def test_resolve_company_ref_raises_for_missing_company(mock_store):
+    from contacts_store import resolve_company_ref
+
+    mock_store._client.table.return_value.execute.return_value = MagicMock(data=[])
+
+    with pytest.raises(ValueError, match="company not found for contact"):
+        resolve_company_ref(mock_store, domain="missing.ai")
 
 
 def test_upsert_contact_writes_company_id_and_legacy_domain(mock_store):
@@ -1162,6 +1232,10 @@ git commit -m "refactor(bot): remove presets and quickrun"
 
 **Files:**
 - Modify: `agents/prompts/pipeline_main_task.md`
+- Modify: `agents/prompts/research_task.md`
+- Modify: `agents/prompts/source_expansion_task.md`
+- Modify: `agents/prompts/collection_task.md`
+- Modify: `agents/prompts/verify_task.md`
 - Modify: `agents/prompts/discovery_task.md`
 - Modify: `agents/prompts/discover_verify_task.md`
 - Modify: `agents/prompts/relevance_task.md`
@@ -1194,6 +1268,11 @@ def test_prompts_do_not_reference_removed_company_fields() -> None:
         "score_version",
         "ai_direction",
         "python scripts/score.py",
+        "cat agents/prompts/scoring_task.md",
+        "scoring_task",
+        "ORDER BY score",
+        "needs_update",
+        "pending_verify",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in PROMPT_DIR.glob("*.md"))
 
@@ -1251,7 +1330,32 @@ Do not write source_page_url, companies.sources, companies.latest_signal, reject
 score_bucket, score_version, or ai_direction.
 ```
 
-- [ ] **Step 5: Update relevance prompts**
+- [ ] **Step 5: Update legacy discovery/relevance prompts**
+
+Edit all of these files:
+
+```text
+agents/prompts/research_task.md
+agents/prompts/source_expansion_task.md
+agents/prompts/collection_task.md
+agents/prompts/verify_task.md
+agents/prompts/discovery_task.md
+agents/prompts/discover_verify_task.md
+agents/prompts/relevance_task.md
+```
+
+Apply these rules:
+
+```text
+- Remove source_page_url.
+- Remove latest_signal.
+- Remove reject_reason.
+- Remove ai_direction.
+- Remove any "next stage: scoring_task" instruction.
+- Remove cat agents/prompts/scoring_task.md.
+- Remove python scripts/score.py.
+- Use signals.evidence_url and signals.signal_type for source evidence.
+```
 
 In `agents/prompts/relevance_task.md` and `agents/prompts/discover_verify_task.md`, replace not-relevant update examples with:
 
@@ -1316,6 +1420,14 @@ ORDER BY updated_at DESC
 LIMIT 10;
 ```
 
+Add this rule near the contact write instructions:
+
+```text
+Only write contacts for companies selected from the companies table. Use the selected company id
+and domain in every contacts_store payload. Do not create contacts for a company that does not
+exist in companies.
+```
+
 In contact JSON examples, include both fields:
 
 ```json
@@ -1331,7 +1443,37 @@ In contact JSON examples, include both fields:
 }
 ```
 
-- [ ] **Step 8: Run prompt tests**
+- [ ] **Step 8: Update monitor prompt**
+
+Replace the old monitor status model in `agents/prompts/monitor_task.md` with:
+
+```text
+MonitorAgent is a signal refresh loop, not a separate status machine.
+
+Select stale companies:
+
+SELECT id, domain, name, icp_segment, last_verified, status
+FROM companies
+WHERE status IN ('relevant', 'sources_gathered', 'analyzed', 'dossier_ready', 'manual_review')
+  AND (last_verified IS NULL OR last_verified < CURRENT_DATE - INTERVAL '7 days')
+ORDER BY last_verified ASC NULLS FIRST
+LIMIT 30;
+
+For every new signal:
+- insert a row into signals;
+- use signal_type prefixed with monitor_;
+- update companies.last_verified = CURRENT_DATE.
+
+Do not write legacy monitor-only statuses, latest-signal summary fields, score fields, or score
+buckets.
+
+Status updates:
+- leave status unchanged when the signal is only informational;
+- set status = 'manual_review' when the signal suggests re-evaluation;
+- set status = 'not_relevant' only when there is clear evidence the company no longer fits.
+```
+
+- [ ] **Step 9: Run prompt tests**
 
 Run:
 
@@ -1341,7 +1483,7 @@ pytest tests/test_pipeline_prompts.py -q
 
 Expected: pass.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add agents/prompts tests/test_pipeline_prompts.py
@@ -1355,11 +1497,19 @@ git commit -m "docs(prompts): align agent prompts with cleanup model"
 **Files:**
 - Modify: `tests/test_migrations.py`
 - Add: `sql/017_agent_database_cleanup.sql`
-- Modify: `sql/001_init.sql`
-- Modify: `sql/006_contacts.sql`
-- Modify: `sql/012_bot.sql`
-- Modify: `sql/013_contacts_v2.sql`
-- Delete or neutralize: `sql/016_bot_default_limit_5.sql`
+
+Do not edit historical migration files in this task. In particular, do not modify:
+
+```text
+sql/001_init.sql
+sql/006_contacts.sql
+sql/012_bot.sql
+sql/013_contacts_v2.sql
+sql/016_bot_default_limit_5.sql
+```
+
+Those files represent previous/manual migration steps. The cleanup is forward-only in
+`sql/017_agent_database_cleanup.sql`.
 
 - [ ] **Step 1: Add failing migration contract test**
 
@@ -1370,6 +1520,13 @@ def test_migration_017_agent_database_cleanup():
     sql = _read("017_agent_database_cleanup.sql")
     assert "ADD COLUMN IF NOT EXISTS company_id UUID" in sql
     assert "REFERENCES companies(id)" in sql
+    assert "contacts_unmatched_company_domain" in sql
+    assert "contacts_contact_type_check" in sql
+    assert "'Related Person'" in sql
+    assert "contacts_email_status_check" in sql
+    assert "'scraped'" in sql
+    assert "contacts_source_vector_check" in sql
+    assert "'contact_page'" in sql
     assert "DROP TABLE IF EXISTS contact_companies" in sql
     assert "DROP TABLE IF EXISTS bot_presets" in sql
     assert "DROP COLUMN IF EXISTS score" in sql
@@ -1413,6 +1570,22 @@ FROM companies AS co
 WHERE c.company_id IS NULL
   AND c.company_domain = co.domain;
 
+DO $$
+DECLARE
+  contacts_unmatched_company_domain INTEGER;
+BEGIN
+  SELECT COUNT(*)
+  INTO contacts_unmatched_company_domain
+  FROM contacts
+  WHERE company_id IS NULL;
+
+  IF contacts_unmatched_company_domain > 0 THEN
+    RAISE EXCEPTION
+      'Cannot set contacts.company_id NOT NULL: % contacts have no matching companies.domain',
+      contacts_unmatched_company_domain;
+  END IF;
+END $$;
+
 ALTER TABLE contacts
   ADD CONSTRAINT contacts_company_id_fk
   FOREIGN KEY (company_id) REFERENCES companies(id)
@@ -1437,6 +1610,41 @@ ALTER TABLE contacts
 
 CREATE INDEX IF NOT EXISTS idx_contacts_company_id
   ON contacts (company_id);
+
+ALTER TABLE contacts
+  DROP CONSTRAINT IF EXISTS contacts_contact_type_check;
+ALTER TABLE contacts
+  ADD CONSTRAINT contacts_contact_type_check
+  CHECK (contact_type IN ('Person', 'Company', 'Related Person', 'Other'))
+  NOT VALID;
+ALTER TABLE contacts
+  VALIDATE CONSTRAINT contacts_contact_type_check;
+
+ALTER TABLE contacts
+  DROP CONSTRAINT IF EXISTS contacts_email_status_check;
+ALTER TABLE contacts
+  ADD CONSTRAINT contacts_email_status_check
+  CHECK (email_status IN ('verified', 'guessed', 'bounced', 'unknown', 'scraped'))
+  NOT VALID;
+ALTER TABLE contacts
+  VALIDATE CONSTRAINT contacts_email_status_check;
+
+ALTER TABLE contacts
+  DROP CONSTRAINT IF EXISTS contacts_source_vector_check;
+ALTER TABLE contacts
+  ADD CONSTRAINT contacts_source_vector_check
+  CHECK (source_vector IN (
+    'github',
+    'huggingface',
+    'team_page',
+    'apollo',
+    'wellfound',
+    'arxiv',
+    'contact_page'
+  ))
+  NOT VALID;
+ALTER TABLE contacts
+  VALIDATE CONSTRAINT contacts_source_vector_check;
 
 UPDATE companies
 SET status = CASE status
@@ -1468,41 +1676,13 @@ ALTER TABLE contacts
   DROP COLUMN IF EXISTS contact_result;
 ```
 
-- [ ] **Step 4: Update bootstrap schema files**
+- [ ] **Step 4: Keep historical migration files and tests unchanged**
 
-In `sql/001_init.sql`, remove company columns:
-
-```sql
-latest_signal
-score
-score_bucket
-score_version
-```
-
-In `sql/006_contacts.sql`, add:
-
-```sql
-company_id UUID NOT NULL REFERENCES companies(id),
-```
-
-Keep:
-
-```sql
-company_domain TEXT NOT NULL,
-```
-
-Remove contact outreach columns from `sql/006_contacts.sql`.
-
-In `sql/013_contacts_v2.sql`, remove `contact_result` and `contact_companies` creation.
-
-In `sql/012_bot.sql`, remove `bot_presets` creation.
-
-In `sql/016_bot_default_limit_5.sql`, replace its body with:
-
-```sql
--- Migration 016 was superseded by migration 017.
--- bot_presets is removed from the runtime schema.
-```
+Do not rewrite old migration files or their existing contract tests to hide historical behavior.
+`test_migration_012_bot`, `test_migration_013_contacts_v2`, and
+`test_migration_016_bot_default_limit_5` should continue describing the SQL files that already
+exist. The new cleanup behavior is covered only by
+`test_migration_017_agent_database_cleanup`.
 
 - [ ] **Step 5: Run migration tests**
 
@@ -1512,7 +1692,7 @@ Run:
 pytest tests/test_migrations.py -q
 ```
 
-Expected: pass after updating old migration assertions that required retaining `bot_presets` or creating `contact_companies`.
+Expected: pass with old migration tests unchanged and the new migration 017 contract added.
 
 - [ ] **Step 6: Commit**
 
@@ -1587,17 +1767,15 @@ Cleanup decision 2026-06-17:
 Run:
 
 ```bash
-rg -n "bot_presets|/presets|/quickrun|score_bucket|score_version|ai_direction|latest_signal|reject_reason|contact_companies|contact_result|outreach_status|outreach_note|source_page_url" README.md docs agents bot scripts tests config sql
+rg -n "bot_presets|/presets|/quickrun|score_bucket|score_version|ai_direction|latest_signal|reject_reason|contact_companies|contact_result|outreach_status|outreach_note|source_page_url|scoring_task|needs_update|pending_verify" README.md docs/AGENT-ECOSYSTEM.md agents bot scripts tests config
 ```
 
-Expected: remaining matches only in:
+Expected: no matches in active docs, runtime code, prompts, tests, or config.
 
-```text
-docs/superpowers/specs/2026-06-17-agent-database-cleanup-design.md
-docs/superpowers/plans/2026-06-17-agent-database-cleanup-implementation.md
-sql/017_agent_database_cleanup.sql
-audit docs cleanup decision notes
-```
+Do not include `sql/` in this stale-term search. Historical SQL files intentionally continue to
+describe earlier migrations. Do not include the audit docs or this implementation plan in this
+stale-term search because they intentionally retain cleanup-decision history.
+`sql/017_agent_database_cleanup.sql` is checked by migration tests.
 
 - [ ] **Step 6: Commit**
 
@@ -1628,10 +1806,10 @@ Expected: all tests pass.
 Run:
 
 ```bash
-rg -n "score_bucket|score_version|ai_direction|latest_signal|reject_reason|source_page_url|contact_companies|bot_presets|contact_result|outreach_status|outreach_note" scripts bot agents config tests sql README.md docs/AGENT-ECOSYSTEM.md
+rg -n "score_bucket|score_version|ai_direction|latest_signal|reject_reason|source_page_url|contact_companies|bot_presets|contact_result|outreach_status|outreach_note|scoring_task|needs_update|pending_verify" scripts bot agents config tests README.md docs/AGENT-ECOSYSTEM.md
 ```
 
-Expected: no active runtime references. References inside migration files may remain.
+Expected: no active runtime references. Historical SQL migration files are intentionally excluded.
 
 - [ ] **Step 3: Run import smoke checks**
 
@@ -1738,14 +1916,52 @@ PY
 Expected before migration:
 
 ```text
-companies <non-negative count>
-signals <non-negative count>
+companies 0 or more
+signals 0 or more
 contacts 0 or more
 bot_presets 3 or ERROR if already removed
 contact_companies 0 or more
 ```
 
-- [ ] **Step 3: Review migration SQL before applying**
+- [ ] **Step 3: Check for contacts that cannot be linked to companies**
+
+Run:
+
+```bash
+python3 - <<'PY'
+import os
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv(".env")
+client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+contacts = client.table("contacts").select("id,company_domain,full_name").execute().data or []
+companies = client.table("companies").select("id,domain").execute().data or []
+domains = {row["domain"] for row in companies}
+unmatched = [
+    row
+    for row in contacts
+    if not row.get("company_domain") or row["company_domain"] not in domains
+]
+
+print(f"unmatched_contacts={len(unmatched)}")
+for row in unmatched[:20]:
+    print(row)
+PY
+```
+
+Expected:
+
+```text
+unmatched_contacts=0
+```
+
+If `unmatched_contacts` is greater than `0`, stop. Either create/fix the matching company rows or
+manually correct those contacts before applying `017`; otherwise `contacts.company_id NOT NULL` will
+correctly abort the migration.
+
+- [ ] **Step 4: Review migration SQL before applying**
 
 Run:
 
@@ -1755,11 +1971,11 @@ sed -n '1,220p' sql/017_agent_database_cleanup.sql
 
 Expected: SQL matches Task 7 and does not drop `companies`, `signals`, `contacts`, `run_logs`, `source_links`, `analysis_notes`, or `dossiers`.
 
-- [ ] **Step 4: Apply migration manually**
+- [ ] **Step 5: Apply migration manually**
 
 Because this is destructive, apply `sql/017_agent_database_cleanup.sql` in Supabase SQL Editor or through the project-approved migration runner. Do not run it against live DB until Task 9 is complete.
 
-- [ ] **Step 5: Verify live schema after migration**
+- [ ] **Step 6: Verify live schema after migration**
 
 Run:
 
@@ -1793,14 +2009,14 @@ PY
 Expected:
 
 ```text
-companies ok <0 or 1>
-contacts ok <0 or 1>
-signals ok <0 or 1>
+companies ok 0 or 1
+contacts ok 0 or 1
+signals ok 0 or 1
 bot_presets removed
 contact_companies removed
 ```
 
-- [ ] **Step 6: Run post-migration smoke tests with live configuration**
+- [ ] **Step 7: Run post-migration smoke tests with live configuration**
 
 Run:
 
