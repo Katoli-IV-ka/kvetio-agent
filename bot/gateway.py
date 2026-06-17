@@ -30,8 +30,6 @@ load_dotenv(ROOT / ".env")
 
 from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig  # noqa: E402
 from bot.dialog import apply_encoded_callback, build_step_message  # noqa: E402
-from bot.preset_args import parse_preset_save_args  # noqa: E402
-from bot.presets import PresetsStore  # noqa: E402
 from bot.routine import config_to_text, fire  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -46,12 +44,7 @@ def _make_supabase():
 
 def _deps():
     client = _make_supabase()
-    presets = PresetsStore(client)
-    presets.ensure_seed_presets()
-    return (
-        presets,
-        client,
-    )
+    return client
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -81,18 +74,17 @@ async def telegram_webhook(
 
 
 async def _handle_update(update: dict[str, Any]) -> None:
-    presets, client = _deps()
+    client = _deps()
     tg = TelegramSender()
 
     if "message" in update:
-        await _handle_message(update["message"], presets, client, tg)
+        await _handle_message(update["message"], client, tg)
     elif "callback_query" in update:
         await _handle_callback(update["callback_query"], tg)
 
 
 async def _handle_message(
     msg: dict[str, Any],
-    presets: PresetsStore,
     client: Any,
     tg: "TelegramSender",
 ) -> None:
@@ -143,32 +135,6 @@ async def _handle_message(
                 lines.append(f"{status_icon} <b>{task}</b> {started}")
             await tg.send(chat_id, "\n".join(lines))
 
-    elif command == "/presets":
-        await _handle_presets_command(chat_id, args, presets, tg)
-
-    elif command == "/quickrun":
-        preset_name = args[0] if args else None
-        preset = presets.get(preset_name) if preset_name else presets.get_default()
-        if not preset:
-            await tg.send(chat_id, f"Пресет не найден: {preset_name or 'default'}")
-            return
-        cfg_dict = preset["config"]
-        cfg_dict["triggered_by"] = f"chat:{chat_id}"
-        cfg_dict["trigger_type"] = "manual"
-        cfg = RunConfig.from_dict(cfg_dict)
-        result = fire(config_to_text(cfg))
-        if result.get("dev_mode"):
-            await tg.send(chat_id, f"🟡 [dev] Рутина запущена (пресет: {preset['name']})")
-        elif "error" in result:
-            await tg.send(chat_id, f"❌ Ошибка запуска: {result['error']}")
-        else:
-            session_id = result.get("claude_code_session_id", "?")
-            await tg.send(
-                chat_id,
-                f"🟢 Рутина запущена (пресет: {preset['name']})\n"
-                f"Session: <code>{session_id}</code>",
-            )
-
     elif command == "/run":
         draft: dict[str, Any] = {
             "segments": [],
@@ -186,8 +152,7 @@ async def _handle_message(
     elif command == "/settings":
         await tg.send(
             chat_id,
-            "⚙️ Настройки через /presets. Используйте /run для пошагового запуска "
-            "или /quickrun [preset] для быстрого запуска.",
+            "⚙️ Параметры запуска выбираются через /run.",
         )
 
 
@@ -244,66 +209,6 @@ async def _handle_callback(
         await tg.edit_message_with_keyboard(chat_id, message_id, text_out, keyboard)
 
 
-async def _handle_presets_command(
-    chat_id: str, args: list[str], presets: PresetsStore, tg: "TelegramSender"
-) -> None:
-    if not args:
-        items = presets.list_all()
-        if not items:
-            await tg.send(chat_id, "Пресетов нет. Они будут созданы автоматически.")
-            return
-        lines = ["<b>Пресеты:</b>"]
-        for p in items:
-            dflt = " ⭐ (default)" if p.get("is_default") else ""
-            lines.append(f"· <b>{p['name']}</b>{dflt}")
-        await tg.send(chat_id, "\n".join(lines))
-        return
-
-    sub = args[0].lower()
-
-    if sub == "use" and len(args) >= 2:
-        p = presets.get(args[1])
-        if not p:
-            await tg.send(chat_id, f"Пресет не найден: {args[1]}")
-        else:
-            await tg.send(chat_id, f"Используйте /quickrun {args[1]} для запуска")
-
-    elif sub == "save":
-        try:
-            name, config, is_default = parse_preset_save_args(args)
-        except ValueError as exc:
-            await tg.send(chat_id, f"❌ {exc}")
-            return
-        presets.save(name, config, owner=f"chat:{chat_id}", is_default=is_default)
-        suffix = " и назначен default" if is_default else ""
-        await tg.send(chat_id, f"✅ Пресет {name} сохранён{suffix}")
-
-    elif sub == "default" and len(args) >= 2:
-        if presets.set_default(args[1]):
-            await tg.send(chat_id, f"✅ Пресет {args[1]} назначен default")
-        else:
-            await tg.send(chat_id, f"Пресет не найден: {args[1]}")
-
-    elif sub == "delete" and len(args) >= 2:
-        if presets.delete(args[1]):
-            await tg.send(chat_id, f"✅ Пресет {args[1]} удалён")
-        else:
-            await tg.send(chat_id, f"Пресет не найден: {args[1]}")
-
-    else:
-        await tg.send(
-            chat_id,
-            "Использование:\n"
-            "/presets\n"
-            "/presets use <name>\n"
-            "/presets save <name> segments=<seg1,seg2> limit=<n> "
-            "stages=<full|stage1,stage2> [dry_run=true|false] "
-            "[notion_sync=true|false] [default=true|false]\n"
-            "/presets default <name>\n"
-            "/presets delete <name>",
-        )
-
-
 async def _handle_routine_command(
     command: str, chat_id: str, args: list[str], tg: "TelegramSender"
 ) -> None:
@@ -353,13 +258,11 @@ def _start_text() -> str:
         [
             "🤖 <b>Kvetio Agent Bot</b>",
             "",
-            "Этот бот запускает Kvetio Agent Pipeline: агент ищет компании по ICP-сегментам, проверяет релевантность, скорит лиды, обогащает данные и готовит результат для Supabase/Notion.",
+            "Этот бот запускает Kvetio Agent Pipeline: агент ищет компании по ICP-сегментам, проверяет релевантность, обогащает данные и готовит результат для Supabase/Notion.",
             "",
             "Бот сам не выполняет pipeline. Он собирает параметры и отправляет запуск в Claude Code Routine через /fire. После завершения рутина сама присылает сводку в Telegram.",
             "",
-            "/run — подробный мастер запуска",
-            "/quickrun [preset] — быстрый запуск по пресету",
-            "/presets — сохранение и настройка пресетов",
+            "/run — мастер запуска с выбором параметров",
             "/help — все команды",
         ]
     )
@@ -376,16 +279,7 @@ def _help_text() -> str:
             "/whoami — показать chat_id текущего чата",
             "",
             "<b>Запуск агента</b>",
-            "/run — подробный мастер запуска с выбором параметров",
-            "/quickrun — быстрый запуск default-пресета",
-            "/quickrun &lt;preset&gt; — быстрый запуск выбранного пресета",
-            "",
-            "<b>Пресеты</b>",
-            "/presets — список пресетов",
-            "/presets use &lt;name&gt; — подсказка для запуска пресета",
-            "/presets save &lt;name&gt; segments=&lt;seg1,seg2&gt; limit=&lt;n&gt; stages=&lt;full|stage1,stage2&gt; [dry_run=true|false] [notion_sync=true|false] [default=true|false] — сохранить пресет",
-            "/presets default &lt;name&gt; — назначить default-пресет",
-            "/presets delete &lt;name&gt; — удалить пресет",
+            "/run — мастер запуска с выбором сегментов, лимита, stages и флагов",
             "",
             "<b>Статус и отчеты</b>",
             "/status — текущий активный ран",
