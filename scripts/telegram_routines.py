@@ -105,13 +105,10 @@ def _hot_leads(store: RoutineStore, *, limit: int) -> RoutineResult:
     for idx, lead in enumerate(leads, start=1):
         name = _escape(lead.get("name") or "Unknown")
         domain = _escape(lead.get("domain") or "")
-        score = lead.get("score")
         segment = lead.get("icp_segment") or "unknown"
-        latest_signal = lead.get("latest_signal") or ""
+        status = lead.get("status") or "unknown"
         lines.append(f"{idx}. <b>{name}</b> — {domain}")
-        lines.append(f"Score: <b>{_format_score(score)}</b> | Segment: {_escape(segment)}")
-        if latest_signal:
-            lines.append(f"Signal: {_escape(latest_signal)}")
+        lines.append(f"Status: {_escape(status)} | Segment: {_escape(segment)}")
     return RoutineResult(
         name="hot_leads",
         message="\n".join(lines),
@@ -129,9 +126,8 @@ def _stale_review(store: RoutineStore, *, days: int, limit: int) -> RoutineResul
         domain = _escape(company.get("domain") or "")
         status = _escape(company.get("status") or "unknown")
         verified = _escape(str(company.get("last_verified") or "never"))
-        score = _format_score(company.get("score"))
         lines.append(f"{idx}. <b>{name}</b> — {domain}")
-        lines.append(f"Status: {status} | Score: <b>{score}</b> | Verified: {verified}")
+        lines.append(f"Status: {status} | Verified: {verified}")
     return RoutineResult(
         name="stale_review",
         message="\n".join(lines),
@@ -155,12 +151,6 @@ def _format_segment_lines(coverage: dict[str, dict[str, int]]) -> list[str]:
         )
         lines.append(f"• {_escape(segment)}: {summary or 'none'}")
     return lines
-
-
-def _format_score(value: object) -> str:
-    if value is None:
-        return "n/a"
-    return _escape(str(value))
 
 
 def _escape(value: object) -> str:
