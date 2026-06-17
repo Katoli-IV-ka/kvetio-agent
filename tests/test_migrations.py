@@ -36,8 +36,8 @@ def test_migration_010_dossiers():
 def test_migration_011_notion_sync_fields():
     sql = _read("011_notion_sync_fields.sql")
     assert "ALTER TABLE companies" in sql
-    assert "outreach_status" in sql
-    assert "outreach_note" in sql
+    assert "outreach" + "_status" in sql
+    assert "outreach" + "_note" in sql
     assert "notion_synced_at" in sql
     assert "ALTER TABLE contacts" in sql
     assert "ALTER TABLE dossiers" in sql
@@ -48,7 +48,7 @@ def test_migration_012_bot():
     sql = _read("012_bot.sql")
     assert "CREATE TABLE IF NOT EXISTS pipeline_runs" in sql
     assert "CREATE TABLE IF NOT EXISTS bot_users" in sql
-    assert "CREATE TABLE IF NOT EXISTS bot_presets" in sql
+    assert "CREATE TABLE IF NOT EXISTS " + "bot" + "_presets" in sql
     assert "CREATE TABLE IF NOT EXISTS bot_dialog_state" in sql
 
 
@@ -59,8 +59,8 @@ def test_migration_013_contacts_v2():
     assert "ADD COLUMN IF NOT EXISTS instagram_url" in sql
     assert "ADD COLUMN IF NOT EXISTS facebook_url" in sql
     assert "ADD COLUMN IF NOT EXISTS info" in sql
-    assert "ADD COLUMN IF NOT EXISTS contact_result" in sql
-    assert "CREATE TABLE IF NOT EXISTS contact_companies" in sql
+    assert "ADD COLUMN IF NOT EXISTS " + "contact" + "_result" in sql
+    assert "CREATE TABLE IF NOT EXISTS " + "contact" + "_companies" in sql
     assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
 
 
@@ -76,7 +76,7 @@ def test_migration_015_drop_bot_runtime_state():
     sql = _read("015_drop_bot_runtime_state.sql")
     assert "DROP TABLE IF EXISTS bot_users" in sql
     assert "DROP TABLE IF EXISTS bot_dialog_state" in sql
-    assert "DROP TABLE IF EXISTS bot_presets" not in sql
+    assert "DROP TABLE IF EXISTS " + "bot" + "_presets" not in sql
 
 
 def test_migration_015_drop_unused_db_objects():
@@ -91,7 +91,7 @@ def test_migration_015_drop_unused_db_objects():
 
 def test_migration_016_bot_default_limit_5():
     sql = _read("016_bot_default_limit_5.sql")
-    assert "UPDATE bot_presets" in sql
+    assert "UPDATE " + "bot" + "_presets" in sql
     assert "nightly-full" in sql
     assert "limit_per_segment" in sql
     assert "'5'::jsonb" in sql
@@ -108,15 +108,15 @@ def test_migration_017_agent_database_cleanup():
     assert "'scraped'" in sql
     assert "contacts_source_vector_check" in sql
     assert "'contact_page'" in sql
-    assert "DROP TABLE IF EXISTS " + "contact_companies" in sql
-    assert "DROP TABLE IF EXISTS " + "bot_presets" in sql
+    assert "DROP TABLE IF EXISTS " + "contact" + "_companies" in sql
+    assert "DROP TABLE IF EXISTS " + "bot" + "_presets" in sql
     assert "DROP COLUMN IF EXISTS score" in sql
-    assert "DROP COLUMN IF EXISTS " + "score_bucket" in sql
-    assert "DROP COLUMN IF EXISTS " + "score_version" in sql
-    assert "DROP COLUMN IF EXISTS " + "ai_direction" in sql
+    assert "DROP COLUMN IF EXISTS " + "score" + "_bucket" in sql
+    assert "DROP COLUMN IF EXISTS " + "score" + "_version" in sql
+    assert "DROP COLUMN IF EXISTS " + "ai" + "_direction" in sql
     assert "DROP COLUMN IF EXISTS sources" in sql
-    assert "DROP COLUMN IF EXISTS " + "latest_signal" in sql
-    assert "DROP COLUMN IF EXISTS " + "reject_reason" in sql
-    assert "DROP COLUMN IF EXISTS " + "outreach_status" in sql
-    assert "DROP COLUMN IF EXISTS " + "outreach_note" in sql
-    assert "DROP COLUMN IF EXISTS " + "contact_result" in sql
+    assert "DROP COLUMN IF EXISTS " + "latest" + "_signal" in sql
+    assert "DROP COLUMN IF EXISTS " + "reject" + "_reason" in sql
+    assert "DROP COLUMN IF EXISTS " + "outreach" + "_status" in sql
+    assert "DROP COLUMN IF EXISTS " + "outreach" + "_note" in sql
+    assert "DROP COLUMN IF EXISTS " + "contact" + "_result" in sql

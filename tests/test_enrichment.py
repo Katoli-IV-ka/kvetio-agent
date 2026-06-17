@@ -68,7 +68,7 @@ def test_disabled_stub_is_disabled_and_returns_none():
 def test_github_org_resolver_from_signals():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"source_page_url": "https://github.com/radai-robolab/some-repo"},
+        {"evidence_url": "https://github.com/radai-robolab/some-repo"},
     ]
     link = GithubOrgResolver().resolve({"domain": "radai.com"}, store, MagicMock())
     assert link["kind"] == "github_org"

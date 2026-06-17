@@ -248,7 +248,6 @@ def _signal_to_dict(signal: RawSignal) -> dict:
         "confidence": signal.confidence,
         "raw_payload": signal.raw_payload,
         "parser_version": signal.parser_version,
-        "source_page_url": signal.evidence_url,
     }
 
 

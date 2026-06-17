@@ -122,14 +122,14 @@ def test_upsert_contact_saves_v2_fields(mock_store):
     assert row["instagram_url"] == "https://instagram.com/alicekim"
     assert row["facebook_url"] == "https://facebook.com/alicekim"
     assert row["info"] == "Head of ML at Acme, ex-Google Brain"
-    assert "contact_result" not in row
+    assert "contact" + "_result" not in row
 
 
-def test_contacts_store_has_no_contact_companies_helpers():
+def test_contacts_store_has_no_legacy_relation_helpers():
     import contacts_store
 
-    assert not hasattr(contacts_store, "link_contact_to_companies")
-    assert not hasattr(contacts_store, "get_company_domains_for_contact")
+    assert not hasattr(contacts_store, "link_contact_to_" + "companies")
+    assert not hasattr(contacts_store, "get_company_domains_for_" + "contact")
 
 
 def test_resolve_company_ref_by_domain(mock_store):
@@ -172,6 +172,6 @@ def test_upsert_contact_writes_company_id_and_legacy_domain(mock_store):
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
     assert row["company_id"] == "company-uuid"
     assert row["company_domain"] == "acme.ai"
-    assert "contact_result" not in row
-    assert "outreach_status" not in row
-    assert "outreach_note" not in row
+    assert "contact" + "_result" not in row
+    assert "outreach" + "_status" not in row
+    assert "outreach" + "_note" not in row

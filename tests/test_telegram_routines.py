@@ -17,7 +17,7 @@ class FakeStore:
             "by_status": {
                 "new": 3,
                 "enriched": 2,
-                "pending_verify": 1,
+                "manual_review": 1,
                 "not_relevant": 1,
             },
         }
@@ -25,7 +25,7 @@ class FakeStore:
     def coverage_by_segment(self) -> dict:
         return {
             "medical-imaging": {"new": 2, "enriched": 1},
-            "speech-and-audio": {"pending_verify": 1},
+            "speech-and-audio": {"manual_review": 1},
         }
 
     def list_hot_leads(self, limit: int = 5) -> list[dict]:

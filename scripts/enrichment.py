@@ -53,7 +53,7 @@ class GithubOrgResolver:
 
     def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
         for sig in store.get_signals_for_company(company["domain"]):
-            url = sig.get("source_page_url") or sig.get("evidence_url") or ""
+            url = sig.get("evidence_url") or ""
             login = extract_org_login(url)
             if login:
                 return {

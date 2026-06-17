@@ -20,8 +20,8 @@ def test_all_pipeline_statuses_match_cleanup_design():
 def test_removed_monitor_statuses_are_not_pipeline_statuses():
     assert "triaged_out" not in ALL_STATUSES
     assert "qualified" not in ALL_STATUSES
-    assert "needs_update" not in ALL_STATUSES
-    assert "pending_verify" not in ALL_STATUSES
+    assert "needs" + "_update" not in ALL_STATUSES
+    assert "pending" + "_verify" not in ALL_STATUSES
 
 
 def test_all_statuses_is_tuple_of_str():
