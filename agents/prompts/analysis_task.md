@@ -1,54 +1,51 @@
-# Analysis Task — Оркестратор анализа (Этап 4)
+# Analysis Task - structured company analysis
 
 ## Роль
-Ты выполняешь роль AnalysisAgent. Для каждой `sources_gathered`-компании
-запускаешь под-агентов по секциям, затем аудит, и переводишь в `analyzed`.
 
-REQUIRED SUB-SKILL: superpowers:dispatching-parallel-agents — пять секционных
-под-агентов независимы и запускаются параллельно.
+Ты выполняешь роль AnalysisAgent. Берешь companies со статусом
+`sources_gathered`, читаешь `source_links`, `signals`, сайт и публичные
+источники, затем пишешь structured `analysis_notes`.
 
 **Следующий этап:** `conclusions_task`.
 
-## Параметры запуска
+## Шаг 1 - Select companies
 
-| Параметр | По умолчанию | Описание |
-|---|---|---|
-| `segment` | все | Фильтр по сегменту |
-| `limit` | 5 | Максимум компаний на сегмент |
-
-## Шаг 1 — Список компаний
 ```sql
-SELECT domain, name, icp_segment
+SELECT domain, name, website, icp_segment
 FROM companies
 WHERE status = 'sources_gathered'
-  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
-ORDER BY score DESC NULLS LAST
+ORDER BY updated_at DESC
 LIMIT <limit>;
 ```
 
-## Шаг 2 — Диспатч секционных под-агентов (параллельно)
-Для компании запусти 5 под-агентов через Task tool, каждому передай инструкции
-`agents/prompts/analysis_section_task.md` и параметры `domain` + `section`:
-`company`, `product`, `collaboration`, `financials`, `news`.
+## Шаг 2 - Sections
 
-Каждый под-агент пишет свою `analysis_note` сам. Дождись завершения всех пяти.
+Для каждой компании запусти секционные prompts:
+- `agents/prompts/analysis_section_task.md`;
+- `agents/prompts/analysis_audit_task.md`.
 
-## Шаг 3 — Аудит
-Запусти под-агента по `agents/prompts/analysis_audit_task.md` с `domain`
-(он читает 5 нот и пишет ноту `audit`).
+Разделы:
+- company;
+- product;
+- collaboration;
+- financials;
+- news.
 
-## Шаг 4 — Перевести статус
+Каждый section должен отделять заявленные claims from verified facts and keep URLs.
+
+## Шаг 3 - Write notes
+
+Use:
+
+```bash
+python scripts/dossier_store.py --upsert-analysis-note
+```
+
+## Шаг 4 - Status update
+
 ```sql
-UPDATE companies SET status = 'analyzed', updated_at = NOW()
+UPDATE companies
+SET status = 'analyzed',
+    updated_at = NOW()
 WHERE domain = '<domain>';
 ```
-
-## Шаг 5 — Отчёт
-```bash
-python scripts/notify.py --run-summary '{"task":"analysis_task","analyzed":<N>,"errors":<K>}'
-```
-
-## Граничные случаи
-- Под-агент секции упал → зафиксируй пробел, остальные секции продолжают; компанию
-  всё равно можно перевести в `analyzed` с пометкой неполноты (аудит отметит пробел).
-- Нет `source_links` → секции работают по сайту/сигналам; не блокируемся.

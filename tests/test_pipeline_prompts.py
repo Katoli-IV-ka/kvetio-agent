@@ -49,24 +49,14 @@ def test_pipeline_bootstrap_loads_repo_managed_prompt():
     assert "pipeline_bootstrap" in p
 
 
-def test_scoring_is_triage_gate():
-    p = _read("scoring_task.md")
-    # Вход — relevant (этап 2), а не старый pending_enrich:
-    assert "status = 'relevant'" in p
-    assert "pending_enrich" not in p
-    # Выход — гейт-статусы:
-    assert "'qualified'" in p
-    assert "'triaged_out'" in p
-    # Гейт по порогу manual_review (Hot+Warm проходят даже в shadow mode):
-    assert "threshold_manual_review" in p or "manual_review threshold" in p
-    # Notion-синк уехал на этап 5:
-    assert "Синхронизация в Notion" not in p
+def test_scoring_prompt_removed():
+    assert not (PROMPTS / ("scoring" + "_task.md")).exists()
 
 
 def test_enrichment_prompt_gathers_links_no_analysis():
     p = _read("enrichment_task.md")
     assert "EnrichmentAgent" in p
-    assert "status = 'qualified'" in p
+    assert "status = 'relevant'" in p
     assert "scripts/enrichment.py --domain" in p
     assert "upsert-source-link" in p
     assert "sources_gathered" in p
@@ -121,7 +111,7 @@ def test_pipeline_full_chain():
     for stage in (
         "discovery_task",
         "relevance_task",
-        "scoring_task",
+        "source_expansion_task",
         "enrichment_task",
         "analysis_task",
         "conclusions_task",
@@ -148,3 +138,33 @@ def test_pipeline_main_applies_bot_runtime_params():
         assert f"`{param}`" in p
     assert "| `limit` | `5` |" in p
     assert "максимум компаний на сегмент" in p
+
+
+def test_prompts_do_not_reference_removed_company_fields() -> None:
+    score_prompt = "scoring" + "_task"
+    removed_terms = [
+        "source_page" + "_url",
+        "companies." + "sources",
+        "latest" + "_signal",
+        "reject" + "_reason",
+        "score" + "_bucket",
+        "score" + "_version",
+        "ai" + "_direction",
+        "python scripts/" + "score.py",
+        f"cat agents/prompts/{score_prompt}.md",
+        score_prompt,
+        "ORDER BY " + "score",
+        "needs" + "_update",
+        "pending" + "_verify",
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8") for path in PROMPTS.glob("*.md"))
+
+    for term in removed_terms:
+        assert term not in text
+
+
+def test_prompts_document_signal_type_prefixes() -> None:
+    text = (PROMPTS / "pipeline_main_task.md").read_text(encoding="utf-8")
+    assert "primary_*" in text
+    assert "verification_*" in text
+    assert "monitor_*" in text

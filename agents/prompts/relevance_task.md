@@ -1,28 +1,25 @@
-# Relevance Task — Анализ сайта и верификация (Этап 2)
+# Relevance Task - анализ сайта и верификация
 
 ## Роль
-Ты выполняешь роль RelevanceAgent. Берёшь компании со статусом `discovered`,
-анализируешь их сайт и проверяешь, реальна ли компания, жива ли и осмысленно ли
-работает с AI в нашем сегменте.
 
-Прошедшие → `relevant`. Отклонённые → `not_relevant`. Неоднозначные → `manual_review`.
+Ты выполняешь роль RelevanceAgent. Берешь компании со статусом `discovered`,
+проверяешь сайт и внешние источники, затем ставишь один из статусов:
+`relevant`, `not_relevant`, `manual_review`.
 
-**Следующий этап:** `scoring_task` (триаж-гейт)
-
----
+**Следующий этап:** `source_expansion_task`.
 
 ## Параметры запуска
 
 | Параметр | По умолчанию | Описание |
-|---|---|---|
+|---|---:|---|
 | `batch_size` | 5 | Компаний за итерацию |
-| `segment` | все | Фильтр по сегменту (опционально) |
+| `segment` | all | Фильтр по сегменту |
 | `limit` | 5 | Максимум компаний на сегмент |
 
-## Шаг 1 — Список для проверки
+## Шаг 1 - Список для проверки
 
 ```sql
-SELECT domain, name, website, icp_segment, sources, source_page_url
+SELECT domain, name, website, icp_segment
 FROM companies
 WHERE status = 'discovered'
   AND ('<segment>' = 'all' OR icp_segment = '<segment>')
@@ -30,92 +27,83 @@ ORDER BY created_at DESC
 LIMIT <limit>;
 ```
 
-Обрабатывай батчами по `batch_size`. После каждого батча — промежуточный итог.
-
-## Шаг 2 — Quick Filter
+## Шаг 2 - Quick Filter
 
 ```
 WebFetch: https://<domain>
 ```
-Недоступен → попробуй `https://www.<domain>`.
 
-Вопрос: «Компания разрабатывает собственные AI/ML модели, а не просто использует чужие?»
+Недоступен - попробуй `https://www.<domain>`.
 
-**Пропускаем дальше** если есть сигнал: обучение моделей/датасеты/fine-tuning;
-"we train / our model / custom AI"; продукт в ML-домене; ML/AI-вакансии.
+Вопрос: компания разрабатывает собственные AI/ML модели или tooling для ML
+workflow, а не просто использует чужой API как обычную функцию продукта?
 
-**Сразу отклоняем (`quick_reject`):**
-| Причина | `reject_reason` |
-|---|---|
-| Parked / заглушка | `dead_website` |
-| SaaS без ML | `no_ai_dev` |
-| "Powered by ChatGPT" как главный messaging | `api_wrapper` |
-| Датасет-провайдер / аннотатор | `competitor` |
-| Крупная корпорация | `too_large` |
+Проходит дальше, если есть один из признаков:
+- обучение моделей, datasets, fine-tuning, собственные модели;
+- ML/AI engineering вакансии;
+- продукт явно относится к AI/ML workflow;
+- HuggingFace/GitHub/paper evidence с компанией или командой.
 
-За Cloudflare/капчей — не блокирует: `site_note: behind_protection`, идём на шаг 3.
+Отклоняется, если сайт мертв, компания не занимается AI/ML, это прямой
+конкурент data services или корпорация вне ICP. Не записывай отдельную причину
+в удаленные legacy поля; объяснение клади в `site_note`.
 
-## Шаг 3 — Глубокая верификация (только прошедшие Quick Filter)
+## Шаг 3 - Глубокая верификация
 
-**3a. HuggingFace** (MCP `hf_hub_query`/`hub_repo_search`): организация по имени/домену →
-кол-во моделей, pipeline_tags, дата последней активности.
+Для кандидатов после Quick Filter проверь:
+- HuggingFace organization или модели;
+- вакансии ML/data;
+- сайт и LinkedIn;
+- funding/team size, если найдено.
 
-**3b. Вакансии:** `WebSearch: "<company name>" jobs "ML engineer" OR "data annotation" OR "training data"` → один релевантный posting (title + URL).
+Каждый новый факт-источник записывай в `signals` с:
+- `signals.evidence_url`;
+- `signals.signal_type` prefixed with `verification_`;
+- `signals.normalized_domain`.
 
-**3c. Фактура:**
-| Поле | Метод |
-|---|---|
-| `description` | Сайт / HF профиль |
-| `linkedin_url` | `WebSearch: site:linkedin.com/company "<name>"` |
-| `team_size` | LinkedIn / сайт |
-| `funding_stage`, `funding_date` | `WebSearch: "<name>" funding round OR raised` |
+## Шаг 4 - Решение
 
-Заполняй что нашёл, не обязательно всё.
+- `relevant`: Quick Filter прошел и есть конкретное подтверждение.
+- `not_relevant`: компания явно не подходит.
+- `manual_review`: признаки есть, но данных мало или они неоднозначны.
 
-## Шаг 4 — Решение
+## Шаг 5 - Запись
 
-**→ `relevant`**: прошёл Quick Filter И есть ≥1 конкретное доказательство из шага 3.
-**→ `not_relevant`**: `quick_reject`, либо прошёл Quick Filter, но подтверждений нет.
-**→ `manual_review`**: признаки есть, но данных мало (stealth/закрытый сайт) или неоднозначно.
+Relevant:
 
-## Шаг 5 — Запись
-
-**Прошедшие:**
 ```sql
-UPDATE companies SET
-  status = 'relevant',
-  description = '<description>',
-  linkedin_url = '<linkedin_url или NULL>',
-  team_size = '<team_size или NULL>',
-  funding_stage = '<funding_stage или NULL>',
-  funding_date = '<funding_date или NULL>',
-  website_snippet = '<первые ~200 символов>',
-  site_note = '<site_note или NULL>',
-  last_verified = CURRENT_DATE,
-  updated_at = NOW()
-WHERE domain = '<domain>';
+UPDATE companies
+SET status = 'relevant',
+    description = 'Builds AI tooling for medical imaging workflows.',
+    linkedin_url = 'https://www.linkedin.com/company/acme-ai',
+    team_size = '11-50',
+    funding_stage = 'seed',
+    funding_date = '2026-01-15',
+    website_snippet = 'AI platform for radiology workflow automation.',
+    site_note = 'Relevant because the company builds AI workflow software for medical imaging.',
+    last_verified = CURRENT_DATE,
+    updated_at = NOW()
+WHERE domain = 'acme.ai';
 ```
 
-**Отклонённые:**
+Not relevant:
+
 ```sql
-UPDATE companies SET
-  status = 'not_relevant', reject_reason = '<reject_reason>',
-  last_verified = CURRENT_DATE, updated_at = NOW()
-WHERE domain = '<domain>';
+UPDATE companies
+SET status = 'not_relevant',
+    last_verified = CURRENT_DATE,
+    updated_at = NOW()
+WHERE domain = 'acme.ai';
 ```
 
-**На ручной просмотр:** то же что `relevant`, но `status = 'manual_review'` и `site_note` объясняет причину.
+Manual review uses the same shape as relevant, with `status = 'manual_review'`
+and a concise `site_note`.
 
-## Шаг 6 — Сигналы верификации
-
-Для `relevant` запиши новые сигналы (HF-модели, вакансии) в `signals`
-(`ON CONFLICT (evidence_url) DO NOTHING`).
-
-## Шаг 7 — run_log + уведомление
+## Шаг 6 - run_log + уведомление
 
 ```sql
 INSERT INTO run_logs (task_name, companies_found, companies_enriched, errors, notes)
-VALUES ('relevance_task', <проверено>, <relevant>, '[]', 'not_relevant: <N>, manual_review: <M>');
+VALUES ('relevance_task', <checked>, <relevant>, '[]', 'not_relevant: <N>, manual_review: <M>');
 ```
 
 ```bash
@@ -123,10 +111,7 @@ python scripts/notify.py --run-summary '{"task":"relevance_task","relevant":<N>,
 ```
 
 ## Итоговая схема статусов
-```
-discovered → [Quick Filter] ── quick_reject ──→ not_relevant
-                  └─ pass → [Глубокая верификация]
-                              ├─ confirmed → relevant → [scoring_task]
-                              ├─ not_confirmed → not_relevant
-                              └─ unclear → manual_review
+
+```text
+discovered -> Quick Filter -> relevant | not_relevant | manual_review
 ```
