@@ -7,8 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from contacts_store import (
-    get_company_domains_for_contact,
-    link_contact_to_companies,
     list_contacts,
     mark_enriched,
     upsert_contact,
@@ -24,8 +22,11 @@ def mock_store():
     table_mock.update.return_value = table_mock
     table_mock.select.return_value = table_mock
     table_mock.eq.return_value = table_mock
+    table_mock.limit.return_value = table_mock
     table_mock.order.return_value = table_mock
-    table_mock.execute.return_value = MagicMock(data=[])
+    table_mock.execute.return_value = MagicMock(
+        data=[{"id": "company-uuid", "domain": "radai.com"}]
+    )
     return store
 
 
@@ -44,6 +45,7 @@ def test_upsert_contact_sets_required_fields(mock_store):
     call_args = mock_store._client.table.return_value.upsert.call_args
     row = call_args[0][0]
     assert row["company_domain"] == "radai.com"
+    assert row["company_id"] == "company-uuid"
     assert row["full_name"] == "Sarah Chen"
     assert row["dm_priority"] == 1
     assert row["email_status"] == "verified"
@@ -78,8 +80,15 @@ def test_upsert_contact_includes_personal_website(mock_store):
     from unittest.mock import MagicMock
 
     store = MagicMock()
-    upsert_mock = MagicMock()
-    store._client.table.return_value.upsert.return_value.execute = upsert_mock
+    table_mock = MagicMock()
+    store._client.table.return_value = table_mock
+    table_mock.select.return_value = table_mock
+    table_mock.eq.return_value = table_mock
+    table_mock.limit.return_value = table_mock
+    table_mock.upsert.return_value = table_mock
+    table_mock.execute.return_value = MagicMock(
+        data=[{"id": "company-uuid", "domain": "radai.com"}]
+    )
 
     upsert_contact(store, {
         "company_domain": "radai.com",
@@ -102,8 +111,10 @@ def test_upsert_contact_saves_v2_fields(mock_store):
         "instagram_url": "https://instagram.com/alicekim",
         "facebook_url": "https://facebook.com/alicekim",
         "info": "Head of ML at Acme, ex-Google Brain",
-        "contact_result": "Не связывались",
     }
+    mock_store._client.table.return_value.execute.return_value = MagicMock(
+        data=[{"id": "company-uuid", "domain": "acme.com"}]
+    )
     upsert_contact(mock_store, contact)
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
     assert row["contact_type"] == "Person"
@@ -111,19 +122,56 @@ def test_upsert_contact_saves_v2_fields(mock_store):
     assert row["instagram_url"] == "https://instagram.com/alicekim"
     assert row["facebook_url"] == "https://facebook.com/alicekim"
     assert row["info"] == "Head of ML at Acme, ex-Google Brain"
-    assert row["contact_result"] == "Не связывались"
+    assert "contact_result" not in row
 
 
-def test_link_contact_to_companies(mock_store):
-    link_contact_to_companies(mock_store, "uuid-123", ["acme.com", "beta.io"])
-    calls = mock_store._client.table.call_args_list
-    table_names = [c[0][0] for c in calls]
-    assert "contact_companies" in table_names
+def test_contacts_store_has_no_contact_companies_helpers():
+    import contacts_store
+
+    assert not hasattr(contacts_store, "link_contact_to_companies")
+    assert not hasattr(contacts_store, "get_company_domains_for_contact")
 
 
-def test_get_company_domains_for_contact(mock_store):
+def test_resolve_company_ref_by_domain(mock_store):
+    from contacts_store import resolve_company_ref
+
     mock_store._client.table.return_value.execute.return_value = MagicMock(
-        data=[{"company_domain": "acme.com"}, {"company_domain": "beta.io"}]
+        data=[{"id": "company-uuid", "domain": "acme.ai"}]
     )
-    domains = get_company_domains_for_contact(mock_store, "uuid-123")
-    assert domains == ["acme.com", "beta.io"]
+
+    result = resolve_company_ref(mock_store, domain="acme.ai")
+
+    assert result == {"id": "company-uuid", "domain": "acme.ai"}
+    mock_store._client.table.assert_called_with("companies")
+
+
+def test_resolve_company_ref_raises_for_missing_company(mock_store):
+    from contacts_store import resolve_company_ref
+
+    mock_store._client.table.return_value.execute.return_value = MagicMock(data=[])
+
+    with pytest.raises(ValueError, match="company not found for contact"):
+        resolve_company_ref(mock_store, domain="missing.ai")
+
+
+def test_upsert_contact_writes_company_id_and_legacy_domain(mock_store):
+    mock_store._client.table.return_value.execute.return_value = MagicMock(
+        data=[{"id": "company-uuid", "domain": "acme.ai"}]
+    )
+
+    upsert_contact(
+        mock_store,
+        {
+            "company_id": "company-uuid",
+            "company_domain": "acme.ai",
+            "full_name": "Jane Doe",
+            "source_vector": "apollo",
+        },
+    )
+
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["company_id"] == "company-uuid"
+    assert row["company_domain"] == "acme.ai"
+    assert "contact_result" not in row
+    assert "outreach_status" not in row
+    assert "outreach_note" not in row

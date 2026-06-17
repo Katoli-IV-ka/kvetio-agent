@@ -22,13 +22,51 @@ from supabase_store import SupabaseStore
 logger = logging.getLogger(__name__)
 
 
+def resolve_company_ref(
+    store: SupabaseStore,
+    *,
+    domain: str | None = None,
+    company_id: str | None = None,
+) -> dict:
+    """Return company id/domain for contact writes."""
+    if company_id:
+        res = (
+            store._client.table("companies")
+            .select("id,domain")
+            .eq("id", company_id)
+            .limit(1)
+            .execute()
+        )
+    elif domain:
+        res = (
+            store._client.table("companies")
+            .select("id,domain")
+            .eq("domain", domain)
+            .limit(1)
+            .execute()
+        )
+    else:
+        raise ValueError("company_id or company_domain is required")
+
+    if not res.data:
+        ref = company_id or domain
+        raise ValueError(f"company not found for contact: {ref}")
+    return res.data[0]
+
+
 def upsert_contact(store: SupabaseStore, contact: dict) -> str:
     """Upsert one contact. Conflict key: (company_domain, full_name).
 
     Returns the contact's UUID (id).
     """
+    company_ref = resolve_company_ref(
+        store,
+        domain=contact.get("company_domain"),
+        company_id=contact.get("company_id"),
+    )
     row = {
-        "company_domain": contact["company_domain"],
+        "company_id": company_ref["id"],
+        "company_domain": company_ref["domain"],
         "full_name": contact["full_name"],
         "first_name": contact.get("first_name"),
         "last_name": contact.get("last_name"),
@@ -53,7 +91,6 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> str:
         "instagram_url": contact.get("instagram_url"),
         "facebook_url": contact.get("facebook_url"),
         "info": contact.get("info"),
-        "contact_result": contact.get("contact_result"),
         "updated_at": datetime.utcnow().isoformat(),
     }
     res = store._client.table("contacts").upsert(
@@ -63,35 +100,6 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> str:
     if res.data:
         return res.data[0]["id"]
     return ""
-
-
-def link_contact_to_companies(
-    store: SupabaseStore, contact_id: str, company_domains: list[str]
-) -> None:
-    """Upsert rows in contact_companies join table (idempotent)."""
-    if not company_domains:
-        return
-    rows = [
-        {"contact_id": contact_id, "company_domain": domain}
-        for domain in company_domains
-    ]
-    store._client.table("contact_companies").upsert(
-        rows, on_conflict="contact_id,company_domain", ignore_duplicates=True
-    ).execute()
-    logger.debug("link_contact_to_companies: %s -> %s", contact_id, company_domains)
-
-
-def get_company_domains_for_contact(
-    store: SupabaseStore, contact_id: str
-) -> list[str]:
-    """Return all company_domains linked to a contact."""
-    res = (
-        store._client.table("contact_companies")
-        .select("company_domain")
-        .eq("contact_id", contact_id)
-        .execute()
-    )
-    return [r["company_domain"] for r in (res.data or [])]
 
 
 def mark_enriched(store: SupabaseStore, domain: str) -> None:
@@ -129,8 +137,6 @@ def main() -> None:
     if args.upsert:
         contact = json.loads(sys.stdin.read())
         contact_id = upsert_contact(store, contact)
-        if contact.get("company_domains"):
-            link_contact_to_companies(store, contact_id, contact["company_domains"])
         print(f"OK (id={contact_id})")
     elif args.mark_enriched:
         mark_enriched(store, args.mark_enriched)
