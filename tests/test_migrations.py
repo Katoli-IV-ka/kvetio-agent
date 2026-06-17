@@ -95,3 +95,28 @@ def test_migration_016_bot_default_limit_5():
     assert "nightly-full" in sql
     assert "limit_per_segment" in sql
     assert "'5'::jsonb" in sql
+
+
+def test_migration_017_agent_database_cleanup():
+    sql = _read("017_agent_database_cleanup.sql")
+    assert "ADD COLUMN IF NOT EXISTS company_id UUID" in sql
+    assert "REFERENCES companies(id)" in sql
+    assert "contacts_unmatched_company_domain" in sql
+    assert "contacts_contact_type_check" in sql
+    assert "'Related Person'" in sql
+    assert "contacts_email_status_check" in sql
+    assert "'scraped'" in sql
+    assert "contacts_source_vector_check" in sql
+    assert "'contact_page'" in sql
+    assert "DROP TABLE IF EXISTS " + "contact_companies" in sql
+    assert "DROP TABLE IF EXISTS " + "bot_presets" in sql
+    assert "DROP COLUMN IF EXISTS score" in sql
+    assert "DROP COLUMN IF EXISTS " + "score_bucket" in sql
+    assert "DROP COLUMN IF EXISTS " + "score_version" in sql
+    assert "DROP COLUMN IF EXISTS " + "ai_direction" in sql
+    assert "DROP COLUMN IF EXISTS sources" in sql
+    assert "DROP COLUMN IF EXISTS " + "latest_signal" in sql
+    assert "DROP COLUMN IF EXISTS " + "reject_reason" in sql
+    assert "DROP COLUMN IF EXISTS " + "outreach_status" in sql
+    assert "DROP COLUMN IF EXISTS " + "outreach_note" in sql
+    assert "DROP COLUMN IF EXISTS " + "contact_result" in sql
