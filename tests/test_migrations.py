@@ -94,27 +94,56 @@ def test_removed_company_fields_are_not_in_schema() -> None:
         assert column not in companies
 
 
-def test_contacts_use_company_id_without_removed_crm_fields() -> None:
+def test_contacts_schema_is_compact_outreach_contract() -> None:
     sql = _schema()
-    assert "company_id UUID NOT NULL" in sql
-    assert "REFERENCES companies(id)" in sql
-    assert "company_domain TEXT NOT NULL" in sql
-    assert "notion_page_id TEXT" in sql
-    assert "notion_synced_at TIMESTAMPTZ" in sql
-    assert "contact_result" not in sql
-    assert "outreach_status" not in sql
-    assert "outreach_note" not in sql
+    assert "CREATE TABLE contacts" in sql
+    for column in (
+        "company_id UUID NOT NULL REFERENCES companies(id)",
+        "first_name TEXT NOT NULL",
+        "last_name TEXT NOT NULL DEFAULT ''",
+        "info TEXT",
+        "email TEXT",
+        "phone TEXT",
+        "linkedin_url TEXT",
+        "x_url TEXT",
+        "facebook_url TEXT",
+        "instagram_url TEXT",
+        "other_channels JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "notion_page_id TEXT",
+        "notion_synced_at TIMESTAMPTZ",
+    ):
+        assert column in sql
 
 
-def test_contact_constraints_match_runtime_code() -> None:
+def test_contacts_schema_removed_legacy_fields() -> None:
+    sql = _table_body(_schema(), "contacts")
+    for removed in (
+        "company_domain",
+        "full_name",
+        "title TEXT",
+        "title_normalized",
+        "dm_priority",
+        "email_status",
+        "email_source",
+        "twitter_handle",
+        "github_username",
+        "hf_username",
+        "personal_website",
+        "source_vector",
+        "source_url",
+        "confidence TEXT",
+        "raw_payload",
+        "contact_type",
+    ):
+        assert removed not in sql
+
+
+def test_contacts_schema_uses_company_name_dedup() -> None:
     sql = _schema()
-    for email_status in ("verified", "guessed", "bounced", "unknown", "scraped"):
-        assert f"'{email_status}'" in sql
-    for invalid_hunter_status in ("'valid'", "'invalid'", "'accept_all'"):
-        assert invalid_hunter_status not in sql
-    for source_vector in ("github", "huggingface", "team_page", "apollo", "wellfound", "arxiv", "contact_page"):
-        assert f"'{source_vector}'" in sql
-    assert "'Related Person'" in sql
+    assert "CREATE UNIQUE INDEX idx_contacts_company_name" in sql
+    assert "ON contacts (company_id, lower(first_name), lower(last_name))" in sql
+    assert "idx_contacts_company_id" in sql
+    assert "idx_contacts_email" in sql
 
 
 def test_deep_analysis_tables_have_expected_unique_keys() -> None:

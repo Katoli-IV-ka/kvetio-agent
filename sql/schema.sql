@@ -97,64 +97,35 @@ CREATE INDEX idx_run_logs_started_at ON run_logs (started_at DESC);
 CREATE TABLE contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES companies(id),
-    company_domain TEXT NOT NULL,
-    full_name TEXT NOT NULL,
-    first_name TEXT,
-    last_name TEXT,
-    title TEXT,
-    title_normalized TEXT,
-    dm_priority INTEGER NOT NULL DEFAULT 2
-        CHECK (dm_priority BETWEEN 1 AND 3),
+
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL DEFAULT '',
+    info TEXT,
+
     email TEXT,
-    email_status TEXT NOT NULL DEFAULT 'unknown'
-        CHECK (email_status IN ('verified', 'guessed', 'bounced', 'unknown', 'scraped')),
-    email_source TEXT,
+    phone TEXT,
     linkedin_url TEXT,
-    twitter_handle TEXT,
-    github_username TEXT,
-    hf_username TEXT,
-    personal_website TEXT,
-    source_vector TEXT NOT NULL DEFAULT 'github'
-        CHECK (source_vector IN (
-            'github',
-            'huggingface',
-            'team_page',
-            'apollo',
-            'wellfound',
-            'arxiv',
-            'contact_page'
-        )),
-    source_url TEXT,
-    confidence TEXT NOT NULL DEFAULT 'medium'
-        CHECK (confidence IN ('high', 'medium', 'low')),
-    raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    x_url TEXT,
+    facebook_url TEXT,
+    instagram_url TEXT,
+
+    other_channels JSONB NOT NULL DEFAULT '[]'::jsonb
+        CHECK (jsonb_typeof(other_channels) = 'array'),
+
     notion_page_id TEXT,
     notion_synced_at TIMESTAMPTZ,
-    contact_type TEXT NOT NULL DEFAULT 'Person'
-        CHECK (contact_type IN ('Person', 'Company', 'Related Person', 'Other')),
-    phone TEXT,
-    instagram_url TEXT,
-    facebook_url TEXT,
-    info TEXT,
+
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_contacts_dedup
-    ON contacts (company_domain, lower(full_name));
-CREATE UNIQUE INDEX idx_contacts_upsert_key
-    ON contacts (company_domain, full_name);
-CREATE INDEX idx_contacts_company_domain
-    ON contacts (company_domain);
+CREATE UNIQUE INDEX idx_contacts_company_name
+    ON contacts (company_id, lower(first_name), lower(last_name));
 CREATE INDEX idx_contacts_company_id
     ON contacts (company_id);
-CREATE INDEX idx_contacts_priority
-    ON contacts (dm_priority, company_domain);
-CREATE INDEX idx_contacts_email_status
-    ON contacts (email_status)
+CREATE INDEX idx_contacts_email
+    ON contacts (email)
     WHERE email IS NOT NULL;
-CREATE INDEX idx_contacts_source_vector
-    ON contacts (source_vector);
 
 DROP TRIGGER IF EXISTS trg_contacts_updated_at ON contacts;
 CREATE TRIGGER trg_contacts_updated_at

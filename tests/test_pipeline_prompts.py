@@ -168,3 +168,11 @@ def test_prompts_document_signal_type_prefixes() -> None:
     assert "primary_*" in text
     assert "verification_*" in text
     assert "monitor_*" in text
+
+
+def test_dm_enrich_prompt_uses_compact_contact_schema():
+    p = _read("dm_enrich_task.md")
+    for field in ("first_name", "last_name", "info", "phone", "x_url", "other_channels"):
+        assert field in p
+    for removed in ("full_name", "email_status", "confidence", "contact_type", "source_vector"):
+        assert removed not in p

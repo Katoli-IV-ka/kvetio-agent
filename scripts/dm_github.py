@@ -27,6 +27,17 @@ GH_API = "https://api.github.com"
 NOREPLY_RE = re.compile(r"(^|@|\+)noreply|@users\.noreply\.github\.com$", re.IGNORECASE)
 
 
+def _split_name(name: str) -> tuple[str, str]:
+    parts = (name or "").strip().split(maxsplit=1)
+    return (parts[0], parts[1] if len(parts) > 1 else "") if parts else ("", "")
+
+
+def _x_url(handle: str | None) -> str | None:
+    if not handle:
+        return None
+    return f"https://x.com/{handle.lstrip('@')}"
+
+
 def extract_org_login(url: str) -> str | None:
     """Return org login from a github.com URL."""
     if not url:
@@ -67,15 +78,21 @@ def fetch_user_profile(login: str, client: HttpClient) -> dict | None:
     data = client.get_json(f"{GH_API}/users/{login}")
     if not isinstance(data, dict) or "login" not in data:
         return None
+    first_name, last_name = _split_name(data.get("name") or login)
+    other_channels = [{"type": "github", "url": f"https://github.com/{login}"}]
+    if data.get("blog"):
+        other_channels.append({"type": "personal_website", "url": data["blog"]})
     return {
-        "source": "github_profile",
-        "github_username": login,
-        "full_name": data.get("name") or login,
+        "first_name": first_name,
+        "last_name": last_name,
+        "info": data.get("bio") or data.get("company"),
         "email": data.get("email"),
-        "bio": data.get("bio"),
-        "twitter_handle": data.get("twitter_username"),
-        "blog": data.get("blog"),
-        "company": data.get("company"),
+        "phone": None,
+        "linkedin_url": None,
+        "x_url": _x_url(data.get("twitter_username")),
+        "facebook_url": None,
+        "instagram_url": None,
+        "other_channels": other_channels,
     }
 
 
@@ -116,16 +133,22 @@ def fetch_commit_authors(org: str, client: HttpClient, max_repos: int = 3) -> li
             if not is_real_email(email) or email in seen_emails:
                 continue
             seen_emails.add(email)
+            first_name, last_name = _split_name(name)
+            other_channels = []
+            if login:
+                other_channels.append({"type": "github", "url": f"https://github.com/{login}"})
 
             results.append({
-                "source": "github_commit",
-                "github_username": login,
-                "full_name": name,
+                "first_name": first_name,
+                "last_name": last_name,
+                "info": f"Commit author in {org}/{repo_name}",
                 "email": email,
-                "bio": None,
-                "twitter_handle": None,
-                "blog": None,
-                "company": org,
+                "phone": None,
+                "linkedin_url": None,
+                "x_url": None,
+                "facebook_url": None,
+                "instagram_url": None,
+                "other_channels": other_channels,
             })
 
     return results

@@ -18,13 +18,13 @@ def test_load_mapping_reads_entities():
         assert column not in names
 
 
-def test_contacts_mapping_has_company_relation_and_title():
+def test_contacts_mapping_has_company_relation_and_name():
     mapping = ns.load_mapping()
     fields = mapping["contacts"]["fields"]
     by_column = {field["db_column"]: field for field in fields}
 
     assert by_column["company_page_ids"]["notion_type"] == "relation"
-    assert by_column["title"]["notion_property"] == "Title"
+    assert by_column["contact_name"]["notion_property"] == "Name"
     assert "contact" + "_result" not in by_column
 
 
@@ -334,18 +334,21 @@ def test_build_arg_parser_accepts_flags():
     assert args.dry_run is True
 
 
-def test_contacts_mapping_has_v2_fields():
+def test_contacts_mapping_matches_compact_schema():
     mapping = ns.load_mapping()
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
-    assert "Name" in contacts_fields
-    assert "Title" in contacts_fields
-    assert "Тип контакта" in contacts_fields
-    assert "Phone" in contacts_fields
-    assert "Instagram" in contacts_fields
-    assert "Facebook" in contacts_fields
-    assert "Источник" in contacts_fields
-    assert "Информация о контакте" in contacts_fields
-    assert "Компании" in contacts_fields
+    assert contacts_fields == {
+        "Name",
+        "Информация о контакте",
+        "Email",
+        "Phone",
+        "LinkedIn",
+        "X",
+        "Facebook",
+        "Instagram",
+        "Другие каналы",
+        "Компании",
+    }
 
 
 def test_to_notion_property_phone_number():
@@ -373,7 +376,7 @@ def test_validate_mapping_accepts_phone_number_and_relation():
         "contacts": {
             "notion_database_id_env": "NOTION_CONTACTS_DB_ID",
             "fields": [
-                {"db_column": "full_name",        "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
+                {"db_column": "contact_name",     "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
                 {"db_column": "phone",            "notion_property": "Phone",     "notion_type": "phone_number", "direction": "forward"},
                 {"db_column": "company_page_ids", "notion_property": "Компании",  "notion_type": "relation",     "direction": "forward"},
             ],
@@ -385,8 +388,8 @@ def test_validate_mapping_accepts_phone_number_and_relation():
 
 def test_enrich_contact_rows_uses_company_id_relation():
     rows = [
-        {"id": "c1", "full_name": "Alice", "company_id": "co1"},
-        {"id": "c2", "full_name": "Bob", "company_id": "co2"},
+        {"id": "c1", "first_name": "Alice", "last_name": "", "company_id": "co1"},
+        {"id": "c2", "first_name": "Bob", "last_name": "", "company_id": "co2"},
     ]
     companies = [
         {"id": "co1", "domain": "acme.com", "notion_page_id": "np-acme"},
@@ -405,6 +408,39 @@ def test_enrich_contact_rows_uses_company_id_relation():
     assert enriched[1]["company_page_ids"] == ["np-beta"]
 
 
+def test_enrich_contact_rows_adds_display_name_and_other_channels_text():
+    rows = [
+        {
+            "id": "c1",
+            "first_name": "Alice",
+            "last_name": "Chen",
+            "company_id": "co1",
+            "other_channels": [
+                {"type": "github", "url": "https://github.com/alice", "label": "GitHub"},
+                {"type": "personal_website", "url": "https://alice.dev"},
+            ],
+        },
+    ]
+    companies = [
+        {"id": "co1", "domain": "acme.com", "notion_page_id": "np-acme"},
+    ]
+
+    class FakeDb:
+        def fetch(self, table, status_filter=None):
+            if table == "companies":
+                return companies
+            raise AssertionError(f"unexpected table read: {table}")
+
+    enriched = ns.enrich_contact_rows(rows, FakeDb())
+
+    assert enriched[0]["contact_name"] == "Alice Chen"
+    assert enriched[0]["company_page_ids"] == ["np-acme"]
+    assert enriched[0]["other_channels_text"] == (
+        "GitHub: https://github.com/alice\n"
+        "personal_website: https://alice.dev"
+    )
+
+
 def test_sync_reverse_imports_new_contact_with_single_company_relation():
     mapping = {
         "contacts": {
@@ -412,7 +448,7 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
             "db_table": "contacts",
             "db_key": "id",
             "fields": [
-                {"db_column": "full_name", "notion_property": "Name", "notion_type": "title", "direction": "reverse"},
+                {"db_column": "contact_name", "notion_property": "Name", "notion_type": "title", "direction": "reverse"},
                 {"db_column": "email", "notion_property": "Email", "notion_type": "email", "direction": "reverse"},
                 {"db_column": "company_page_ids", "notion_property": "Компания", "notion_type": "relation", "direction": "reverse"},
             ],
@@ -470,10 +506,10 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
         (
             "contacts",
             {
-                "full_name": "Alice",
+                "first_name": "Alice",
+                "last_name": "",
                 "email": "alice@acme.ai",
                 "company_id": "company-uuid",
-                "company_domain": "acme.ai",
                 "notion_page_id": "notion-contact-1",
             },
         )

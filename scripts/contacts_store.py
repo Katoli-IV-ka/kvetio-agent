@@ -1,7 +1,7 @@
 """CRUD for contacts plus dm_enriched_at marker on companies.
 
 CLI:
-    echo '{"company_domain":"radai.com","full_name":"Sarah Chen","source_vector":"apollo"}' \
+    echo '{"company_domain":"radai.com","first_name":"Sarah","last_name":"Chen"}' \
         | python scripts/contacts_store.py --upsert
     python scripts/contacts_store.py --mark-enriched radai.com
     python scripts/contacts_store.py --list radai.com
@@ -20,6 +20,94 @@ sys.path.insert(0, str(Path(__file__).parent))
 from supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
+
+PRIMARY_OTHER_CHANNEL_TYPES = {
+    "email",
+    "phone",
+    "linkedin",
+    "linkedin_url",
+    "x",
+    "twitter",
+    "twitter_url",
+    "facebook",
+    "facebook_url",
+    "instagram",
+    "instagram_url",
+}
+
+
+def split_contact_name(contact: dict) -> tuple[str, str]:
+    """Return first/last name, accepting legacy full_name payloads."""
+    first = (contact.get("first_name") or "").strip()
+    last = (contact.get("last_name") or "").strip()
+    if first:
+        return first, last
+
+    full_name = (contact.get("full_name") or "").strip()
+    if not full_name:
+        raise ValueError("first_name or full_name is required")
+
+    parts = full_name.split(maxsplit=1)
+    return parts[0], parts[1] if len(parts) > 1 else ""
+
+
+def normalize_x_url(contact: dict) -> str | None:
+    """Return a full X URL from x_url, twitter_url, or twitter_handle."""
+    explicit = contact.get("x_url") or contact.get("twitter_url")
+    if explicit:
+        return explicit
+    handle = (contact.get("twitter_handle") or "").strip()
+    if not handle:
+        return None
+    return f"https://x.com/{handle.lstrip('@')}"
+
+
+def _channel(type_: str, url: str, label: str | None = None) -> dict:
+    item = {"type": type_, "url": url}
+    if label:
+        item["label"] = label
+    return item
+
+
+def normalize_other_channels(contact: dict) -> list[dict]:
+    """Normalize secondary contact channels and remove primary-channel duplicates."""
+    candidates: list[dict] = []
+
+    github_username = (contact.get("github_username") or "").strip()
+    if github_username:
+        candidates.append(_channel("github", f"https://github.com/{github_username}"))
+
+    hf_username = (contact.get("hf_username") or "").strip()
+    if hf_username:
+        candidates.append(_channel("huggingface", f"https://huggingface.co/{hf_username}"))
+
+    personal_website = contact.get("personal_website")
+    if personal_website:
+        candidates.append(_channel("personal_website", personal_website))
+
+    for item in contact.get("other_channels") or []:
+        if not isinstance(item, dict):
+            continue
+        type_ = str(item.get("type") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not type_ or not url:
+            continue
+        if type_ in PRIMARY_OTHER_CHANNEL_TYPES:
+            continue
+        normalized = {"type": type_, "url": url}
+        if item.get("label"):
+            normalized["label"] = str(item["label"])
+        candidates.append(normalized)
+
+    seen: set[tuple[str, str]] = set()
+    result: list[dict] = []
+    for item in candidates:
+        key = (item["type"], item["url"])
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def resolve_company_ref(
@@ -55,48 +143,31 @@ def resolve_company_ref(
 
 
 def upsert_contact(store: SupabaseStore, contact: dict) -> str:
-    """Upsert one contact. Conflict key: (company_domain, full_name).
-
-    Returns the contact's UUID (id).
-    """
+    """Upsert one contact. Conflict key: (company_id, first_name, last_name)."""
     company_ref = resolve_company_ref(
         store,
         domain=contact.get("company_domain"),
         company_id=contact.get("company_id"),
     )
+    first_name, last_name = split_contact_name(contact)
     row = {
         "company_id": company_ref["id"],
-        "company_domain": company_ref["domain"],
-        "full_name": contact["full_name"],
-        "first_name": contact.get("first_name"),
-        "last_name": contact.get("last_name"),
-        "title": contact.get("title"),
-        "title_normalized": contact.get("title_normalized"),
-        "dm_priority": contact.get("dm_priority", 2),
+        "first_name": first_name,
+        "last_name": last_name,
+        "info": contact.get("info") or contact.get("title") or contact.get("title_normalized"),
         "email": contact.get("email"),
-        "email_status": contact.get("email_status", "unknown"),
-        "email_source": contact.get("email_source"),
-        "linkedin_url": contact.get("linkedin_url"),
-        "twitter_handle": contact.get("twitter_handle"),
-        "github_username": contact.get("github_username"),
-        "hf_username": contact.get("hf_username"),
-        "personal_website": contact.get("personal_website"),
-        "source_vector": contact.get("source_vector", "github"),
-        "source_url": contact.get("source_url"),
-        "confidence": contact.get("confidence", "medium"),
-        "raw_payload": contact.get("raw_payload", {}),
-        # V2 fields
-        "contact_type": contact.get("contact_type", "Person"),
         "phone": contact.get("phone"),
-        "instagram_url": contact.get("instagram_url"),
+        "linkedin_url": contact.get("linkedin_url"),
+        "x_url": normalize_x_url(contact),
         "facebook_url": contact.get("facebook_url"),
-        "info": contact.get("info"),
+        "instagram_url": contact.get("instagram_url"),
+        "other_channels": normalize_other_channels(contact),
         "updated_at": datetime.utcnow().isoformat(),
     }
     res = store._client.table("contacts").upsert(
-        row, on_conflict="company_domain,full_name"
+        row, on_conflict="company_id,first_name,last_name"
     ).execute()
-    logger.debug("upsert_contact: %s / %s", row["company_domain"], row["full_name"])
+    logger.debug("upsert_contact: %s / %s %s", company_ref["domain"], first_name, last_name)
     if res.data:
         return res.data[0]["id"]
     return ""
@@ -113,12 +184,13 @@ def mark_enriched(store: SupabaseStore, domain: str) -> None:
 
 
 def list_contacts(store: SupabaseStore, domain: str) -> list[dict]:
-    """Return company contacts ordered by dm_priority."""
+    """Return company contacts ordered by first name."""
+    company_ref = resolve_company_ref(store, domain=domain)
     res = (
         store._client.table("contacts")
         .select("*")
-        .eq("company_domain", domain)
-        .order("dm_priority")
+        .eq("company_id", company_ref["id"])
+        .order("first_name")
         .execute()
     )
     return res.data or []

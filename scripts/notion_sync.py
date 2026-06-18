@@ -145,6 +145,25 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
     return blocks
 
 
+def contact_display_name(row: dict) -> str:
+    first = str(row.get("first_name") or "").strip()
+    last = str(row.get("last_name") or "").strip()
+    return " ".join(part for part in (first, last) if part) or "Unknown contact"
+
+
+def other_channels_text(row: dict) -> str | None:
+    channels = row.get("other_channels") or []
+    lines: list[str] = []
+    for item in channels:
+        if not isinstance(item, dict):
+            continue
+        type_ = str(item.get("label") or item.get("type") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if type_ and url:
+            lines.append(f"{type_}: {url}")
+    return "\n".join(lines) if lines else None
+
+
 def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
     """Add Notion company relation page ids to contact rows via company_id."""
     companies = db.fetch("companies")
@@ -158,7 +177,12 @@ def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
     enriched = []
     for row in rows:
         page_id = page_id_by_company_id.get(row.get("company_id"))
-        enriched.append({**row, "company_page_ids": [page_id] if page_id else []})
+        enriched.append({
+            **row,
+            "contact_name": contact_display_name(row),
+            "other_channels_text": other_channels_text(row),
+            "company_page_ids": [page_id] if page_id else [],
+        })
     return enriched
 
 
@@ -340,12 +364,15 @@ class NotionSync:
                         company = company_by_page_id.get(value[0])
                         if not company:
                             raise ValueError(f"company relation not found: {value[0]}")
+                    elif field["db_column"] == "contact_name":
+                        parts = str(value or "").strip().split(maxsplit=1)
+                        changes["first_name"] = parts[0] if parts else ""
+                        changes["last_name"] = parts[1] if len(parts) > 1 else ""
                     else:
                         changes[field["db_column"]] = value
 
                 if company:
                     changes["company_id"] = company["id"]
-                    changes["company_domain"] = company["domain"]
 
                 if page_id in existing_by_page_id:
                     row = existing_by_page_id[page_id]

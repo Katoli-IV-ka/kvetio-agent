@@ -98,14 +98,16 @@ def fetch(domain: str) -> list[dict]:
 
     return [
         {
-            "full_name": f"[{domain}] Contact",
+            "first_name": "Contact",
+            "last_name": "",
+            "info": f"General contact address found on {url}",
             "email": email,
-            "email_status": "scraped",
-            "email_source": "contact_page",
-            "source_vector": "contact_page",
-            "source_url": url,
-            "dm_priority": 3,
-            "confidence": "medium",
+            "phone": None,
+            "linkedin_url": None,
+            "x_url": None,
+            "facebook_url": None,
+            "instagram_url": None,
+            "other_channels": [{"type": "contact_page", "url": url}],
         }
         for email in emails
     ]

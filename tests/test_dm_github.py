@@ -73,10 +73,15 @@ def test_fetch_user_profile_maps_fields(respx_mock):
     )
     with HttpClient(rate_limit_rps=0) as client:
         profile = fetch_user_profile("jongwook", client)
-    assert profile["full_name"] == "Jong Wook Kim"
+    assert profile["first_name"] == "Jong"
+    assert profile["last_name"] == "Wook Kim"
+    assert profile["info"] == "Research Scientist"
     assert profile["email"] == "jongwook@radai.com"
-    assert profile["twitter_handle"] == "jongwookk"
-    assert profile["source"] == "github_profile"
+    assert profile["x_url"] == "https://x.com/jongwookk"
+    assert profile["other_channels"] == [
+        {"type": "github", "url": "https://github.com/jongwook"},
+        {"type": "personal_website", "url": "https://jongwook.kim"},
+    ]
 
 
 @pytest.mark.respx(base_url=GH_API)
@@ -114,7 +119,12 @@ def test_fetch_commit_authors_filters_noreply(respx_mock):
         authors = fetch_commit_authors("test-org", client, max_repos=1)
     assert len(authors) == 1
     assert authors[0]["email"] == "real@company.com"
-    assert authors[0]["source"] == "github_commit"
+    assert authors[0]["first_name"] == "Real"
+    assert authors[0]["last_name"] == "User"
+    assert authors[0]["info"] == "Commit author in test-org/main-repo"
+    assert authors[0]["other_channels"] == [
+        {"type": "github", "url": "https://github.com/realuser"},
+    ]
 
 
 def test_fetch_user_profile_includes_twitter_handle():
@@ -132,7 +142,7 @@ def test_fetch_user_profile_includes_twitter_handle():
         "company": "Rad AI",
     }
     result = fetch_user_profile("jdoe", fake_client)
-    assert result["twitter_handle"] == "johndoe_x"
+    assert result["x_url"] == "https://x.com/johndoe_x"
 
 
 def test_fetch_user_profile_twitter_handle_none_when_absent():
@@ -150,4 +160,4 @@ def test_fetch_user_profile_twitter_handle_none_when_absent():
         "company": None,
     }
     result = fetch_user_profile("jdoe", fake_client)
-    assert result["twitter_handle"] is None
+    assert result["x_url"] is None

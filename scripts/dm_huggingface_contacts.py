@@ -25,6 +25,11 @@ HF_API = "https://huggingface.co/api"
 _HF_SYSTEM_PATHS = {"models", "datasets", "spaces", "api", "docs", ""}
 
 
+def _split_name(name: str) -> tuple[str, str]:
+    parts = (name or "").strip().split(maxsplit=1)
+    return (parts[0], parts[1] if len(parts) > 1 else "") if parts else ("", "")
+
+
 def get_hf_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
     """Find HF org from company signals."""
     signals = store.get_signals_for_company(domain)
@@ -71,11 +76,22 @@ def fetch(domain: str) -> list[dict]:
             overview = fetch_user_overview(username, client)
             if not overview:
                 continue
+            first_name, last_name = _split_name(
+                overview.get("fullname") or member.get("fullname") or username
+            )
             results.append({
-                "hf_username": username,
-                "full_name": overview.get("fullname") or member.get("fullname") or username,
-                "bio": overview.get("details"),
-                "source_url": f"https://huggingface.co/{username}",
+                "first_name": first_name,
+                "last_name": last_name,
+                "info": overview.get("details"),
+                "email": None,
+                "phone": None,
+                "linkedin_url": None,
+                "x_url": None,
+                "facebook_url": None,
+                "instagram_url": None,
+                "other_channels": [
+                    {"type": "huggingface", "url": f"https://huggingface.co/{username}"},
+                ],
             })
     return results
 

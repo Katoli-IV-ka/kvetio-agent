@@ -35,6 +35,11 @@ HEADERS = {
 }
 
 
+def _split_name(name: str) -> tuple[str, str]:
+    parts = (name or "").strip().split(maxsplit=1)
+    return (parts[0], parts[1] if len(parts) > 1 else "") if parts else ("", "")
+
+
 def slugify(name: str) -> str:
     """Convert a company name to a Wellfound-style slug."""
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
@@ -84,11 +89,18 @@ def _parse_people_from_json(data: dict, source_url: str) -> list[dict]:
             name = person.get("name") or person.get("fullName")
             if not name:
                 continue
+            first_name, last_name = _split_name(name)
             results.append({
-                "full_name": name,
-                "title": person.get("title") or person.get("role"),
+                "first_name": first_name,
+                "last_name": last_name,
+                "info": person.get("title") or person.get("role"),
+                "email": None,
+                "phone": None,
                 "linkedin_url": person.get("linkedinUrl") or person.get("linkedin_url"),
-                "source_url": source_url,
+                "x_url": None,
+                "facebook_url": None,
+                "instagram_url": None,
+                "other_channels": [{"type": "wellfound", "url": source_url}],
             })
     return results
 
@@ -113,11 +125,18 @@ def scrape_wellfound(slug: str) -> list[dict]:
 
     for linkedin_url in extract_linkedin_urls(html)[:5]:
         slug_part = linkedin_url.rstrip("/").split("/")[-1]
+        first_name, last_name = _split_name(slug_part.replace("-", " ").title())
         results.append({
-            "full_name": slug_part.replace("-", " ").title(),
-            "title": None,
+            "first_name": first_name,
+            "last_name": last_name,
+            "info": None,
+            "email": None,
+            "phone": None,
             "linkedin_url": linkedin_url,
-            "source_url": url,
+            "x_url": None,
+            "facebook_url": None,
+            "instagram_url": None,
+            "other_channels": [{"type": "wellfound", "url": url}],
         })
     return results
 

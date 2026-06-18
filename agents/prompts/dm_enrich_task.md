@@ -16,7 +16,7 @@ LIMIT 10;
 ```
 
 Only write contacts for companies selected from the companies table. Use the
-selected company id and domain in every contacts_store payload. Do not create
+selected company id in every contacts_store payload. Do not create
 contacts for a company that does not exist in companies.
 
 ## Contact sources
@@ -34,15 +34,25 @@ contacts for a company that does not exist in companies.
 ```json
 {
   "company_id": "00000000-0000-0000-0000-000000000001",
-  "company_domain": "acme.ai",
-  "full_name": "Alice Chen",
-  "contact_type": "Person",
-  "title": "Head of ML",
+  "first_name": "Alice",
+  "last_name": "Chen",
+  "info": "Head of ML; likely owns dataset/vendor decisions.",
   "email": "alice@acme.ai",
-  "source_vector": "apollo",
-  "source_url": "https://app.apollo.io/#/people/alice-chen"
+  "phone": "+1-555-0100",
+  "linkedin_url": "https://www.linkedin.com/in/alicechen",
+  "x_url": "https://x.com/alicechen",
+  "facebook_url": null,
+  "instagram_url": null,
+  "other_channels": [
+    {"type": "github", "url": "https://github.com/alicechen"},
+    {"type": "personal_website", "url": "https://alicechen.dev"}
+  ]
 }
 ```
+
+Do not put `email`, `phone`, `linkedin_url`, `x_url`, `facebook_url`, or
+`instagram_url` into `other_channels`. These are primary channels and must live
+only in their dedicated fields.
 
 Write via:
 
