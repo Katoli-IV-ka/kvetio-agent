@@ -14,7 +14,18 @@ def test_load_mapping_reads_entities():
     fields = mapping["companies"]["fields"]
     names = {f["db_column"] for f in fields}
     assert "name" in names
-    assert "outreach_status" in names
+    for column in ("outreach" + "_status", "outreach" + "_note", "latest" + "_signal"):
+        assert column not in names
+
+
+def test_contacts_mapping_has_company_relation_and_title():
+    mapping = ns.load_mapping()
+    fields = mapping["contacts"]["fields"]
+    by_column = {field["db_column"]: field for field in fields}
+
+    assert by_column["company_page_ids"]["notion_type"] == "relation"
+    assert by_column["title"]["notion_property"] == "Title"
+    assert "contact" + "_result" not in by_column
 
 
 def test_validate_mapping_flags_bad_type():
@@ -130,14 +141,14 @@ COMPANIES_MAPPING = {
         "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
         "db_table": "companies",
         "db_key": "domain",
-        "db_status_filter": ["qualified"],
+        "db_status_filter": ["relevant"],
         "fields": [
             {"db_column": "name", "notion_property": "Company name",
              "notion_type": "title", "direction": "forward"},
-            {"db_column": "score", "notion_property": "Score",
-             "notion_type": "number", "direction": "forward"},
-            {"db_column": "outreach_status", "notion_property": "Статус анализа",
-             "notion_type": "select", "direction": "reverse"},
+            {"db_column": "icp_segment", "notion_property": "ICP Segment",
+             "notion_type": "select", "direction": "forward"},
+            {"db_column": "manual_note", "notion_property": "Manual note",
+             "notion_type": "rich_text", "direction": "reverse"},
         ],
     }
 }
@@ -147,8 +158,8 @@ def _engine(rows):
     notion = FakeNotion()
     notion.databases["DBID"] = {"properties": {
         "Company name": {"type": "title"},
-        "Score": {"type": "number"},
-        "Статус анализа": {"type": "select"},
+        "ICP Segment": {"type": "select"},
+        "Manual note": {"type": "rich_text"},
     }}
     db = FakeDb(rows)
     monkey_env = {"NOTION_COMPANIES_DB_ID": "DBID"}
@@ -158,8 +169,8 @@ def _engine(rows):
 
 
 def test_forward_creates_page_and_writes_back_id():
-    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
-             "status": "qualified", "notion_page_id": None}]
+    rows = [{"domain": "acme.com", "name": "Acme", "icp_segment": "medical-imaging",
+             "status": "relevant", "notion_page_id": None}]
     sync, notion, db = _engine(rows)
     result = sync.sync_forward("companies")
     assert result["created"] == 1
@@ -167,14 +178,14 @@ def test_forward_creates_page_and_writes_back_id():
     assert page_id is not None
     props = notion.pages[page_id]["properties"]
     assert props["Company name"] == {"title": [{"text": {"content": "Acme"}}]}
-    assert props["Score"] == {"number": 80}
+    assert props["ICP Segment"] == {"select": {"name": "medical-imaging"}}
     # forward не пишет reverse-поле:
-    assert "Статус анализа" not in props
+    assert "Manual note" not in props
 
 
 def test_forward_is_idempotent():
-    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
-             "status": "qualified", "notion_page_id": "page-1"}]
+    rows = [{"domain": "acme.com", "name": "Acme", "icp_segment": "medical-imaging",
+             "status": "relevant", "notion_page_id": "page-1"}]
     notion = FakeNotion()
     notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
     db = FakeDb(rows)
@@ -188,24 +199,24 @@ def test_forward_is_idempotent():
 
 
 def test_reverse_pulls_whitelist_into_db():
-    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
-             "status": "qualified", "notion_page_id": "page-1",
-             "outreach_status": None}]
+    rows = [{"domain": "acme.com", "name": "Acme",
+             "status": "relevant", "notion_page_id": "page-1",
+             "manual_note": None}]
     notion = FakeNotion()
     notion.pages["page-1"] = {"_db": "DBID", "properties": {
-        "Статус анализа": {"select": {"name": "Contacted"}},
+        "Manual note": {"rich_text": [{"plain_text": "Needs review"}]},
     }, "children": []}
     db = FakeDb(rows)
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
     result = sync.sync_reverse("companies")
     assert result["updated"] == 1
-    assert db.tables["companies"][0]["outreach_status"] == "Contacted"
+    assert db.tables["companies"][0]["manual_note"] == "Needs review"
 
 
 def test_reverse_skips_rows_without_page_id():
     rows = [{"domain": "acme.com", "name": "Acme", "notion_page_id": None,
-             "status": "qualified"}]
+             "status": "relevant"}]
     notion = FakeNotion()
     db = FakeDb(rows)
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
@@ -215,18 +226,18 @@ def test_reverse_skips_rows_without_page_id():
 
 
 def test_sync_all_runs_reverse_then_forward():
-    rows = [{"domain": "acme.com", "name": "Acme", "score": 80,
-             "status": "qualified", "notion_page_id": "page-1",
-             "outreach_status": None}]
+    rows = [{"domain": "acme.com", "name": "Acme", "icp_segment": "medical-imaging",
+             "status": "relevant", "notion_page_id": "page-1",
+             "manual_note": None}]
     notion = FakeNotion()
     notion.pages["page-1"] = {"_db": "DBID", "properties": {
-        "Статус анализа": {"select": {"name": "Replied"}}}, "children": []}
+        "Manual note": {"rich_text": [{"plain_text": "Revisit"}]}}, "children": []}
     db = FakeDb(rows)
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
     result = sync.sync_all("companies")
-    # reverse подтянул статус в БД:
-    assert db.tables["companies"][0]["outreach_status"] == "Replied"
+    # reverse подтянул ручное поле в БД:
+    assert db.tables["companies"][0]["manual_note"] == "Revisit"
     # forward обновил страницу:
     assert result["forward"]["updated"] == 1
 
@@ -246,18 +257,18 @@ def test_ensure_schema_creates_missing_props():
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
     result = sync.ensure_schema("companies")
     props = notion.databases["DBID"]["properties"]
-    assert "Score" in props          # создано
-    assert "Статус анализа" in props # создано
+    assert "ICP Segment" in props    # создано
+    assert "Manual note" in props    # создано
     assert result["created"] == 2
-    assert "Score" in result["created_props"]
+    assert "ICP Segment" in result["created_props"]
 
 
 def test_ensure_schema_leaves_existing_untouched():
     notion = FakeNotion()
     notion.databases["DBID"] = {"properties": {
         "Company name": {"type": "title"},
-        "Score": {"type": "number"},
-        "Статус анализа": {"type": "select"},
+        "ICP Segment": {"type": "select"},
+        "Manual note": {"type": "rich_text"},
     }}
     db = FakeDb([])
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
@@ -267,17 +278,17 @@ def test_ensure_schema_leaves_existing_untouched():
 
 
 def test_backfill_imports_reverse_fields_by_page_id():
-    rows = [{"domain": "acme.com", "name": "Acme", "status": "qualified",
-             "notion_page_id": "page-1", "outreach_status": None}]
+    rows = [{"domain": "acme.com", "name": "Acme", "status": "relevant",
+             "notion_page_id": "page-1", "manual_note": None}]
     notion = FakeNotion()
     notion.pages["page-1"] = {"_db": "DBID", "properties": {
-        "Статус анализа": {"select": {"name": "Won"}}}, "children": []}
+        "Manual note": {"rich_text": [{"plain_text": "Won"}]}}, "children": []}
     db = FakeDb(rows)
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
     result = sync.backfill("companies")
     assert result["updated"] == 1
-    assert db.tables["companies"][0]["outreach_status"] == "Won"
+    assert db.tables["companies"][0]["manual_note"] == "Won"
 
 
 def test_md_to_blocks_makes_heading_and_paragraphs():
@@ -312,7 +323,7 @@ def test_list_fields_human_readable():
     text = sync.list_fields("companies")
     assert "name" in text
     assert "forward" in text
-    assert "Статус анализа" in text
+    assert "Manual note" in text
 
 
 def test_build_arg_parser_accepts_flags():
@@ -327,13 +338,13 @@ def test_contacts_mapping_has_v2_fields():
     mapping = ns.load_mapping()
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
     assert "Name" in contacts_fields
+    assert "Title" in contacts_fields
     assert "Тип контакта" in contacts_fields
     assert "Phone" in contacts_fields
     assert "Instagram" in contacts_fields
     assert "Facebook" in contacts_fields
     assert "Источник" in contacts_fields
     assert "Информация о контакте" in contacts_fields
-    assert "Результаты связи" in contacts_fields
     assert "Компании" in contacts_fields
 
 
@@ -372,31 +383,98 @@ def test_validate_mapping_accepts_phone_number_and_relation():
     assert errors == []
 
 
-def test_enrich_contact_rows_adds_company_page_ids():
+def test_enrich_contact_rows_uses_company_id_relation():
     rows = [
-        {"id": "c1", "full_name": "Alice", "company_domain": "acme.com"},
-        {"id": "c2", "full_name": "Bob",   "company_domain": "beta.io"},
-    ]
-    contact_companies = [
-        {"contact_id": "c1", "company_domain": "acme.com"},
-        {"contact_id": "c1", "company_domain": "beta.io"},
-        {"contact_id": "c2", "company_domain": "beta.io"},
+        {"id": "c1", "full_name": "Alice", "company_id": "co1"},
+        {"id": "c2", "full_name": "Bob", "company_id": "co2"},
     ]
     companies = [
-        {"domain": "acme.com", "notion_page_id": "np-acme"},
-        {"domain": "beta.io",  "notion_page_id": "np-beta"},
+        {"id": "co1", "domain": "acme.com", "notion_page_id": "np-acme"},
+        {"id": "co2", "domain": "beta.io", "notion_page_id": "np-beta"},
     ]
 
-    class FakeDb2:
+    class FakeDb:
         def fetch(self, table, status_filter=None):
-            if table == "contact_companies":
-                return contact_companies
             if table == "companies":
                 return companies
-            return []
+            raise AssertionError(f"unexpected table read: {table}")
 
-    enriched = ns.enrich_contact_rows(rows, FakeDb2())
-    c1 = next(r for r in enriched if r["id"] == "c1")
-    c2 = next(r for r in enriched if r["id"] == "c2")
-    assert set(c1["company_page_ids"]) == {"np-acme", "np-beta"}
-    assert c2["company_page_ids"] == ["np-beta"]
+    enriched = ns.enrich_contact_rows(rows, FakeDb())
+
+    assert enriched[0]["company_page_ids"] == ["np-acme"]
+    assert enriched[1]["company_page_ids"] == ["np-beta"]
+
+
+def test_sync_reverse_imports_new_contact_with_single_company_relation():
+    mapping = {
+        "contacts": {
+            "notion_database_id_env": "NOTION_CONTACTS_DB_ID",
+            "db_table": "contacts",
+            "db_key": "id",
+            "fields": [
+                {"db_column": "full_name", "notion_property": "Name", "notion_type": "title", "direction": "reverse"},
+                {"db_column": "email", "notion_property": "Email", "notion_type": "email", "direction": "reverse"},
+                {"db_column": "company_page_ids", "notion_property": "Компания", "notion_type": "relation", "direction": "reverse"},
+            ],
+        }
+    }
+
+    class FakeNotion:
+        def query_database(self, db_id):
+            return [
+                {
+                    "id": "notion-contact-1",
+                    "properties": {
+                        "Name": {"title": [{"plain_text": "Alice"}]},
+                        "Email": {"email": "alice@acme.ai"},
+                        "Компания": {"relation": [{"id": "notion-company-1"}]},
+                    },
+                }
+            ]
+
+    class FakeDb:
+        def __init__(self):
+            self.tables = {
+                "contacts": [],
+                "companies": [
+                    {
+                        "id": "company-uuid",
+                        "domain": "acme.ai",
+                        "notion_page_id": "notion-company-1",
+                    }
+                ],
+            }
+            self.inserted = []
+
+        def fetch(self, table, status_filter=None):
+            return self.tables[table]
+
+        def update(self, table, key_col, key_val, fields):
+            raise AssertionError("new contact import should insert, not update")
+
+        def insert(self, table, fields):
+            self.inserted.append((table, fields))
+
+    db = FakeDb()
+    sync = ns.NotionSync(
+        notion=FakeNotion(),
+        db=db,
+        mapping=mapping,
+        env={"NOTION_CONTACTS_DB_ID": "contacts-db"},
+    )
+
+    result = sync.sync_reverse("contacts")
+
+    assert result == {"entity": "contacts", "updated": 0, "created": 1, "errors": 0}
+    assert db.inserted == [
+        (
+            "contacts",
+            {
+                "full_name": "Alice",
+                "email": "alice@acme.ai",
+                "company_id": "company-uuid",
+                "company_domain": "acme.ai",
+                "notion_page_id": "notion-contact-1",
+            },
+        )
+    ]

@@ -26,37 +26,27 @@ SignalType = Literal[
     "wandb_run",
     "directory_listing",
 ]
-Bucket = Literal["not_relevant", "manual_review", "qualified"]
-
 Status = Literal[
     "discovered",
     "relevant",
     "not_relevant",
     "manual_review",
-    "triaged_out",
-    "qualified",
     "sources_gathered",
     "analyzed",
     "dossier_ready",
-    "needs_update",
-    "pending_verify",
 ]
 
-# Канонический список статусов 5-этапного пайплайна.
-# discovered → relevant/not_relevant/manual_review → triaged_out/qualified →
-# sources_gathered → analyzed → dossier_ready; needs_update/pending_verify — петля Monitor.
+# Canonical cleanup status model:
+# discovered -> relevant/not_relevant/manual_review ->
+# sources_gathered -> analyzed -> dossier_ready.
 ALL_STATUSES: tuple[str, ...] = (
     "discovered",
     "relevant",
     "not_relevant",
     "manual_review",
-    "triaged_out",
-    "qualified",
     "sources_gathered",
     "analyzed",
     "dossier_ready",
-    "needs_update",
-    "pending_verify",
 )
 
 
@@ -114,37 +104,6 @@ class Evidence:
     snippet: str = ""
 
 
-@dataclass(frozen=True)
-class ScoringSignal:
-    """Один вклад в score — для аудита: «почему компания получила 35»."""
-
-    rule: str           # ключ из scoring.yaml
-    points: int
-    evidence_url: str | None = None
-
-
-@dataclass(frozen=True)
-class ScoreBreakdown:
-    version: str
-    training_intensity: int
-    external_data_fit: int
-    commercial_readiness: int
-    freshness: int
-    negative_flags: int         # положительное число; вычитается из total
-    bucket: Bucket
-    contributing_signals: tuple[ScoringSignal, ...] = ()
-
-    @property
-    def total(self) -> int:
-        return (
-            self.training_intensity
-            + self.external_data_fit
-            + self.commercial_readiness
-            + self.freshness
-            - self.negative_flags
-        )
-
-
 @dataclass
 class Company:
     """Агрегат — компания в базе данных."""
@@ -157,40 +116,33 @@ class Company:
     funding_stage: str | None = None
     last_funding_date: date | None = None
     evidences: list[Evidence] = field(default_factory=list)
-    score: ScoreBreakdown | None = None
     notion_page_id: str | None = None
     last_verified: date | None = None
-    status: str = "new"
-    latest_signal: str = ""
+    status: Status = "discovered"
     icp_segment: str | None = None
-    ai_direction: str | None = None     # LLM-обоснование скора
 
 
 # ── Contact ──────────────────────────────────────────────────────────────────
 
 ContactSource = Literal[
-    "github", "huggingface", "team_page", "apollo", "wellfound", "arxiv"
+    "github",
+    "huggingface",
+    "team_page",
+    "apollo",
+    "wellfound",
+    "arxiv",
+    "contact_page",
 ]
-EmailStatus = Literal["verified", "guessed", "bounced", "unknown"]
-OutreachStatus = Literal[
-    "not_contacted", "contacted", "replied", "not_interested", "converted"
-]
-ContactType = Literal["Person", "Company", "Other"]
-ContactResult = Literal[
-    "Не связывались",
-    "Не удалось связаться",
-    "Не релевантный контакт",
-    "Начат диалог",
-    "В процессе",
-    "Другое",
-]
+EmailStatus = Literal["verified", "guessed", "bounced", "unknown", "scraped"]
+ContactType = Literal["Person", "Company", "Related Person", "Other"]
 
 
 @dataclass
 class ContactRecord:
     """Decision-maker contact discovered by one or more DM vectors."""
 
-    company_domain: str          # primary company (backward compat с DM pipeline)
+    company_id: str
+    company_domain: str
     full_name: str
 
     first_name: str | None = None
@@ -218,8 +170,3 @@ class ContactRecord:
     instagram_url: str | None = None
     facebook_url: str | None = None
     info: str | None = None
-    contact_result: ContactResult | None = None
-    # Список company_domain для many-to-many (заполняется из contact_companies)
-    company_domains: list[str] = field(default_factory=list)
-    # notion_page_id компаний — заполняется при синке для поля "Компании"
-    company_page_ids: list[str] = field(default_factory=list)

@@ -29,7 +29,7 @@ def get_hf_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
     """Find HF org from company signals."""
     signals = store.get_signals_for_company(domain)
     for sig in signals:
-        url = sig.get("source_page_url") or sig.get("evidence_url") or ""
+        url = sig.get("evidence_url") or ""
         parsed = urlparse(url)
         if "huggingface.co" not in (parsed.netloc or ""):
             continue

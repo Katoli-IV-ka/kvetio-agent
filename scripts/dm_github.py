@@ -27,11 +27,11 @@ GH_API = "https://api.github.com"
 NOREPLY_RE = re.compile(r"(^|@|\+)noreply|@users\.noreply\.github\.com$", re.IGNORECASE)
 
 
-def extract_org_login(source_page_url: str) -> str | None:
+def extract_org_login(url: str) -> str | None:
     """Return org login from a github.com URL."""
-    if not source_page_url:
+    if not url:
         return None
-    parsed = urlparse(source_page_url)
+    parsed = urlparse(url)
     if "github.com" not in (parsed.netloc or ""):
         return None
     parts = [p for p in parsed.path.strip("/").split("/") if p]
@@ -49,7 +49,7 @@ def get_github_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
     """Find GitHub org login from stored company signals."""
     signals = store.get_signals_for_company(domain)
     for sig in signals:
-        url = sig.get("source_page_url") or sig.get("evidence_url") or ""
+        url = sig.get("evidence_url") or ""
         login = extract_org_login(url)
         if login:
             return login

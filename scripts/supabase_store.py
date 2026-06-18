@@ -60,18 +60,12 @@ class SupabaseStore:
             "status": company.status,
             "icp_segment": company.icp_segment,
             "funding_stage": company.funding_stage,
-            "latest_signal": company.latest_signal,
-            "ai_direction": company.ai_direction,
             "updated_at": datetime.utcnow().isoformat(),
         }
         if company.last_verified:
             row["last_verified"] = company.last_verified.isoformat()
         if company.last_funding_date:
             row["funding_date"] = company.last_funding_date.isoformat()
-        if company.score:
-            row["score"] = company.score.total
-            row["score_bucket"] = _map_bucket(company.score.bucket)
-            row["score_version"] = company.score.version
 
         self._client.table("companies").upsert(row, on_conflict="domain").execute()
         logger.debug("upsert_company: %s", company.normalized_domain)
@@ -237,16 +231,12 @@ class SupabaseStore:
         return coverage
 
     def list_hot_leads(self, limit: int = 5) -> list[dict]:
-        """Очередь Hot-лидов для Telegram routines."""
+        """Relevant companies for Telegram routines, newest updated first."""
         res = (
             self._client.table("companies")
-            .select(
-                "name, domain, status, score, score_bucket, icp_segment, latest_signal, "
-                "notion_page_id, updated_at"
-            )
-            .eq("status", "enriched")
-            .eq("score_bucket", "Hot")
-            .order("score", desc=True)
+            .select("name, domain, status, icp_segment, notion_page_id, updated_at")
+            .in_("status", ["relevant", "sources_gathered", "analyzed", "dossier_ready"])
+            .order("updated_at", desc=True)
             .limit(limit)
             .execute()
         )
@@ -255,19 +245,10 @@ class SupabaseStore:
     def list_stale_review_queue(self, days: int = 14, limit: int = 10) -> list[dict]:
         """Компании, которые давно не проверялись или ещё ни разу не проверены."""
         cutoff = date.today() - timedelta(days=days)
-        review_statuses = [
-            "new",
-            "pending_verify",
-            "pending_enrich",
-            "needs_update",
-            "manual_review",
-        ]
+        review_statuses = ["discovered", "manual_review", "relevant"]
         res = (
             self._client.table("companies")
-            .select(
-                "name, domain, status, score, score_bucket, icp_segment, "
-                "last_verified, updated_at"
-            )
+            .select("name, domain, status, icp_segment, last_verified, updated_at")
             .in_("status", review_statuses)
             .or_(f"last_verified.is.null,last_verified.lt.{cutoff.isoformat()}")
             .order("last_verified", desc=False)
@@ -275,15 +256,6 @@ class SupabaseStore:
             .execute()
         )
         return res.data or []
-
-
-def _map_bucket(bucket: str) -> str:
-    """Маппинг внутреннего bucket → Notion Score Bucket."""
-    return {
-        "qualified": "Hot",
-        "manual_review": "Warm",
-        "not_relevant": "Cold",
-    }.get(bucket, "Cold")
 
 
 if __name__ == "__main__":

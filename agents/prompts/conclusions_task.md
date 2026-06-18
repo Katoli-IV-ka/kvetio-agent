@@ -1,106 +1,59 @@
-# Conclusions Task — Сборка досье и публикация (Этап 5)
+# Conclusions Task - final dossier and Notion sync
 
 ## Роль
-Ты выполняешь роль ConclusionAgent. Для каждой `analyzed`-компании собираешь
-финальное досье из нот этапа 4, пишешь его в `dossiers`, публикуешь в Notion и
-переводишь в `dossier_ready`.
 
-**Это финальный этап pipeline.** Аутрич остаётся ручным.
+Ты выполняешь роль ConclusionAgent. Берешь companies со статусом `analyzed`,
+читаешь `analysis_notes`, собираешь итоговое dossier и переводишь компанию в
+`dossier_ready`.
 
-## Параметры запуска
+## Select companies
 
-| Параметр | По умолчанию | Описание |
-|---|---|---|
-| `segment` | все | Фильтр по сегменту |
-| `limit` | 5 | Максимум компаний на сегмент |
-| `notion_sync` | true | Запускать Notion sync после записи досье |
-
-## Шаг 1 — Список компаний
 ```sql
-SELECT domain, name, website, icp_segment, score, score_bucket, ai_direction
-FROM companies WHERE status = 'analyzed'
-  AND ('<segment>' = 'all' OR icp_segment = '<segment>')
-ORDER BY score DESC NULLS LAST
-LIMIT <limit>;
+SELECT domain, name, website, icp_segment, description, funding_stage, team_size
+FROM companies
+WHERE status = 'analyzed'
+ORDER BY updated_at DESC
+LIMIT 10;
 ```
 
-## Шаг 2 — Загрузить ноты
+## Inputs
+
 ```bash
 python scripts/dossier_store.py --list-analysis-notes <domain>
 ```
-Ожидаются ноты: company, product, collaboration, financials, news, audit.
 
-## Шаг 3 — Собрать саммари (Markdown, 6 разделов)
-Скомпонуй `summary_md` строго из фактов нот, сохраняя ссылки-провенанс:
+## Summary sections
 
-```markdown
-## О компании
-<размер, локация, дата основания, глава, направления, динамика позиции>
+Собери 6 секций:
+- О компании;
+- Продукт;
+- Сотрудничество;
+- Финансы;
+- Новости;
+- Аудит.
 
-## Продукт
-<интересующий продукт(ы): дата старта, результаты, цель/проблема/рынок, технологии, трудности, пивоты>
+## Write dossier
 
-## Сотрудничество
-<партнёры (особенно поставщики данных), команда, руководство/ЛПР>
-
-## Финансовое здоровье
-<раунды, инвесторы, признаки роста/burn; биржевой график — если публичная>
-
-## Новости
-<актуальные за 6–12 мес, без повторов инфоповодов: заголовок = суть + ссылка>
-```
-
-### Аудит
-`audit_md` — из ноты `audit` (критическая оценка, прогноз, вывод для продажи data services, точки контакта, угол оффера).
-
-## Шаг 4 — Записать досье
 ```bash
-echo '{
-  "company_domain":"<domain>",
-  "summary_md":"<summary_md>",
-  "sections":{ "company":"...", "product":"...", "collaboration":"...", "financials":"...", "news":"..." },
-  "audit_md":"<audit_md>",
-  "table_fields":{
-    "name":"<name>", "website":"<website>", "segment":"<segment>",
-    "score":<score>, "bucket":"<bucket>",
-    "sales_opportunity":"<из audit>", "contact_angle":"<из audit>"
-  },
-  "version":"v1"
-}' | python scripts/dossier_store.py --upsert-dossier
+python scripts/dossier_store.py --upsert-dossier
 ```
 
-> Полный список полней таблицы ещё не финализирован — `table_fields` провизорный.
-> При обновлении набора полей менять только этот блок.
+## Status update
 
-## Шаг 5 — Синхронизация в Notion
+```sql
+UPDATE companies
+SET status = 'dossier_ready',
+    updated_at = NOW()
+WHERE domain = '<domain>';
+```
 
-Публикация в Notion полностью детерминирована и вынесена в скрипт — ad-hoc MCP-вызовы
-здесь не используем. Запускай этот шаг только если orchestration-параметр
-`notion_sync=true` и запуск не находится в `dry_run`.
+## Notion
 
-Если `notion_sync=true`, запусти синк компаний (reverse+forward) и публикацию досье
-в тело страницы:
+After dossier write, run:
 
 ```bash
 python scripts/notion_sync.py --entity companies --all
 python scripts/notion_sync.py --entity dossiers
 ```
 
-`notion_page_id` записывается скриптом в БД автоматически — отдельный UPDATE не нужен.
-Если поле в Notion ещё не создано (после правки `config/notion_mapping.yaml`):
-
-```bash
-python scripts/notion_sync.py --ensure-schema --entity companies
-```
-
-## Шаг 6 — Перевести статус
-```sql
-UPDATE companies SET status = 'dossier_ready', updated_at = NOW()
-WHERE domain = '<domain>';
-```
-
-## Шаг 7 — Уведомления
-```bash
-python scripts/notify.py --run-summary '{"task":"conclusions_task","dossier_ready":<N>,"errors":<K>}'
-```
-Hot-лид (score ≥ threshold_qualified) → `python scripts/notify.py --hot-lead '{...}'`.
+Use the repository sync script. Do not publish ad hoc pages manually.

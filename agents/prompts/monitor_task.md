@@ -1,83 +1,45 @@
-# Monitor Task — Ежедневный мониторинг сигналов
+# Monitor Task - signal refresh loop
 
 ## Роль
-Ты выполняешь роль MonitorAgent. Каждый день проверяешь компании в базе на появление новых сигналов. При обнаружении — обновляешь статус и отправляешь уведомление.
 
-## Запуск
-Ежедневно по расписанию. Обрабатывает компании со статусами: `enriched`, `pending_verify`.
+MonitorAgent is a signal refresh loop, not a separate status machine.
 
-## Алгоритм
+## Select stale companies
 
-### Шаг 1 — Список для мониторинга
 ```sql
--- Компании, которые давно не проверялись
-SELECT domain, name, icp_segment, score, score_bucket, last_verified
+SELECT id, domain, name, icp_segment, last_verified, status
 FROM companies
-WHERE status IN ('enriched', 'pending_verify')
+WHERE status IN ('relevant', 'sources_gathered', 'analyzed', 'dossier_ready', 'manual_review')
   AND (last_verified IS NULL OR last_verified < CURRENT_DATE - INTERVAL '7 days')
-ORDER BY score DESC NULLS LAST
+ORDER BY last_verified ASC NULLS FIRST
 LIMIT 30;
 ```
 
-Приоритет: Hot > Warm > Cold. Не больше 30 компаний за один запуск.
+## Signal checks
 
-### Шаг 2 — Для каждой компании: проверить новые сигналы
+For each company, check:
+- HuggingFace models or datasets;
+- ML/data jobs;
+- funding or product news;
+- public product/docs changes.
 
-#### 2a. HuggingFace
-Через HuggingFace MCP: новые модели или датасеты от этой организации за последние 7 дней?
+For every new signal:
+- insert a row into `signals`;
+- use `signal_type` prefixed with `monitor_`;
+- update `companies.last_verified = CURRENT_DATE`.
 
-#### 2b. Вакансии
-WebSearch: `site:greenhouse.io OR site:lever.co "<company name>" ML OR annotation OR "training data"` (за последний месяц)
+Do not write legacy monitor-only statuses, company summary fields, score fields,
+or score buckets.
 
-#### 2c. Новости
-WebSearch: `"<company name>" funding OR "AI model" OR dataset` (за последние 14 дней)
+## Status updates
 
-### Шаг 3 — Оценить сигнал
+- leave status unchanged when the signal is only informational;
+- set status = 'manual_review' when the signal suggests re-evaluation;
+- set status = 'not_relevant' only when there is clear evidence the company no
+  longer fits.
 
-**Сильный новый сигнал** (требует обновления):
-- Новый раунд финансирования
-- Новая ML-вакансия с явным упоминанием данных
-- Новая модель / датасет на HuggingFace
-- Публикация о запуске AI-продукта
+## Notifications
 
-**Слабый сигнал** (записать, не менять статус):
-- Общая новость о компании без AI-контекста
-- Переиндексация старой вакансии
-
-### Шаг 4 — Обновить при сильном сигнале
-
-```sql
-UPDATE companies SET
-  latest_signal = '<описание нового сигнала>',
-  last_signal_date = '<date>',
-  status = 'needs_update',   -- если нужен пересмотр скора
-  updated_at = NOW()
-WHERE domain = '<domain>';
-```
-
-Также добавь сигнал в таблицу `signals`.
-
-### Шаг 5 — Повторная верификация устаревших
-
-Если `last_verified` > 30 дней назад И статус `enriched`:
-```sql
-UPDATE companies SET status = 'pending_verify'
-WHERE domain = '<domain>';
-```
-
-### Шаг 6 — Уведомления
-
-Если нашёл новый сильный сигнал у Hot-лида:
 ```bash
-python scripts/notify.py --message "📡 Новый сигнал: <company_name> (<domain>) — <описание>"
+python scripts/notify.py --run-summary '{"task":"monitor_task","found":<N>,"errors":0}'
 ```
-
-Итоговый отчёт по завершении мониторинга:
-```bash
-python scripts/notify.py --run-summary '{"task":"monitor_task","found":<новых_сигналов>,"enriched":0,"errors":0}'
-```
-
-## Критерии качества
-- Не спамить уведомлениями — только действительно новые сильные сигналы
-- Не менять скор без полного пересчёта (только флаг `needs_update`)
-- Фиксировать дату последней проверки даже если новых сигналов нет

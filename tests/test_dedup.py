@@ -56,19 +56,19 @@ def test_find_fuzzy_duplicate_threshold():
     assert result is None
 
 
-def test_list_hot_leads_queries_hot_enriched_companies():
-    """Hot leads queue сортируется по score и ограничивается limit."""
+def test_list_hot_leads_queries_relevant_companies_without_score():
+    """Hot leads are now relevant companies with recent signal context."""
     from supabase_store import SupabaseStore
 
     store = SupabaseStore.__new__(SupabaseStore)
     mock_client = MagicMock()
     query = MagicMock()
     response = MagicMock()
-    response.data = [{"name": "Acme", "domain": "acme.ai", "score": 80}]
+    response.data = [{"name": "Acme", "domain": "acme.ai", "status": "relevant"}]
 
     store._client = mock_client
     mock_client.table.return_value.select.return_value = query
-    query.eq.return_value = query
+    query.in_.return_value = query
     query.order.return_value = query
     query.limit.return_value = query
     query.execute.return_value = response
@@ -77,9 +77,8 @@ def test_list_hot_leads_queries_hot_enriched_companies():
 
     assert result == response.data
     mock_client.table.assert_called_with("companies")
-    query.eq.assert_any_call("status", "enriched")
-    query.eq.assert_any_call("score_bucket", "Hot")
-    query.order.assert_called_with("score", desc=True)
+    query.in_.assert_called_with("status", ["relevant", "sources_gathered", "analyzed", "dossier_ready"])
+    query.order.assert_called_with("updated_at", desc=True)
     query.limit.assert_called_with(3)
 
 
@@ -113,7 +112,7 @@ def test_list_stale_review_queue_queries_unverified_or_old_companies(monkeypatch
     assert result == response.data
     query.in_.assert_called_with(
         "status",
-        ["new", "pending_verify", "pending_enrich", "needs_update", "manual_review"],
+        ["discovered", "manual_review", "relevant"],
     )
     query.or_.assert_called_with("last_verified.is.null,last_verified.lt.2026-05-13")
     query.order.assert_called_with("last_verified", desc=False)

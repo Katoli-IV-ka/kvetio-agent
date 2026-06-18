@@ -17,7 +17,7 @@ class FakeStore:
             "by_status": {
                 "new": 3,
                 "enriched": 2,
-                "pending_verify": 1,
+                "manual_review": 1,
                 "not_relevant": 1,
             },
         }
@@ -25,39 +25,36 @@ class FakeStore:
     def coverage_by_segment(self) -> dict:
         return {
             "medical-imaging": {"new": 2, "enriched": 1},
-            "speech-and-audio": {"pending_verify": 1},
+            "speech-and-audio": {"manual_review": 1},
         }
 
     def list_hot_leads(self, limit: int = 5) -> list[dict]:
-        return [
+        hot_rows = [
             {
                 "name": "Alpha <Vision>",
                 "domain": "alpha.ai",
-                "score": 84,
-                "score_bucket": "Hot",
+                "status": "relevant",
                 "icp_segment": "medical-imaging",
-                "latest_signal": "new model release",
             },
             {
                 "name": "Beta Audio",
                 "domain": "beta.example",
-                "score": 73,
-                "score_bucket": "Hot",
+                "status": "sources_gathered",
                 "icp_segment": "speech-and-audio",
-                "latest_signal": "",
             },
-        ][:limit]
+        ]
+        return hot_rows[:limit]
 
     def list_stale_review_queue(self, days: int = 14, limit: int = 10) -> list[dict]:
-        return [
+        stale_rows = [
             {
                 "name": "Needs Review",
                 "domain": "needs-review.ai",
-                "status": "pending_verify",
+                "status": "manual_review",
                 "last_verified": "2026-05-01",
-                "score": 41,
             }
-        ][:limit]
+        ]
+        return stale_rows[:limit]
 
 
 def test_daily_digest_formats_counts_and_segment_coverage() -> None:
@@ -86,7 +83,8 @@ def test_hot_leads_escapes_html_and_respects_limit() -> None:
 
     assert "Alpha &lt;Vision&gt;" in result.message
     assert "Beta Audio" not in result.message
-    assert "Score: <b>84</b>" in result.message
+    assert "Score:" not in result.message
+    assert "relevant" in result.message
 
 
 def test_stale_review_uses_requested_day_window() -> None:
@@ -99,6 +97,8 @@ def test_stale_review_uses_requested_day_window() -> None:
 
     assert "30d" in result.message
     assert "Needs Review" in result.message
+    assert "Score:" not in result.message
+    assert "manual_review" in result.message
     assert result.payload["days"] == 30
 
 

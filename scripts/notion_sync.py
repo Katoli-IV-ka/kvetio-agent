@@ -146,33 +146,19 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
 
 
 def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
-    """Добавляет company_page_ids к каждой строке контакта.
-
-    Делает два запроса:
-      1. contact_companies → строит mapping contact_id -> [domain]
-      2. companies -> строит mapping domain -> notion_page_id
-
-    Используется в sync_forward для entity='contacts'.
-    """
-    contact_companies = db.fetch("contact_companies")
+    """Add Notion company relation page ids to contact rows via company_id."""
     companies = db.fetch("companies")
 
-    page_id_by_domain: dict[str, str] = {
-        c["domain"]: c["notion_page_id"]
+    page_id_by_company_id: dict[str, str] = {
+        c["id"]: c["notion_page_id"]
         for c in companies
-        if c.get("notion_page_id")
+        if c.get("id") and c.get("notion_page_id")
     }
-
-    domains_by_contact: dict[str, list[str]] = {}
-    for cc in contact_companies:
-        cid = cc["contact_id"]
-        domains_by_contact.setdefault(cid, []).append(cc["company_domain"])
 
     enriched = []
     for row in rows:
-        domains = domains_by_contact.get(row.get("id", ""), [])
-        page_ids = [page_id_by_domain[d] for d in domains if d in page_id_by_domain]
-        enriched.append({**row, "company_page_ids": page_ids})
+        page_id = page_id_by_company_id.get(row.get("company_id"))
+        enriched.append({**row, "company_page_ids": [page_id] if page_id else []})
     return enriched
 
 
@@ -224,6 +210,9 @@ class DbGateway:
 
     def update(self, table, key_col, key_val, fields):
         self._c.table(table).update(fields).eq(key_col, key_val).execute()
+
+    def insert(self, table, fields):
+        self._c.table(table).insert(fields).execute()
 
 
 class NotionSync:
@@ -288,6 +277,9 @@ class NotionSync:
         return {r["notion_page_id"]: r for r in rows if r.get("notion_page_id")}
 
     def sync_reverse(self, entity, dry_run=False) -> dict:
+        if entity == "contacts":
+            return self._sync_contacts_reverse(dry_run=dry_run)
+
         cfg = self._cfg(entity)
         fields = self._fields(entity, "reverse")
         if not fields:
@@ -312,6 +304,70 @@ class NotionSync:
                 logger.error("reverse %s %s: %s", entity, page_id, exc)
                 errors += 1
         return {"entity": entity, "updated": updated, "errors": errors}
+
+    def _sync_contacts_reverse(self, dry_run=False) -> dict:
+        cfg = self._cfg("contacts")
+        db_id = self._db_id("contacts")
+        reverse_fields = self._fields("contacts", "reverse")
+        if not reverse_fields:
+            return {"entity": "contacts", "updated": 0, "created": 0, "errors": 0}
+
+        pages = self.notion.query_database(db_id)
+        existing_by_page_id = self._page_index("contacts")
+        companies = self.db.fetch("companies")
+        company_by_page_id = {
+            row["notion_page_id"]: row
+            for row in companies
+            if row.get("notion_page_id")
+        }
+
+        created = updated = errors = 0
+
+        for page in pages:
+            page_id = page["id"]
+            props = page.get("properties", {})
+            try:
+                changes = {}
+                company = None
+                for field in reverse_fields:
+                    value = from_notion_property(
+                        field["notion_type"],
+                        props.get(field["notion_property"]),
+                    )
+                    if field["db_column"] == "company_page_ids":
+                        if len(value or []) != 1:
+                            raise ValueError("contact must have exactly one company relation")
+                        company = company_by_page_id.get(value[0])
+                        if not company:
+                            raise ValueError(f"company relation not found: {value[0]}")
+                    else:
+                        changes[field["db_column"]] = value
+
+                if company:
+                    changes["company_id"] = company["id"]
+                    changes["company_domain"] = company["domain"]
+
+                if page_id in existing_by_page_id:
+                    row = existing_by_page_id[page_id]
+                    diff = {
+                        key: value
+                        for key, value in changes.items()
+                        if value != row.get(key)
+                    }
+                    if diff and not dry_run:
+                        self.db.update(cfg["db_table"], cfg["db_key"], row[cfg["db_key"]], diff)
+                    if diff:
+                        updated += 1
+                else:
+                    insert_row = {**changes, "notion_page_id": page_id}
+                    if not dry_run:
+                        self.db.insert(cfg["db_table"], insert_row)
+                    created += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("reverse contacts %s: %s", page_id, exc)
+                errors += 1
+
+        return {"entity": "contacts", "updated": updated, "created": created, "errors": errors}
 
     def _read_page_props(self, page_id):
         """Свойства страницы из закэшированного query_database."""
