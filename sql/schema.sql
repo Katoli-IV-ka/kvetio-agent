@@ -121,6 +121,8 @@ CREATE TABLE contacts (
 
 CREATE UNIQUE INDEX idx_contacts_company_name
     ON contacts (company_id, lower(first_name), lower(last_name));
+CREATE UNIQUE INDEX idx_contacts_company_name_upsert
+    ON contacts (company_id, first_name, last_name);
 CREATE INDEX idx_contacts_company_id
     ON contacts (company_id);
 CREATE INDEX idx_contacts_email

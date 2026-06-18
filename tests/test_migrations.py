@@ -142,6 +142,8 @@ def test_contacts_schema_uses_company_name_dedup() -> None:
     sql = _schema()
     assert "CREATE UNIQUE INDEX idx_contacts_company_name" in sql
     assert "ON contacts (company_id, lower(first_name), lower(last_name))" in sql
+    assert "CREATE UNIQUE INDEX idx_contacts_company_name_upsert" in sql
+    assert "ON contacts (company_id, first_name, last_name)" in sql
     assert "idx_contacts_company_id" in sql
     assert "idx_contacts_email" in sql
 
