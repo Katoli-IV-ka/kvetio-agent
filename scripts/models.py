@@ -124,49 +124,24 @@ class Company:
 
 # ── Contact ──────────────────────────────────────────────────────────────────
 
-ContactSource = Literal[
-    "github",
-    "huggingface",
-    "team_page",
-    "apollo",
-    "wellfound",
-    "arxiv",
-    "contact_page",
-]
-EmailStatus = Literal["verified", "guessed", "bounced", "unknown", "scraped"]
-ContactType = Literal["Person", "Company", "Related Person", "Other"]
+OtherChannel = dict[str, str]
 
 
 @dataclass
 class ContactRecord:
-    """Decision-maker contact discovered by one or more DM vectors."""
+    """Current outreach contact for a company."""
 
     company_id: str
-    company_domain: str
-    full_name: str
+    first_name: str
+    last_name: str = ""
 
-    first_name: str | None = None
-    last_name: str | None = None
-    title: str | None = None
-    title_normalized: str | None = None
-    dm_priority: int = 2
+    info: str | None = None
 
     email: str | None = None
-    email_status: EmailStatus = "unknown"
-    email_source: str | None = None
-    linkedin_url: str | None = None
-    twitter_handle: str | None = None
-    github_username: str | None = None
-
-    source_vector: ContactSource = "github"
-    source_url: str | None = None
-    confidence: Confidence = "medium"
-
-    raw_payload: dict = field(default_factory=dict)
-
-    # ── V2: новые поля для ручного управления контактами ─────────────────────
-    contact_type: ContactType = "Person"
     phone: str | None = None
-    instagram_url: str | None = None
+    linkedin_url: str | None = None
+    x_url: str | None = None
     facebook_url: str | None = None
-    info: str | None = None
+    instagram_url: str | None = None
+
+    other_channels: list[OtherChannel] = field(default_factory=list)

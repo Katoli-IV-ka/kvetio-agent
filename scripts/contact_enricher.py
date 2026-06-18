@@ -1,8 +1,7 @@
-"""Contact enricher: email guesser, Hunter.io verify, social/website discovery.
+"""Contact enricher: email guesser and social/website discovery.
 
 CLI:
     python scripts/contact_enricher.py --domain radai.com
-    python scripts/contact_enricher.py --domain radai.com --skip-hunter
 """
 
 from __future__ import annotations
@@ -14,6 +13,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 
@@ -23,7 +23,6 @@ from supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
 
-HUNTER_API = "https://api.hunter.io/v2"
 GH_API = "https://api.github.com"
 HF_API = "https://huggingface.co/api"
 TWITTER_RE = re.compile(r"@([A-Za-z0-9_]{1,15})")
@@ -90,58 +89,54 @@ def guess_emails(domain: str, contacts: list[dict]) -> list[dict]:
         updated.append({
             **contact,
             "email": guessed,
-            "email_status": "guessed",
-            "email_source": "pattern_guesser",
-            "confidence": "low",
         })
     return updated
 
 
-# ── Step 2: Hunter.io Verify ───────────────────────────────────────────────
+# ── Step 2: Social/Website Discovery ──────────────────────────────────────
 
 
-def verify_with_hunter(email: str, api_key: str) -> str:
-    """Call Hunter.io Email Verifier. Returns: valid | invalid | accept_all | unknown."""
-    try:
-        resp = httpx.get(
-            f"{HUNTER_API}/email-verifier",
-            params={"email": email, "api_key": api_key},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        return resp.json().get("data", {}).get("result", "unknown")
-    except Exception as exc:
-        logger.warning("Hunter.io verify failed for %s: %s", email, exc)
-        return "unknown"
-
-
-def run_hunter_verify(contacts: list[dict], api_key: str) -> list[dict]:
-    """Verify guessed emails via Hunter.io. Returns only contacts that were updated."""
-    updated: list[dict] = []
-    for contact in contacts:
-        if contact.get("email_status") != "guessed":
+def _channel_username(contact: dict, type_: str, legacy_key: str) -> str | None:
+    legacy = contact.get(legacy_key)
+    if legacy:
+        return str(legacy).strip()
+    for item in contact.get("other_channels") or []:
+        if not isinstance(item, dict) or item.get("type") != type_:
             continue
-        status = verify_with_hunter(contact["email"], api_key)
-        patch: dict = {"email_status": status, "email_source": "hunter_verify"}
-        if status == "invalid":
-            patch["email"] = None
-        updated.append({**contact, **patch})
-    return updated
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        return urlparse(url).path.strip("/").split("/")[0]
+    return None
 
 
-# ── Step 3: Social/Website Discovery ──────────────────────────────────────
+def _has_channel(contact: dict, type_: str) -> bool:
+    return any(
+        isinstance(item, dict) and item.get("type") == type_ and item.get("url")
+        for item in contact.get("other_channels") or []
+    )
+
+
+def _with_channel(contact: dict, type_: str, url: str) -> dict:
+    channels = [
+        item for item in contact.get("other_channels") or []
+        if isinstance(item, dict)
+    ]
+    if not any(item.get("type") == type_ and item.get("url") == url for item in channels):
+        channels.append({"type": type_, "url": url})
+    return {**contact, "other_channels": channels}
 
 
 def enrich_from_github(contacts: list[dict]) -> list[dict]:
-    """Fill twitter_handle and personal_website from GitHub profile API."""
+    """Fill x_url and personal website channel from GitHub profile API."""
     token = os.getenv("GITHUB_TOKEN")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     updated: list[dict] = []
     for contact in contacts:
-        username = contact.get("github_username")
+        username = _channel_username(contact, "github", "github_username")
         if not username:
             continue
-        if contact.get("twitter_handle") and contact.get("personal_website"):
+        if contact.get("x_url") and _has_channel(contact, "personal_website"):
             continue
         try:
             resp = httpx.get(f"{GH_API}/users/{username}", headers=headers, timeout=10)
@@ -151,23 +146,24 @@ def enrich_from_github(contacts: list[dict]) -> list[dict]:
             logger.debug("GitHub profile fetch failed for %s: %s", username, exc)
             continue
         patch: dict = {}
-        if not contact.get("twitter_handle") and data.get("twitter_username"):
-            patch["twitter_handle"] = data["twitter_username"]
-        if not contact.get("personal_website") and data.get("blog"):
-            patch["personal_website"] = data["blog"]
-        if patch:
-            updated.append({**contact, **patch})
+        if not contact.get("x_url") and data.get("twitter_username"):
+            patch["x_url"] = f"https://x.com/{data['twitter_username'].lstrip('@')}"
+        enriched = {**contact, **patch}
+        if data.get("blog") and not _has_channel(enriched, "personal_website"):
+            enriched = _with_channel(enriched, "personal_website", data["blog"])
+        if enriched != contact:
+            updated.append(enriched)
     return updated
 
 
 def enrich_from_huggingface(contacts: list[dict]) -> list[dict]:
-    """Fill twitter_handle and personal_website by parsing HuggingFace bio."""
+    """Fill x_url and personal website channel by parsing HuggingFace bio."""
     updated: list[dict] = []
     for contact in contacts:
-        username = contact.get("hf_username")
+        username = _channel_username(contact, "huggingface", "hf_username")
         if not username:
             continue
-        if contact.get("twitter_handle") and contact.get("personal_website"):
+        if contact.get("x_url") and _has_channel(contact, "personal_website"):
             continue
         try:
             resp = httpx.get(f"{HF_API}/users/{username}/overview", timeout=10)
@@ -178,16 +174,17 @@ def enrich_from_huggingface(contacts: list[dict]) -> list[dict]:
             continue
         bio = (data.get("user") or {}).get("details") or ""
         patch: dict = {}
-        if not contact.get("twitter_handle"):
+        if not contact.get("x_url"):
             m = TWITTER_RE.search(bio)
             if m:
-                patch["twitter_handle"] = m.group(1)
-        if not contact.get("personal_website"):
+                patch["x_url"] = f"https://x.com/{m.group(1)}"
+        enriched = {**contact, **patch}
+        if not _has_channel(enriched, "personal_website"):
             m = re.search(r"https?://\S+", bio)
             if m:
-                patch["personal_website"] = m.group(0)
-        if patch:
-            updated.append({**contact, **patch})
+                enriched = _with_channel(enriched, "personal_website", m.group(0))
+        if enriched != contact:
+            updated.append(enriched)
     return updated
 
 
@@ -196,6 +193,8 @@ def enrich_from_huggingface(contacts: list[dict]) -> list[dict]:
 
 def run(domain: str, skip_hunter: bool = False) -> None:
     """Run all enrichment steps for a domain in sequence."""
+    if skip_hunter:
+        logger.debug("skip_hunter is deprecated; Hunter verification is not in the default flow")
     store = SupabaseStore()
 
     # Step 1: guess missing emails
@@ -208,23 +207,12 @@ def run(domain: str, skip_hunter: bool = False) -> None:
     for contact in guessed:
         upsert_contact(store, {**contact, "company_domain": domain})
 
-    # Step 2: Hunter.io verify (optional)
-    if not skip_hunter:
-        api_key = os.getenv("HUNTER_API_KEY")
-        if api_key:
-            contacts = list_contacts(store, domain)
-            verified = run_hunter_verify(contacts, api_key)
-            for contact in verified:
-                upsert_contact(store, {**contact, "company_domain": domain})
-        else:
-            logger.info("HUNTER_API_KEY not set; skipping Hunter.io verify")
-
-    # Step 3: social/website discovery from GitHub
+    # Step 2: social/website discovery from GitHub
     contacts = list_contacts(store, domain)
     for contact in enrich_from_github(contacts):
         upsert_contact(store, {**contact, "company_domain": domain})
 
-    # Step 4: social/website discovery from HuggingFace
+    # Step 3: social/website discovery from HuggingFace
     contacts = list_contacts(store, domain)
     for contact in enrich_from_huggingface(contacts):
         upsert_contact(store, {**contact, "company_domain": domain})

@@ -1,122 +1,153 @@
-"""Contract-тесты для foundation-миграций 008–014.
+"""Contract tests for the current database baseline schema.
 
-Миграции применяются вручную в Supabase SQL Editor, поэтому здесь мы
-проверяем не живую БД, а что SQL-файлы существуют и содержат ключевой DDL.
+The project no longer keeps test-era migration history. `sql/schema.sql` is the
+single source of truth for creating the current clean Supabase schema.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 SQL_DIR = Path(__file__).parent.parent / "sql"
+SCHEMA = SQL_DIR / "schema.sql"
 
 
-def _read(name: str) -> str:
-    return (SQL_DIR / name).read_text(encoding="utf-8")
+def _schema() -> str:
+    return SCHEMA.read_text(encoding="utf-8")
 
 
-def test_migration_008_source_links():
-    sql = _read("008_source_links.sql")
-    assert "CREATE TABLE IF NOT EXISTS source_links" in sql
+def _table_body(sql: str, table: str) -> str:
+    match = re.search(rf"CREATE TABLE {table} \((.*?)\n\);", sql, re.DOTALL)
+    assert match is not None
+    return match.group(1)
+
+
+def test_schema_file_is_the_only_active_sql_contract() -> None:
+    sql_files = sorted(path.name for path in SQL_DIR.glob("*.sql"))
+    assert sql_files == ["schema.sql"]
+
+
+def test_schema_creates_current_runtime_tables() -> None:
+    sql = _schema()
+    for table in (
+        "companies",
+        "signals",
+        "run_logs",
+        "contacts",
+        "source_links",
+        "analysis_notes",
+        "dossiers",
+    ):
+        assert f"CREATE TABLE {table}" in sql
+
+
+def test_schema_does_not_create_removed_runtime_objects() -> None:
+    sql = _schema()
+    removed_objects = (
+        "pipeline_runs",
+        "bot_users",
+        "bot_dialog_state",
+        "bot_presets",
+        "contact_companies",
+        "github_org_cache",
+        "recent_leads",
+        "pipeline_stats",
+    )
+    for name in removed_objects:
+        assert name not in sql
+
+
+def test_companies_status_contract_is_current() -> None:
+    sql = _schema()
+    companies = _table_body(sql, "companies")
+    assert "status TEXT NOT NULL DEFAULT 'discovered'" in companies
+    for status in (
+        "discovered",
+        "relevant",
+        "not_relevant",
+        "manual_review",
+        "sources_gathered",
+        "analyzed",
+        "dossier_ready",
+    ):
+        assert f"'{status}'" in companies
+    for legacy_status in ("qualified", "triaged_out", "pending_enrich", "enriched", "Researching"):
+        assert f"'{legacy_status}'" not in companies
+
+
+def test_removed_company_fields_are_not_in_schema() -> None:
+    sql = _schema()
+    companies = _table_body(sql, "companies")
+    for column in (
+        "score",
+        "score_bucket",
+        "score_version",
+        "ai_direction",
+        "sources JSONB",
+        "latest_signal",
+        "reject_reason",
+        "outreach_status",
+        "outreach_note",
+        "source_page_url",
+    ):
+        assert column not in companies
+
+
+def test_contacts_schema_is_compact_outreach_contract() -> None:
+    sql = _schema()
+    assert "CREATE TABLE contacts" in sql
+    for column in (
+        "company_id UUID NOT NULL REFERENCES companies(id)",
+        "first_name TEXT NOT NULL",
+        "last_name TEXT NOT NULL DEFAULT ''",
+        "info TEXT",
+        "email TEXT",
+        "phone TEXT",
+        "linkedin_url TEXT",
+        "x_url TEXT",
+        "facebook_url TEXT",
+        "instagram_url TEXT",
+        "other_channels JSONB NOT NULL DEFAULT '[]'::jsonb",
+        "notion_page_id TEXT",
+        "notion_synced_at TIMESTAMPTZ",
+    ):
+        assert column in sql
+
+
+def test_contacts_schema_removed_legacy_fields() -> None:
+    sql = _table_body(_schema(), "contacts")
+    for removed in (
+        "company_domain",
+        "full_name",
+        "title TEXT",
+        "title_normalized",
+        "dm_priority",
+        "email_status",
+        "email_source",
+        "twitter_handle",
+        "github_username",
+        "hf_username",
+        "personal_website",
+        "source_vector",
+        "source_url",
+        "confidence TEXT",
+        "raw_payload",
+        "contact_type",
+    ):
+        assert removed not in sql
+
+
+def test_contacts_schema_uses_company_name_dedup() -> None:
+    sql = _schema()
+    assert "CREATE UNIQUE INDEX idx_contacts_company_name" in sql
+    assert "ON contacts (company_id, lower(first_name), lower(last_name))" in sql
+    assert "idx_contacts_company_id" in sql
+    assert "idx_contacts_email" in sql
+
+
+def test_deep_analysis_tables_have_expected_unique_keys() -> None:
+    sql = _schema()
     assert "UNIQUE (company_domain, kind, url)" in sql
-
-
-def test_migration_009_analysis_notes():
-    sql = _read("009_analysis_notes.sql")
-    assert "CREATE TABLE IF NOT EXISTS analysis_notes" in sql
     assert "UNIQUE (company_domain, section, version)" in sql
-
-
-def test_migration_010_dossiers():
-    sql = _read("010_dossiers.sql")
-    assert "CREATE TABLE IF NOT EXISTS dossiers" in sql
-    assert "summary_md" in sql
-
-
-def test_migration_011_notion_sync_fields():
-    sql = _read("011_notion_sync_fields.sql")
-    assert "ALTER TABLE companies" in sql
-    assert "outreach" + "_status" in sql
-    assert "outreach" + "_note" in sql
-    assert "notion_synced_at" in sql
-    assert "ALTER TABLE contacts" in sql
-    assert "ALTER TABLE dossiers" in sql
-    assert "notion_page_id" in sql
-
-
-def test_migration_012_bot():
-    sql = _read("012_bot.sql")
-    assert "CREATE TABLE IF NOT EXISTS pipeline_runs" in sql
-    assert "CREATE TABLE IF NOT EXISTS bot_users" in sql
-    assert "CREATE TABLE IF NOT EXISTS " + "bot" + "_presets" in sql
-    assert "CREATE TABLE IF NOT EXISTS bot_dialog_state" in sql
-
-
-def test_migration_013_contacts_v2():
-    sql = _read("013_contacts_v2.sql")
-    assert "ADD COLUMN IF NOT EXISTS contact_type" in sql
-    assert "ADD COLUMN IF NOT EXISTS phone" in sql
-    assert "ADD COLUMN IF NOT EXISTS instagram_url" in sql
-    assert "ADD COLUMN IF NOT EXISTS facebook_url" in sql
-    assert "ADD COLUMN IF NOT EXISTS info" in sql
-    assert "ADD COLUMN IF NOT EXISTS " + "contact" + "_result" in sql
-    assert "CREATE TABLE IF NOT EXISTS " + "contact" + "_companies" in sql
-    assert "REFERENCES contacts(id) ON DELETE CASCADE" in sql
-
-
-
-def test_migration_014_drop_pipeline_runs():
-    sql = _read("014_drop_pipeline_runs.sql")
-    assert "DROP TABLE IF EXISTS pipeline_runs" in sql
-    # run_logs must NOT be dropped — only pipeline_runs goes away
-    assert "DROP TABLE IF EXISTS run_logs" not in sql
-
-
-def test_migration_015_drop_bot_runtime_state():
-    sql = _read("015_drop_bot_runtime_state.sql")
-    assert "DROP TABLE IF EXISTS bot_users" in sql
-    assert "DROP TABLE IF EXISTS bot_dialog_state" in sql
-    assert "DROP TABLE IF EXISTS " + "bot" + "_presets" not in sql
-
-
-def test_migration_015_drop_unused_db_objects():
-    sql = _read("015_drop_unused_db_objects.sql")
-    assert "DROP VIEW IF EXISTS recent_leads" in sql
-    assert "DROP VIEW IF EXISTS pipeline_stats" in sql
-    assert "DROP TABLE IF EXISTS github_org_cache" in sql
-    assert "DROP TABLE IF EXISTS companies" not in sql
-    assert "DROP TABLE IF EXISTS signals" not in sql
-    assert "DROP TABLE IF EXISTS run_logs" not in sql
-
-
-def test_migration_016_bot_default_limit_5():
-    sql = _read("016_bot_default_limit_5.sql")
-    assert "UPDATE " + "bot" + "_presets" in sql
-    assert "nightly-full" in sql
-    assert "limit_per_segment" in sql
-    assert "'5'::jsonb" in sql
-
-
-def test_migration_017_agent_database_cleanup():
-    sql = _read("017_agent_database_cleanup.sql")
-    assert "ADD COLUMN IF NOT EXISTS company_id UUID" in sql
-    assert "REFERENCES companies(id)" in sql
-    assert "contacts_unmatched_company_domain" in sql
-    assert "contacts_contact_type_check" in sql
-    assert "'Related Person'" in sql
-    assert "contacts_email_status_check" in sql
-    assert "'scraped'" in sql
-    assert "contacts_source_vector_check" in sql
-    assert "'contact_page'" in sql
-    assert "DROP TABLE IF EXISTS " + "contact" + "_companies" in sql
-    assert "DROP TABLE IF EXISTS " + "bot" + "_presets" in sql
-    assert "DROP COLUMN IF EXISTS score" in sql
-    assert "DROP COLUMN IF EXISTS " + "score" + "_bucket" in sql
-    assert "DROP COLUMN IF EXISTS " + "score" + "_version" in sql
-    assert "DROP COLUMN IF EXISTS " + "ai" + "_direction" in sql
-    assert "DROP COLUMN IF EXISTS sources" in sql
-    assert "DROP COLUMN IF EXISTS " + "latest" + "_signal" in sql
-    assert "DROP COLUMN IF EXISTS " + "reject" + "_reason" in sql
-    assert "DROP COLUMN IF EXISTS " + "outreach" + "_status" in sql
-    assert "DROP COLUMN IF EXISTS " + "outreach" + "_note" in sql
-    assert "DROP COLUMN IF EXISTS " + "contact" + "_result" in sql
+    assert "company_domain TEXT PRIMARY KEY" in sql

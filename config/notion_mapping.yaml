@@ -21,14 +21,13 @@ contacts:
   db_table: contacts
   db_key: id
   fields:
-    - { db_column: full_name,        notion_property: "Name",                  notion_type: title,        direction: forward }
-    - { db_column: title,            notion_property: "Title",                 notion_type: rich_text,    direction: forward }
-    - { db_column: contact_type,     notion_property: "Тип контакта",          notion_type: select,       direction: forward }
-    - { db_column: email,            notion_property: "Email",                 notion_type: email,        direction: forward }
-    - { db_column: phone,            notion_property: "Phone",                 notion_type: phone_number, direction: forward }
-    - { db_column: linkedin_url,     notion_property: "LinkedIn",              notion_type: url,          direction: forward }
-    - { db_column: instagram_url,    notion_property: "Instagram",             notion_type: url,          direction: forward }
-    - { db_column: facebook_url,     notion_property: "Facebook",              notion_type: url,          direction: forward }
-    - { db_column: source_url,       notion_property: "Источник",              notion_type: url,          direction: forward }
-    - { db_column: info,             notion_property: "Информация о контакте", notion_type: rich_text,    direction: forward }
-    - { db_column: company_page_ids, notion_property: "Компании",              notion_type: relation,     direction: forward }
+    - { db_column: contact_name,        notion_property: "Name",                  notion_type: title,        direction: forward }
+    - { db_column: info,                notion_property: "Информация о контакте", notion_type: rich_text,    direction: forward }
+    - { db_column: email,               notion_property: "Email",                 notion_type: email,        direction: forward }
+    - { db_column: phone,               notion_property: "Phone",                 notion_type: phone_number, direction: forward }
+    - { db_column: linkedin_url,        notion_property: "LinkedIn",              notion_type: url,          direction: forward }
+    - { db_column: x_url,               notion_property: "X",                     notion_type: url,          direction: forward }
+    - { db_column: facebook_url,        notion_property: "Facebook",              notion_type: url,          direction: forward }
+    - { db_column: instagram_url,       notion_property: "Instagram",             notion_type: url,          direction: forward }
+    - { db_column: other_channels_text, notion_property: "Другие каналы",         notion_type: rich_text,    direction: forward }
+    - { db_column: company_page_ids,    notion_property: "Компании",              notion_type: relation,     direction: forward }

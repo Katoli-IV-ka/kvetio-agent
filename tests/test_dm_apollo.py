@@ -25,10 +25,12 @@ def test_search_people_maps_response(respx_mock):
     )
     results = search_people("radai.com", "test_key")
     assert len(results) == 1
-    assert results[0]["full_name"] == "Sarah Chen"
+    assert results[0]["first_name"] == "Sarah"
+    assert results[0]["last_name"] == "Chen"
+    assert results[0]["info"] == "Head of ML"
     assert results[0]["email"] is None
-    assert results[0]["email_status"] == "verified"
     assert results[0]["linkedin_url"] == "https://linkedin.com/in/sarahchen"
+    assert results[0]["other_channels"] == []
 
 
 @pytest.mark.respx(base_url=APOLLO_BASE)

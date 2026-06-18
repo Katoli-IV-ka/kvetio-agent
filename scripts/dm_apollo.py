@@ -59,6 +59,11 @@ TITLE_KEYWORDS = [
 SENIORITIES = ["vp", "director", "c_suite", "founder", "partner", "senior", "manager"]
 
 
+def _split_name(name: str) -> tuple[str, str]:
+    parts = (name or "").strip().split(maxsplit=1)
+    return (parts[0], parts[1] if len(parts) > 1 else "") if parts else ("", "")
+
+
 def search_people(domain: str, api_key: str) -> list[dict]:
     """POST /mixed_people/search without requesting revealed email addresses."""
     payload = {
@@ -84,15 +89,22 @@ def search_people(domain: str, api_key: str) -> list[dict]:
 
     results: list[dict] = []
     for person in data.get("people", []):
+        first_name = person.get("first_name")
+        last_name = person.get("last_name")
+        if not first_name:
+            first_name, inferred_last = _split_name(person.get("name", ""))
+            last_name = last_name or inferred_last
         results.append({
-            "full_name": person.get("name", ""),
-            "first_name": person.get("first_name"),
-            "last_name": person.get("last_name"),
-            "title": person.get("title"),
-            "linkedin_url": person.get("linkedin_url"),
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "info": person.get("title") or person.get("seniority"),
             "email": None,
-            "email_status": person.get("email_status") or "unknown",
-            "seniority": person.get("seniority"),
+            "phone": None,
+            "linkedin_url": person.get("linkedin_url"),
+            "x_url": None,
+            "facebook_url": None,
+            "instagram_url": None,
+            "other_channels": [],
         })
     return results
 

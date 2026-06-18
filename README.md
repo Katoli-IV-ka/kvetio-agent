@@ -25,6 +25,9 @@ Key constraints:
 - Supabase is the runtime source of truth.
 - Notion is a projection, configured through `config/notion_mapping.yaml`.
 - Evidence display is derived from `signals`.
+- `sql/schema.sql` is the only active database schema contract. The old
+  test-era migration history was removed; current development starts from this
+  baseline.
 
 ## Pipeline
 
@@ -150,11 +153,11 @@ Railway bot environment:
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_WEBHOOK_URL`
 - `ROUTINE_FIRE_URL`, `ROUTINE_TOKEN`
 
-## Database Cleanup
+## Database Schema
 
-The cleanup migration is `sql/017_agent_database_cleanup.sql`.
+`sql/schema.sql` is the only active database schema contract.
 
-Important runtime contracts after cleanup:
+Important runtime contracts:
 
 - `contacts.company_id` is the canonical relation to `companies.id`.
 - `contacts.company_domain` remains transitional denormalized data.
@@ -163,8 +166,8 @@ Important runtime contracts after cleanup:
 - Notion contact relation is computed from `contacts.company_id`.
 - Evidence summaries come from `signals`, not stored company summary columns.
 
-Do not run destructive SQL against live Supabase until local tests pass and
-preflight live checks confirm all contacts can resolve to companies.
+Do not run destructive SQL against live Supabase until local tests pass and the
+SQL has been reviewed for the target environment.
 
 ## Local Development
 

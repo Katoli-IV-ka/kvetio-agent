@@ -33,29 +33,65 @@ def mock_store():
 def test_upsert_contact_sets_required_fields(mock_store):
     contact = {
         "company_domain": "radai.com",
-        "full_name": "Sarah Chen",
-        "title": "Head of ML",
-        "dm_priority": 1,
+        "first_name": "Sarah",
+        "last_name": "Chen",
+        "info": "Head of ML; likely owns dataset/vendor decisions.",
         "email": "sarah@radai.com",
-        "email_status": "verified",
-        "source_vector": "apollo",
+        "phone": "+1-555-0100",
+        "linkedin_url": "https://www.linkedin.com/in/sarahchen",
+        "x_url": "https://x.com/sarahchen",
+        "facebook_url": "https://facebook.com/sarahchen",
+        "instagram_url": "https://instagram.com/sarahchen",
+        "github_username": "sarahchen",
     }
+
     upsert_contact(mock_store, contact)
+
     mock_store._client.table.assert_called_with("contacts")
     call_args = mock_store._client.table.return_value.upsert.call_args
     row = call_args[0][0]
-    assert row["company_domain"] == "radai.com"
-    assert row["company_id"] == "company-uuid"
-    assert row["full_name"] == "Sarah Chen"
-    assert row["dm_priority"] == 1
-    assert row["email_status"] == "verified"
+    assert row == {
+        "company_id": "company-uuid",
+        "first_name": "Sarah",
+        "last_name": "Chen",
+        "info": "Head of ML; likely owns dataset/vendor decisions.",
+        "email": "sarah@radai.com",
+        "phone": "+1-555-0100",
+        "linkedin_url": "https://www.linkedin.com/in/sarahchen",
+        "x_url": "https://x.com/sarahchen",
+        "facebook_url": "https://facebook.com/sarahchen",
+        "instagram_url": "https://instagram.com/sarahchen",
+        "other_channels": [{"type": "github", "url": "https://github.com/sarahchen"}],
+        "updated_at": row["updated_at"],
+    }
+    assert call_args[1]["on_conflict"] == "company_id,first_name,last_name"
+    for removed in (
+        "company_domain",
+        "full_name",
+        "title",
+        "title_normalized",
+        "dm_priority",
+        "email_status",
+        "email_source",
+        "twitter_handle",
+        "github_username",
+        "hf_username",
+        "personal_website",
+        "source_vector",
+        "source_url",
+        "confidence",
+        "raw_payload",
+        "contact_type",
+    ):
+        assert removed not in row
 
 
-def test_upsert_contact_defaults_priority_to_2(mock_store):
-    contact = {"company_domain": "radai.com", "full_name": "Jane Doe"}
+def test_upsert_contact_defaults_empty_last_name(mock_store):
+    contact = {"company_domain": "radai.com", "full_name": "Prince"}
     upsert_contact(mock_store, contact)
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["dm_priority"] == 2
+    assert row["first_name"] == "Prince"
+    assert row["last_name"] == ""
 
 
 def test_mark_enriched_updates_dm_enriched_at(mock_store):
@@ -65,64 +101,60 @@ def test_mark_enriched_updates_dm_enriched_at(mock_store):
     assert "dm_enriched_at" in update_args
 
 
-def test_list_contacts_returns_ordered_results(mock_store):
-    mock_store._client.table.return_value.execute.return_value = MagicMock(
-        data=[{"full_name": "Sarah Chen", "dm_priority": 1}]
-    )
+def test_list_contacts_resolves_company_and_queries_by_company_id(mock_store):
+    mock_store._client.table.return_value.execute.side_effect = [
+        MagicMock(data=[{"id": "company-uuid", "domain": "radai.com"}]),
+        MagicMock(data=[{"first_name": "Sarah", "last_name": "Chen"}]),
+    ]
+
     results = list_contacts(mock_store, "radai.com")
+
     assert len(results) == 1
-    assert results[0]["full_name"] == "Sarah Chen"
+    assert results[0]["first_name"] == "Sarah"
+    mock_store._client.table.return_value.eq.assert_any_call("company_id", "company-uuid")
 
 
-def test_upsert_contact_includes_personal_website(mock_store):
-    """upsert_contact must write personal_website to the row."""
-    from scripts.contacts_store import upsert_contact
-    from unittest.mock import MagicMock
+def test_split_full_name_supports_legacy_payloads():
+    from contacts_store import split_contact_name
 
-    store = MagicMock()
-    table_mock = MagicMock()
-    store._client.table.return_value = table_mock
-    table_mock.select.return_value = table_mock
-    table_mock.eq.return_value = table_mock
-    table_mock.limit.return_value = table_mock
-    table_mock.upsert.return_value = table_mock
-    table_mock.execute.return_value = MagicMock(
-        data=[{"id": "company-uuid", "domain": "radai.com"}]
+    assert split_contact_name({"first_name": "Sarah", "last_name": "Chen"}) == ("Sarah", "Chen")
+    assert split_contact_name({"full_name": "Sarah Chen"}) == ("Sarah", "Chen")
+    assert split_contact_name({"full_name": "Prince"}) == ("Prince", "")
+
+
+def test_normalize_other_channels_removes_primary_channel_duplicates():
+    from contacts_store import normalize_other_channels
+
+    channels = normalize_other_channels(
+        {
+            "linkedin_url": "https://www.linkedin.com/in/alice",
+            "x_url": "https://x.com/alice",
+            "github_username": "alice",
+            "hf_username": "alice-hf",
+            "personal_website": "https://alice.dev",
+            "other_channels": [
+                {"type": "linkedin", "url": "https://www.linkedin.com/in/alice"},
+                {"type": "github", "url": "https://github.com/alice"},
+                {"type": "github", "url": "https://github.com/alice"},
+                {"type": "substack", "url": "https://alice.substack.com", "label": "Substack"},
+            ],
+        }
     )
 
-    upsert_contact(store, {
-        "company_domain": "radai.com",
-        "full_name": "Sarah Chen",
-        "source_vector": "github",
-        "personal_website": "https://sarahchen.dev",
-    })
-
-    call_args = store._client.table.return_value.upsert.call_args
-    row = call_args[0][0]
-    assert row.get("personal_website") == "https://sarahchen.dev"
+    assert channels == [
+        {"type": "github", "url": "https://github.com/alice"},
+        {"type": "huggingface", "url": "https://huggingface.co/alice-hf"},
+        {"type": "personal_website", "url": "https://alice.dev"},
+        {"type": "substack", "url": "https://alice.substack.com", "label": "Substack"},
+    ]
 
 
-def test_upsert_contact_saves_v2_fields(mock_store):
-    contact = {
-        "company_domain": "acme.com",
-        "full_name": "Alice Kim",
-        "contact_type": "Person",
-        "phone": "+1-555-0100",
-        "instagram_url": "https://instagram.com/alicekim",
-        "facebook_url": "https://facebook.com/alicekim",
-        "info": "Head of ML at Acme, ex-Google Brain",
-    }
-    mock_store._client.table.return_value.execute.return_value = MagicMock(
-        data=[{"id": "company-uuid", "domain": "acme.com"}]
-    )
-    upsert_contact(mock_store, contact)
-    row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["contact_type"] == "Person"
-    assert row["phone"] == "+1-555-0100"
-    assert row["instagram_url"] == "https://instagram.com/alicekim"
-    assert row["facebook_url"] == "https://facebook.com/alicekim"
-    assert row["info"] == "Head of ML at Acme, ex-Google Brain"
-    assert "contact" + "_result" not in row
+def test_normalize_x_url_accepts_twitter_handle():
+    from contacts_store import normalize_x_url
+
+    assert normalize_x_url({"x_url": "https://x.com/alice"}) == "https://x.com/alice"
+    assert normalize_x_url({"twitter_handle": "alice"}) == "https://x.com/alice"
+    assert normalize_x_url({"twitter_handle": "@alice"}) == "https://x.com/alice"
 
 
 def test_contacts_store_has_no_legacy_relation_helpers():
@@ -152,26 +184,3 @@ def test_resolve_company_ref_raises_for_missing_company(mock_store):
 
     with pytest.raises(ValueError, match="company not found for contact"):
         resolve_company_ref(mock_store, domain="missing.ai")
-
-
-def test_upsert_contact_writes_company_id_and_legacy_domain(mock_store):
-    mock_store._client.table.return_value.execute.return_value = MagicMock(
-        data=[{"id": "company-uuid", "domain": "acme.ai"}]
-    )
-
-    upsert_contact(
-        mock_store,
-        {
-            "company_id": "company-uuid",
-            "company_domain": "acme.ai",
-            "full_name": "Jane Doe",
-            "source_vector": "apollo",
-        },
-    )
-
-    row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["company_id"] == "company-uuid"
-    assert row["company_domain"] == "acme.ai"
-    assert "contact" + "_result" not in row
-    assert "outreach" + "_status" not in row
-    assert "outreach" + "_note" not in row

@@ -87,9 +87,9 @@ def test_guess_emails_infers_pattern_and_fills_missing():
     result = guess_emails("radai.com", contacts)
     assert len(result) == 1
     assert result[0]["email"] == "john.doe@radai.com"
-    assert result[0]["email_status"] == "guessed"
-    assert result[0]["email_source"] == "pattern_guesser"
-    assert result[0]["confidence"] == "low"
+    assert "email_status" not in result[0]
+    assert "email_source" not in result[0]
+    assert "confidence" not in result[0]
 
 
 def test_guess_emails_uses_first_last_fallback_when_no_pattern():
@@ -103,83 +103,6 @@ def test_guess_emails_uses_first_last_fallback_when_no_pattern():
     assert result[0]["email"] == "john.doe@radai.com"
 
 
-# ── Hunter.io Verify ───────────────────────────────────────────────────────
-
-
-def test_verify_with_hunter_returns_valid():
-    from scripts.contact_enricher import verify_with_hunter
-    from unittest.mock import patch, MagicMock
-
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"data": {"result": "valid"}}
-
-    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
-        result = verify_with_hunter("john@radai.com", "test-key")
-    assert result == "valid"
-
-
-def test_verify_with_hunter_returns_unknown_on_failure():
-    from scripts.contact_enricher import verify_with_hunter
-    from unittest.mock import patch
-
-    with patch("scripts.contact_enricher.httpx.get", side_effect=Exception("timeout")):
-        result = verify_with_hunter("john@radai.com", "test-key")
-    assert result == "unknown"
-
-
-def test_run_hunter_verify_updates_status_to_valid():
-    from scripts.contact_enricher import run_hunter_verify
-    from unittest.mock import patch, MagicMock
-
-    contact = {
-        "email": "john.doe@radai.com",
-        "email_status": "guessed",
-        "full_name": "John Doe",
-        "company_domain": "radai.com",
-    }
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"data": {"result": "valid"}}
-
-    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
-        result = run_hunter_verify([contact], api_key="test-key")
-
-    assert len(result) == 1
-    assert result[0]["email_status"] == "valid"
-    assert result[0]["email_source"] == "hunter_verify"
-    assert result[0]["email"] == "john.doe@radai.com"
-
-
-def test_run_hunter_verify_clears_invalid_email():
-    from scripts.contact_enricher import run_hunter_verify
-    from unittest.mock import patch, MagicMock
-
-    contact = {
-        "email": "wrong@radai.com",
-        "email_status": "guessed",
-        "full_name": "John Doe",
-        "company_domain": "radai.com",
-    }
-    mock_resp = MagicMock()
-    mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {"data": {"result": "invalid"}}
-
-    with patch("scripts.contact_enricher.httpx.get", return_value=mock_resp):
-        result = run_hunter_verify([contact], api_key="test-key")
-
-    assert result[0]["email"] is None
-    assert result[0]["email_status"] == "invalid"
-
-
-def test_run_hunter_verify_skips_non_guessed_contacts():
-    from scripts.contact_enricher import run_hunter_verify
-
-    contact = {"email": "real@radai.com", "email_status": "valid", "full_name": "Sarah"}
-    result = run_hunter_verify([contact], api_key="test-key")
-    assert result == []
-
-
 # ── GitHub Enrichment ──────────────────────────────────────────────────────
 
 
@@ -188,10 +111,8 @@ def test_enrich_from_github_fills_twitter_and_website():
     from unittest.mock import patch, MagicMock
 
     contact = {
-        "github_username": "jdoe",
-        "twitter_handle": None,
-        "personal_website": None,
-        "full_name": "John Doe",
+        "other_channels": [{"type": "github", "url": "https://github.com/jdoe"}],
+        "x_url": None,
     }
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
@@ -204,18 +125,22 @@ def test_enrich_from_github_fills_twitter_and_website():
         result = enrich_from_github([contact])
 
     assert len(result) == 1
-    assert result[0]["twitter_handle"] == "jdoe_x"
-    assert result[0]["personal_website"] == "https://johndoe.dev"
+    assert result[0]["x_url"] == "https://x.com/jdoe_x"
+    assert result[0]["other_channels"] == [
+        {"type": "github", "url": "https://github.com/jdoe"},
+        {"type": "personal_website", "url": "https://johndoe.dev"},
+    ]
 
 
 def test_enrich_from_github_skips_already_enriched():
     from scripts.contact_enricher import enrich_from_github
 
     contact = {
-        "github_username": "jdoe",
-        "twitter_handle": "existing",
-        "personal_website": "https://x.com",
-        "full_name": "John Doe",
+        "other_channels": [
+            {"type": "github", "url": "https://github.com/jdoe"},
+            {"type": "personal_website", "url": "https://x.com"},
+        ],
+        "x_url": "https://x.com/existing",
     }
     result = enrich_from_github([contact])
     assert result == []
@@ -224,7 +149,7 @@ def test_enrich_from_github_skips_already_enriched():
 def test_enrich_from_github_skips_contacts_without_username():
     from scripts.contact_enricher import enrich_from_github
 
-    contact = {"github_username": None, "full_name": "John Doe"}
+    contact = {"other_channels": []}
     result = enrich_from_github([contact])
     assert result == []
 
@@ -237,10 +162,8 @@ def test_enrich_from_huggingface_extracts_twitter_from_bio():
     from unittest.mock import patch, MagicMock
 
     contact = {
-        "hf_username": "jdoe",
-        "twitter_handle": None,
-        "personal_website": None,
-        "full_name": "John Doe",
+        "other_channels": [{"type": "huggingface", "url": "https://huggingface.co/jdoe"}],
+        "x_url": None,
     }
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
@@ -251,14 +174,17 @@ def test_enrich_from_huggingface_extracts_twitter_from_bio():
         result = enrich_from_huggingface([contact])
 
     assert len(result) == 1
-    assert result[0]["twitter_handle"] == "jdoe_x"
-    assert result[0]["personal_website"] == "https://johndoe.dev"
+    assert result[0]["x_url"] == "https://x.com/jdoe_x"
+    assert result[0]["other_channels"] == [
+        {"type": "huggingface", "url": "https://huggingface.co/jdoe"},
+        {"type": "personal_website", "url": "https://johndoe.dev"},
+    ]
 
 
 def test_enrich_from_huggingface_skips_contacts_without_username():
     from scripts.contact_enricher import enrich_from_huggingface
 
-    contact = {"hf_username": None, "full_name": "John Doe"}
+    contact = {"other_channels": []}
     result = enrich_from_huggingface([contact])
     assert result == []
 
@@ -274,13 +200,10 @@ def test_run_calls_all_steps_in_order(mocker):
 
     contacts = [
         {
-            "company_domain": "radai.com",
-            "full_name": "John Doe",
             "first_name": "John",
             "last_name": "Doe",
             "email": None,
-            "github_username": None,
-            "hf_username": None,
+            "other_channels": [],
         }
     ]
     mocker.patch("scripts.contact_enricher.list_contacts", return_value=contacts)
@@ -293,4 +216,5 @@ def test_run_calls_all_steps_in_order(mocker):
     # upsert must have been called at least once (for the guessed email)
     assert mock_upsert.called
     upserted = mock_upsert.call_args_list[0][0][1]
-    assert upserted["email_status"] == "guessed"
+    assert upserted["email"] == "john.doe@radai.com"
+    assert "email_status" not in upserted

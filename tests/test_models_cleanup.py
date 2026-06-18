@@ -15,16 +15,23 @@ def test_all_statuses_match_cleanup_design() -> None:
     )
 
 
-def test_contact_record_supports_company_id_and_related_person() -> None:
+def test_contact_record_matches_compact_contact_schema() -> None:
     contact = ContactRecord(
         company_id="00000000-0000-0000-0000-000000000001",
-        company_domain="acme.ai",
-        full_name="Jane Advisor",
-        contact_type="Related Person",
-        title="Advisor",
+        first_name="Jane",
+        last_name="Advisor",
+        info="Advisor to the ML team; possible warm intro path.",
+        linkedin_url="https://www.linkedin.com/in/janeadvisor",
+        x_url="https://x.com/janeadvisor",
+        other_channels=[
+            {"type": "github", "url": "https://github.com/janeadvisor"},
+        ],
     )
 
     assert contact.company_id == "00000000-0000-0000-0000-000000000001"
-    assert contact.company_domain == "acme.ai"
-    assert contact.contact_type == "Related Person"
-    assert contact.title == "Advisor"
+    assert contact.first_name == "Jane"
+    assert contact.last_name == "Advisor"
+    assert contact.info == "Advisor to the ML team; possible warm intro path."
+    assert contact.other_channels == [
+        {"type": "github", "url": "https://github.com/janeadvisor"},
+    ]

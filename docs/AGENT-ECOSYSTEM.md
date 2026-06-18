@@ -134,24 +134,15 @@ Telegram bot commands:
 The bot stores no launch presets. The launch configuration is carried by the
 stateless `/run` wizard and passed to Routine `/fire`.
 
-## Cleanup Migration
+## Database Schema
 
-`sql/017_agent_database_cleanup.sql` is the forward-only cleanup migration.
+`sql/schema.sql` is the only active database schema contract. Historical
+test-era migrations were removed because they no longer represent production
+history and were creating false audit signals.
 
-It should be applied only after:
+The baseline schema:
 
-1. local tests pass;
-2. prompts and runtime code no longer read removed schema objects;
-3. contacts can all resolve to companies;
-4. the SQL has been reviewed before execution against live Supabase.
-
-The migration:
-
-- adds and backfills `contacts.company_id`;
-- validates the company FK;
-- tightens contact check constraints;
-- maps legacy company statuses into the canonical status model;
-- drops obsolete runtime tables and columns.
-
-Historical migrations remain unchanged because they describe schema that was
-already applied in earlier steps.
+- creates the seven active runtime tables;
+- uses the cleaned status model;
+- keeps `contacts.company_id -> companies.id` as the canonical contact relation;
+- excludes removed score, bot runtime, preset, and contact join-table objects.
