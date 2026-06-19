@@ -1,3 +1,5 @@
+> SUPERSEDED — see 2026-06-19-database-agent-cleanup-FINAL.md
+
 # Company Profiles & Dossier Consolidation — Design Supplement
 **Date:** 2026-06-19
 **Status:** Draft for review

@@ -24,10 +24,9 @@ Key constraints:
   parameters and calls Routine `/fire`.
 - Supabase is the runtime source of truth.
 - Notion is a projection, configured through `config/notion_mapping.yaml`.
-- Evidence display is derived from `signals`.
-- `sql/schema.sql` is the only active database schema contract. The old
-  test-era migration history was removed; current development starts from this
-  baseline.
+- Evidence display is derived from `research_records`.
+- `sql/schema.sql` is the clean-install database schema contract. Numbered
+  files under `sql/migrations/` are live upgrade history.
 
 ## Pipeline
 
@@ -39,17 +38,19 @@ discovered -> relevant/not_relevant/manual_review -> sources_gathered -> analyze
 
 Pipeline stages:
 
-1. `discovery_task.md` writes discovered companies and `primary_*` signals.
+1. `discovery_task.md` writes discovered companies and primary research records.
 2. `relevance_task.md` sets `relevant`, `not_relevant`, or `manual_review`.
-3. `source_expansion_task.md` and `enrichment_task.md` gather supporting links.
-4. `analysis_task.md` writes structured `analysis_notes`.
-5. `conclusions_task.md` writes `dossiers` and runs Notion sync.
+3. `source_expansion_task.md` and `enrichment_task.md` gather supporting evidence.
+4. `analysis_task.md` writes structured `analysis_records` and provenance links.
+5. `conclusions_task.md` writes typed `dossiers` and runs Notion sync.
 
-Signal type convention:
+Research record roles:
 
-- `primary_*`: first evidence that brought a company into the database.
-- `verification_*`: supporting evidence from validation or source expansion.
-- `monitor_*`: new evidence for an already known company.
+- `primary`: first evidence that brought a company into the database.
+- `verification`: supporting evidence from validation or source expansion.
+- `source`: curated URL or resolver output used for analysis.
+- `monitor`: new evidence for an already known company.
+- `evidence`: default role for general observations.
 
 ## Repository Layout
 
@@ -90,6 +91,8 @@ kvetio-agent/
 │   ├── telegram_routines.py
 │   └── source adapters such as github.py, huggingface.py, yc_browser.py
 ├── sql/
+│   ├── schema.sql
+│   └── migrations/
 ├── tests/
 └── requirements.txt
 ```
@@ -155,16 +158,28 @@ Railway bot environment:
 
 ## Database Schema
 
-`sql/schema.sql` is the only active database schema contract.
+`sql/schema.sql` is the only active clean-install schema contract.
+
+Runtime table groups:
+
+| Group | Tables |
+|---|---|
+| Данные | `companies`, `contacts`, `dossiers` |
+| Процессные | `research_records`, `analysis_records` |
+| Технические | `analysis_links`, `dossier_links`, `record_types`, `run_logs` |
 
 Important runtime contracts:
 
+- `companies.status` follows the canonical pipeline flow above.
+- `research_records` stores raw observations and resolver output.
+- `analysis_records` stores section-level interpretation.
+- `analysis_links` records which research rows support each analysis row.
+- `dossiers` stores typed final profile fields plus summaries and narrative.
+- `dossier_links` records which analysis rows contributed to dossier fields.
 - `contacts.company_id` is the canonical relation to `companies.id`.
-- `contacts.company_domain` remains transitional denormalized data.
-- Contact writes must resolve an existing company first.
+- `contacts.name` and `contacts.contact_type` are the active contact identity fields.
 - Telegram launch is stateless through `/run`.
 - Notion contact relation is computed from `contacts.company_id`.
-- Evidence summaries come from `signals`, not stored company summary columns.
 
 Do not run destructive SQL against live Supabase until local tests pass and the
 SQL has been reviewed for the target environment.
@@ -194,4 +209,5 @@ python scripts/telegram_routines.py daily_digest --dry-run
 2. Side effects are explicit and testable.
 3. Supabase is the source of truth for runtime data.
 4. Prompts define agent behavior; scripts provide deterministic operations.
-5. Repeated runs should avoid duplicate companies, signals, contacts, and source links.
+5. Repeated runs should avoid duplicate companies, research records, contacts,
+   analysis rows, and dossiers.
