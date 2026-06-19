@@ -6,11 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from contacts_store import (
-    list_contacts,
-    mark_enriched,
-    upsert_contact,
-)
+from contacts_store import list_contacts, normalize_other_channels, normalize_x_url, upsert_contact
 
 
 @pytest.fixture
@@ -19,7 +15,6 @@ def mock_store():
     table_mock = MagicMock()
     store._client.table.return_value = table_mock
     table_mock.upsert.return_value = table_mock
-    table_mock.update.return_value = table_mock
     table_mock.select.return_value = table_mock
     table_mock.eq.return_value = table_mock
     table_mock.limit.return_value = table_mock
@@ -30,11 +25,44 @@ def mock_store():
     return store
 
 
-def test_upsert_contact_sets_required_fields(mock_store):
+def test_upsert_contact_uses_name_and_type(mock_store):
+    upsert_contact(mock_store, {"company_domain": "radai.com", "name": "Sarah Chen"})
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["name"] == "Sarah Chen"
+    assert row["contact_type"] == "person"
+    assert "first_name" not in row
+    assert "last_name" not in row
+    assert mock_store._client.table.return_value.upsert.call_args[1]["on_conflict"] == (
+        "company_id,contact_type,name"
+    )
+
+
+def test_upsert_contact_accepts_organization(mock_store):
+    upsert_contact(
+        mock_store,
+        {
+            "company_domain": "radai.com",
+            "name": "Rad AI GitHub",
+            "contact_type": "organization",
+        },
+    )
+    assert mock_store._client.table.return_value.upsert.call_args[0][0]["contact_type"] == (
+        "organization"
+    )
+
+
+def test_upsert_contact_back_compat_first_last(mock_store):
+    upsert_contact(
+        mock_store,
+        {"company_domain": "radai.com", "first_name": "Sarah", "last_name": "Chen"},
+    )
+    assert mock_store._client.table.return_value.upsert.call_args[0][0]["name"] == "Sarah Chen"
+
+
+def test_upsert_contact_sets_required_channels(mock_store):
     contact = {
         "company_domain": "radai.com",
-        "first_name": "Sarah",
-        "last_name": "Chen",
+        "name": "Sarah Chen",
         "info": "Head of ML; likely owns dataset/vendor decisions.",
         "email": "sarah@radai.com",
         "phone": "+1-555-0100",
@@ -47,84 +75,28 @@ def test_upsert_contact_sets_required_fields(mock_store):
 
     upsert_contact(mock_store, contact)
 
-    mock_store._client.table.assert_called_with("contacts")
-    call_args = mock_store._client.table.return_value.upsert.call_args
-    row = call_args[0][0]
-    assert row == {
-        "company_id": "company-uuid",
-        "first_name": "Sarah",
-        "last_name": "Chen",
-        "info": "Head of ML; likely owns dataset/vendor decisions.",
-        "email": "sarah@radai.com",
-        "phone": "+1-555-0100",
-        "linkedin_url": "https://www.linkedin.com/in/sarahchen",
-        "x_url": "https://x.com/sarahchen",
-        "facebook_url": "https://facebook.com/sarahchen",
-        "instagram_url": "https://instagram.com/sarahchen",
-        "other_channels": [{"type": "github", "url": "https://github.com/sarahchen"}],
-        "updated_at": row["updated_at"],
-    }
-    assert call_args[1]["on_conflict"] == "company_id,first_name,last_name"
-    for removed in (
-        "company_domain",
-        "full_name",
-        "title",
-        "title_normalized",
-        "dm_priority",
-        "email_status",
-        "email_source",
-        "twitter_handle",
-        "github_username",
-        "hf_username",
-        "personal_website",
-        "source_vector",
-        "source_url",
-        "confidence",
-        "raw_payload",
-        "contact_type",
-    ):
-        assert removed not in row
-
-
-def test_upsert_contact_defaults_empty_last_name(mock_store):
-    contact = {"company_domain": "radai.com", "full_name": "Prince"}
-    upsert_contact(mock_store, contact)
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["first_name"] == "Prince"
-    assert row["last_name"] == ""
-
-
-def test_mark_enriched_updates_dm_enriched_at(mock_store):
-    mark_enriched(mock_store, "radai.com")
-    mock_store._client.table.assert_called_with("companies")
-    update_args = mock_store._client.table.return_value.update.call_args[0][0]
-    assert "dm_enriched_at" in update_args
+    assert row["company_id"] == "company-uuid"
+    assert row["name"] == "Sarah Chen"
+    assert row["info"] == "Head of ML; likely owns dataset/vendor decisions."
+    assert row["email"] == "sarah@radai.com"
+    assert row["other_channels"] == [{"type": "github", "url": "https://github.com/sarahchen"}]
 
 
 def test_list_contacts_resolves_company_and_queries_by_company_id(mock_store):
     mock_store._client.table.return_value.execute.side_effect = [
         MagicMock(data=[{"id": "company-uuid", "domain": "radai.com"}]),
-        MagicMock(data=[{"first_name": "Sarah", "last_name": "Chen"}]),
+        MagicMock(data=[{"name": "Sarah Chen", "contact_type": "person"}]),
     ]
 
     results = list_contacts(mock_store, "radai.com")
 
     assert len(results) == 1
-    assert results[0]["first_name"] == "Sarah"
+    assert results[0]["name"] == "Sarah Chen"
     mock_store._client.table.return_value.eq.assert_any_call("company_id", "company-uuid")
 
 
-def test_split_full_name_supports_legacy_payloads():
-    from contacts_store import split_contact_name
-
-    assert split_contact_name({"first_name": "Sarah", "last_name": "Chen"}) == ("Sarah", "Chen")
-    assert split_contact_name({"full_name": "Sarah Chen"}) == ("Sarah", "Chen")
-    assert split_contact_name({"full_name": "Prince"}) == ("Prince", "")
-
-
 def test_normalize_other_channels_removes_primary_channel_duplicates():
-    from contacts_store import normalize_other_channels
-
     channels = normalize_other_channels(
         {
             "linkedin_url": "https://www.linkedin.com/in/alice",
@@ -150,8 +122,6 @@ def test_normalize_other_channels_removes_primary_channel_duplicates():
 
 
 def test_normalize_x_url_accepts_twitter_handle():
-    from contacts_store import normalize_x_url
-
     assert normalize_x_url({"x_url": "https://x.com/alice"}) == "https://x.com/alice"
     assert normalize_x_url({"twitter_handle": "alice"}) == "https://x.com/alice"
     assert normalize_x_url({"twitter_handle": "@alice"}) == "https://x.com/alice"
@@ -160,6 +130,7 @@ def test_normalize_x_url_accepts_twitter_handle():
 def test_contacts_store_has_no_legacy_relation_helpers():
     import contacts_store
 
+    assert not hasattr(contacts_store, "mark_enriched")
     assert not hasattr(contacts_store, "link_contact_to_" + "companies")
     assert not hasattr(contacts_store, "get_company_domains_for_" + "contact")
 
@@ -186,22 +157,20 @@ def test_resolve_company_ref_raises_for_missing_company(mock_store):
         resolve_company_ref(mock_store, domain="missing.ai")
 
 
-def test_upsert_contact_forwards_signal_provenance(mock_store):
-    upsert_contact(mock_store, {
-        "company_id": "company-uuid",
-        "first_name": "Sam",
-        "last_name": "Lee",
-        "discovered_from_signal_id": "sig-9",
-    })
+def test_upsert_contact_forwards_research_provenance(mock_store):
+    upsert_contact(
+        mock_store,
+        {
+            "company_id": "company-uuid",
+            "name": "Sam Lee",
+            "discovered_from_research_record_id": "rr-9",
+        },
+    )
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["discovered_from_signal_id"] == "sig-9"
+    assert row["discovered_from_research_record_id"] == "rr-9"
 
 
-def test_upsert_contact_no_signal_provenance_key_absent(mock_store):
-    upsert_contact(mock_store, {
-        "company_id": "company-uuid",
-        "first_name": "Sam",
-        "last_name": "Lee",
-    })
+def test_upsert_contact_no_research_provenance_key_absent(mock_store):
+    upsert_contact(mock_store, {"company_id": "company-uuid", "name": "Sam Lee"})
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert "discovered_from_signal_id" not in row
+    assert "discovered_from_research_record_id" not in row

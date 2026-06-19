@@ -1,9 +1,8 @@
-"""CRUD for contacts plus dm_enriched_at marker on companies.
+"""CRUD for contacts.
 
 CLI:
-    echo '{"company_domain":"radai.com","first_name":"Sarah","last_name":"Chen"}' \
+    echo '{"company_domain":"radai.com","name":"Sarah Chen"}' \
         | python scripts/contacts_store.py --upsert
-    python scripts/contacts_store.py --mark-enriched radai.com
     python scripts/contacts_store.py --list radai.com
 """
 
@@ -36,19 +35,23 @@ PRIMARY_OTHER_CHANNEL_TYPES = {
 }
 
 
-def split_contact_name(contact: dict) -> tuple[str, str]:
-    """Return first/last name, accepting legacy full_name payloads."""
-    first = (contact.get("first_name") or "").strip()
-    last = (contact.get("last_name") or "").strip()
-    if first:
-        return first, last
+def contact_name(contact: dict) -> str:
+    """Return contact name, accepting legacy first/last/full_name payloads."""
+    explicit = (contact.get("name") or "").strip()
+    if explicit:
+        return explicit
 
     full_name = (contact.get("full_name") or "").strip()
-    if not full_name:
-        raise ValueError("first_name or full_name is required")
+    if full_name:
+        return full_name
 
-    parts = full_name.split(maxsplit=1)
-    return parts[0], parts[1] if len(parts) > 1 else ""
+    first = (contact.get("first_name") or "").strip()
+    last = (contact.get("last_name") or "").strip()
+    name = " ".join(part for part in (first, last) if part).strip()
+    if name:
+        return name
+
+    raise ValueError("name or first_name/full_name is required")
 
 
 def normalize_x_url(contact: dict) -> str | None:
@@ -143,17 +146,18 @@ def resolve_company_ref(
 
 
 def upsert_contact(store: SupabaseStore, contact: dict) -> str:
-    """Upsert one contact. Conflict key: (company_id, first_name, last_name)."""
+    """Upsert one contact. Conflict key: (company_id, contact_type, name)."""
     company_ref = resolve_company_ref(
         store,
         domain=contact.get("company_domain"),
         company_id=contact.get("company_id"),
     )
-    first_name, last_name = split_contact_name(contact)
+    name = contact_name(contact)
+    contact_type = contact.get("contact_type", "person")
     row = {
         "company_id": company_ref["id"],
-        "first_name": first_name,
-        "last_name": last_name,
+        "contact_type": contact_type,
+        "name": name,
         "info": contact.get("info") or contact.get("title") or contact.get("title_normalized"),
         "email": contact.get("email"),
         "phone": contact.get("phone"),
@@ -164,35 +168,28 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> str:
         "other_channels": normalize_other_channels(contact),
         "updated_at": datetime.utcnow().isoformat(),
     }
-    if contact.get("discovered_from_signal_id"):
-        row["discovered_from_signal_id"] = contact["discovered_from_signal_id"]
+    if contact.get("discovered_from_research_record_id"):
+        row["discovered_from_research_record_id"] = contact[
+            "discovered_from_research_record_id"
+        ]
     res = store._client.table("contacts").upsert(
-        row, on_conflict="company_id,first_name,last_name"
+        row, on_conflict="company_id,contact_type,name"
     ).execute()
-    logger.debug("upsert_contact: %s / %s %s", company_ref["domain"], first_name, last_name)
+    logger.debug("upsert_contact: %s / %s", company_ref["domain"], name)
     if res.data:
         return res.data[0]["id"]
     return ""
 
 
-def mark_enriched(store: SupabaseStore, domain: str) -> None:
-    """Set dm_enriched_at on the company row."""
-    now = datetime.utcnow().isoformat()
-    store._client.table("companies").update({
-        "dm_enriched_at": now,
-        "updated_at": now,
-    }).eq("domain", domain).execute()
-    logger.debug("mark_enriched: %s", domain)
-
-
 def list_contacts(store: SupabaseStore, domain: str) -> list[dict]:
-    """Return company contacts ordered by first name."""
+    """Return company contacts ordered by type and name."""
     company_ref = resolve_company_ref(store, domain=domain)
     res = (
         store._client.table("contacts")
         .select("*")
         .eq("company_id", company_ref["id"])
-        .order("first_name")
+        .order("contact_type")
+        .order("name")
         .execute()
     )
     return res.data or []
@@ -202,7 +199,6 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="contacts_store CLI")
     parser.add_argument("--upsert", action="store_true", help="Upsert contact JSON from stdin")
-    parser.add_argument("--mark-enriched", metavar="DOMAIN", dest="mark_enriched")
     parser.add_argument("--list", metavar="DOMAIN", dest="list_domain")
     args = parser.parse_args()
 
@@ -212,9 +208,6 @@ def main() -> None:
         contact = json.loads(sys.stdin.read())
         contact_id = upsert_contact(store, contact)
         print(f"OK (id={contact_id})")
-    elif args.mark_enriched:
-        mark_enriched(store, args.mark_enriched)
-        print(f"Marked {args.mark_enriched} as dm_enriched")
     elif args.list_domain:
         contacts = list_contacts(store, args.list_domain)
         print(json.dumps(contacts, ensure_ascii=False, indent=2, default=str))

@@ -73,8 +73,8 @@ def test_fetch_user_profile_maps_fields(respx_mock):
     )
     with HttpClient(rate_limit_rps=0) as client:
         profile = fetch_user_profile("jongwook", client)
-    assert profile["first_name"] == "Jong"
-    assert profile["last_name"] == "Wook Kim"
+    assert profile["name"] == "Jong Wook Kim"
+    assert profile["contact_type"] == "person"
     assert profile["info"] == "Research Scientist"
     assert profile["email"] == "jongwook@radai.com"
     assert profile["x_url"] == "https://x.com/jongwookk"
@@ -119,8 +119,8 @@ def test_fetch_commit_authors_filters_noreply(respx_mock):
         authors = fetch_commit_authors("test-org", client, max_repos=1)
     assert len(authors) == 1
     assert authors[0]["email"] == "real@company.com"
-    assert authors[0]["first_name"] == "Real"
-    assert authors[0]["last_name"] == "User"
+    assert authors[0]["name"] == "Real User"
+    assert authors[0]["contact_type"] == "person"
     assert authors[0]["info"] == "Commit author in test-org/main-repo"
     assert authors[0]["other_channels"] == [
         {"type": "github", "url": "https://github.com/realuser"},

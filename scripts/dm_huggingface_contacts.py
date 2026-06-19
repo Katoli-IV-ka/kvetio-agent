@@ -3,7 +3,7 @@
 CLI:
     python scripts/dm_huggingface_contacts.py --domain radai.com
 
-Reads HF org name from Supabase signals and writes JSON to stdout.
+Reads HF org name from Supabase research_records and writes JSON to stdout.
 """
 
 from __future__ import annotations
@@ -31,10 +31,10 @@ def _split_name(name: str) -> tuple[str, str]:
 
 
 def get_hf_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
-    """Find HF org from company signals."""
-    signals = store.get_signals_for_company(domain)
-    for sig in signals:
-        url = sig.get("url") or ""
+    """Find HF org from company research records."""
+    records = store.get_research_records_for_company(domain)
+    for record in records:
+        url = record.get("url") or ""
         parsed = urlparse(url)
         if "huggingface.co" not in (parsed.netloc or ""):
             continue
@@ -76,12 +76,9 @@ def fetch(domain: str) -> list[dict]:
             overview = fetch_user_overview(username, client)
             if not overview:
                 continue
-            first_name, last_name = _split_name(
-                overview.get("fullname") or member.get("fullname") or username
-            )
             results.append({
-                "first_name": first_name,
-                "last_name": last_name,
+                "name": overview.get("fullname") or member.get("fullname") or username,
+                "contact_type": "person",
                 "info": overview.get("details"),
                 "email": None,
                 "phone": None,
@@ -93,7 +90,19 @@ def fetch(domain: str) -> list[dict]:
                     {"type": "huggingface", "url": f"https://huggingface.co/{username}"},
                 ],
             })
-    return results
+    org_contact = {
+        "name": f"{org} HuggingFace",
+        "contact_type": "organization",
+        "info": "HuggingFace organization profile",
+        "email": None,
+        "phone": None,
+        "linkedin_url": None,
+        "x_url": None,
+        "facebook_url": None,
+        "instagram_url": None,
+        "other_channels": [{"type": "huggingface", "url": f"https://huggingface.co/{org}"}],
+    }
+    return [org_contact] + results
 
 
 def main() -> None:

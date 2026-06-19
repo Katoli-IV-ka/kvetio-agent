@@ -47,8 +47,8 @@ def test_extract_from_json_ld_finds_founders():
     </script>"""
     results = extract_from_json_ld(html, "https://wellfound.com/company/rad-ai")
     assert len(results) == 1
-    assert results[0]["first_name"] == "Alex"
-    assert results[0]["last_name"] == "Ngi"
+    assert results[0]["name"] == "Alex Ngi"
+    assert results[0]["contact_type"] == "person"
     assert results[0]["info"] == "CTO"
     assert results[0]["other_channels"] == [
         {"type": "wellfound", "url": "https://wellfound.com/company/rad-ai"},
