@@ -1,12 +1,16 @@
--- Kvetio Agent current Supabase baseline schema.
--- This is the only active SQL schema contract.
--- Historical test-era migrations were intentionally removed on 2026-06-18.
--- Last updated: 2026-06-19 (migration 018 — constraints + index cleanup).
+-- Kvetio Agent current Supabase clean-install schema.
+-- This is the only active SQL schema contract for fresh environments.
+-- Historical numbered migrations live under sql/migrations/ for live upgrades.
+-- Last updated: 2026-06-19 (layered DB contract).
 --
--- Table order matters for FK resolution:
---   companies → run_logs → signal_types → signals
---   → [provenance FKs on companies] → contacts → source_links
---   → analysis_notes → analysis_note_signals → dossiers
+-- Table taxonomy:
+--   Data: companies, contacts, dossiers
+--   Process: research_records, analysis_records
+--   Technical: analysis_links, dossier_links, record_types, run_logs
+--
+-- FK order:
+--   companies -> run_logs -> record_types -> research_records -> contacts
+--   -> analysis_records -> analysis_links -> dossiers -> dossier_links
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -19,8 +23,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ─── companies ──────────────────────────────────────────────────────────────
--- Provenance FKs (created_from_signal_id, last_signal_id) added via
--- ALTER TABLE below, after signals is created.
 
 CREATE TABLE companies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -29,6 +31,7 @@ CREATE TABLE companies (
     website TEXT NOT NULL,
     linkedin_url TEXT,
     notion_page_id TEXT,
+    notion_synced_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'discovered'
         CONSTRAINT companies_status_check CHECK (status IN (
             'discovered',
@@ -39,22 +42,10 @@ CREATE TABLE companies (
             'analyzed',
             'dossier_ready'
         )),
-    last_signal_date DATE,
-    last_verified DATE,
     icp_segment TEXT,
-    funding_stage TEXT,
-    funding_amount TEXT,
-    funding_date DATE,
-    team_size TEXT,
-    site_note TEXT,
-    website_snippet TEXT,
     description TEXT,
-    dm_enriched_at TIMESTAMPTZ,
-    notion_synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    created_from_signal_id UUID,
-    last_signal_id         UUID
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_companies_status ON companies (status);
@@ -63,17 +54,12 @@ CREATE INDEX idx_companies_segment ON companies (icp_segment);
 CREATE INDEX idx_companies_manual_review
     ON companies (status)
     WHERE status = 'manual_review';
-CREATE INDEX idx_companies_dm_enrichment
-    ON companies (status, dm_enriched_at)
-    WHERE status IN ('relevant', 'sources_gathered', 'analyzed', 'dossier_ready');
 
-DROP TRIGGER IF EXISTS trg_companies_updated_at ON companies;
 CREATE TRIGGER trg_companies_updated_at
 BEFORE UPDATE ON companies
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ─── run_logs ───────────────────────────────────────────────────────────────
--- Defined before signals so signals.run_id FK resolves correctly.
 
 CREATE TABLE run_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -89,16 +75,16 @@ CREATE TABLE run_logs (
 CREATE INDEX idx_run_logs_task ON run_logs (task_name);
 CREATE INDEX idx_run_logs_date ON run_logs (started_at DESC);
 
--- ─── signal_types ───────────────────────────────────────────────────────────
--- Governed vocabulary; add new signal categories here, not via ad-hoc migration.
+-- ─── record_types ──────────────────────────────────────────────────────────
 
-CREATE TABLE signal_types (
+CREATE TABLE record_types (
     code        TEXT PRIMARY KEY,
-    category    TEXT NOT NULL,          -- discovery | people | sources | monitoring | financials
+    category    TEXT NOT NULL,
+    -- discovery | people | sources | monitoring | financials | crypto
     description TEXT
 );
 
-INSERT INTO signal_types (code, category, description) VALUES
+INSERT INTO record_types (code, category, description) VALUES
   ('github_repo',           'discovery',  'Company GitHub repo/org found'),
   ('hf_org',                'discovery',  'HuggingFace organization found'),
   ('hf_model',              'discovery',  'HuggingFace model found'),
@@ -117,153 +103,154 @@ INSERT INTO signal_types (code, category, description) VALUES
   ('proprietary_ai',        'discovery',  'Company has proprietary AI capability'),
   ('proprietary_models',    'discovery',  'Company has proprietary model(s)');
 
--- ─── signals ────────────────────────────────────────────────────────────────
+-- ─── research_records ──────────────────────────────────────────────────────
 
-CREATE TABLE signals (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id  UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    signal_type TEXT NOT NULL REFERENCES signal_types(code),
-    agent       TEXT,                                -- producer: discovery, source_expansion, dm_enrich...
-    source      TEXT NOT NULL,                       -- github, huggingface, web, apollo...
-    title       TEXT,                                -- short human-readable label
-    url         TEXT,                                -- evidence link, NOT unique
-    summary     TEXT,                                -- short description of the finding
-    confidence  NUMERIC(3,2) NOT NULL DEFAULT 0.50
-                CONSTRAINT signals_confidence_range CHECK (confidence >= 0 AND confidence <= 1),
-    signal_date DATE NOT NULL,
-    payload     JSONB NOT NULL DEFAULT '{}'::jsonb,  -- structured extracted fields
-    raw_data    JSONB DEFAULT '{}'::jsonb,           -- optional raw snapshot
-    run_id      UUID REFERENCES run_logs(id),
-    dedupe_key  TEXT NOT NULL UNIQUE,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE research_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    record_type TEXT NOT NULL REFERENCES record_types(code),
+    agent TEXT,
+    source TEXT NOT NULL,
+    title TEXT,
+    url TEXT,
+    summary TEXT,
+    confidence NUMERIC(3,2) NOT NULL DEFAULT 0.50
+        CONSTRAINT rr_confidence_range CHECK (confidence >= 0 AND confidence <= 1),
+    observed_at DATE NOT NULL,
+    record_role TEXT NOT NULL DEFAULT 'evidence'
+        CONSTRAINT rr_record_role_check
+        CHECK (record_role IN ('primary', 'verification', 'source', 'monitor', 'evidence')),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_data JSONB DEFAULT '{}'::jsonb,
+    run_id UUID REFERENCES run_logs(id),
+    dedupe_key TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_signals_company_id   ON signals (company_id);
-CREATE INDEX idx_signals_company_type ON signals (company_id, signal_type);
-CREATE INDEX idx_signals_signal_date  ON signals (signal_date DESC);
-CREATE INDEX idx_signals_type         ON signals (signal_type);
+CREATE INDEX idx_rr_company_id ON research_records (company_id);
+CREATE INDEX idx_rr_company_type ON research_records (company_id, record_type);
+CREATE INDEX idx_rr_observed_at ON research_records (observed_at DESC);
+CREATE INDEX idx_rr_type ON research_records (record_type);
+CREATE INDEX idx_rr_role ON research_records (record_role);
+CREATE INDEX idx_rr_company_role ON research_records (company_id, record_role);
 
-DROP TRIGGER IF EXISTS trg_signals_updated_at ON signals;
-CREATE TRIGGER trg_signals_updated_at
-BEFORE UPDATE ON signals
+CREATE TRIGGER trg_rr_updated_at
+BEFORE UPDATE ON research_records
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- ─── provenance FKs on companies (deferred — signals must exist first) ──────
-
-ALTER TABLE companies
-    ADD CONSTRAINT companies_created_from_signal_id_fkey
-        FOREIGN KEY (created_from_signal_id) REFERENCES signals(id) ON DELETE SET NULL,
-    ADD CONSTRAINT companies_last_signal_id_fkey
-        FOREIGN KEY (last_signal_id) REFERENCES signals(id) ON DELETE SET NULL;
 
 -- ─── contacts ───────────────────────────────────────────────────────────────
 
 CREATE TABLE contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES companies(id),
-
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL DEFAULT '',
+    contact_type TEXT NOT NULL DEFAULT 'person'
+        CONSTRAINT contacts_type_check CHECK (contact_type IN ('person', 'organization')),
+    name TEXT NOT NULL,
     info TEXT,
-
     email TEXT,
     phone TEXT,
     linkedin_url TEXT,
     x_url TEXT,
     facebook_url TEXT,
     instagram_url TEXT,
-
     other_channels JSONB NOT NULL DEFAULT '[]'::jsonb
-        CONSTRAINT contacts_other_channels_is_array CHECK (jsonb_typeof(other_channels) = 'array'),
-
+        CONSTRAINT contacts_channels_array CHECK (jsonb_typeof(other_channels) = 'array'),
+    discovered_from_research_record_id UUID REFERENCES research_records(id) ON DELETE SET NULL,
     notion_page_id TEXT,
     notion_synced_at TIMESTAMPTZ,
-
-    discovered_from_signal_id UUID REFERENCES signals(id) ON DELETE SET NULL,
-
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_contacts_company_name
-    ON contacts (company_id, lower(first_name), lower(last_name));
-CREATE UNIQUE INDEX idx_contacts_company_name_upsert
-    ON contacts (company_id, first_name, last_name);
-CREATE INDEX idx_contacts_company_id
-    ON contacts (company_id);
-CREATE INDEX idx_contacts_email
-    ON contacts (email)
-    WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX idx_contacts_dedup
+    ON contacts (company_id, contact_type, lower(name));
+CREATE UNIQUE INDEX idx_contacts_dedup_upsert
+    ON contacts (company_id, contact_type, name);
+CREATE INDEX idx_contacts_company_id ON contacts (company_id);
+CREATE INDEX idx_contacts_email ON contacts (email) WHERE email IS NOT NULL;
 
-DROP TRIGGER IF EXISTS trg_contacts_updated_at ON contacts;
 CREATE TRIGGER trg_contacts_updated_at
 BEFORE UPDATE ON contacts
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
--- ─── source_links ───────────────────────────────────────────────────────────
+-- ─── analysis_records ──────────────────────────────────────────────────────
 
-CREATE TABLE source_links (
-    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id       UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    kind             TEXT NOT NULL,
-    url              TEXT NOT NULL,
-    source           TEXT NOT NULL DEFAULT 'unknown',
-    confidence       NUMERIC(3,2) NOT NULL DEFAULT 0.50
-                     CONSTRAINT source_links_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
-    found_via        TEXT,
-    source_signal_id UUID REFERENCES signals(id) ON DELETE SET NULL,
-    raw              JSONB NOT NULL DEFAULT '{}'::jsonb,
-    fetched_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (company_id, kind, url)
-);
-
-CREATE INDEX idx_source_links_company ON source_links (company_id);
-CREATE INDEX idx_source_links_kind ON source_links (kind);
-
--- ─── analysis_notes ─────────────────────────────────────────────────────────
-
-CREATE TABLE analysis_notes (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE analysis_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    section    TEXT NOT NULL
-               CONSTRAINT analysis_notes_section_check
-               CHECK (section IN ('company', 'product', 'collaboration', 'financials', 'news', 'audit')),
-    facts      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    section TEXT NOT NULL
+        CONSTRAINT ar_section_check
+        CHECK (section IN ('company', 'product', 'collaboration', 'financials', 'news', 'audit')),
+    facts JSONB NOT NULL DEFAULT '{}'::jsonb,
     confidence NUMERIC(3,2) NOT NULL DEFAULT 0.50
-               CONSTRAINT analysis_notes_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
-    model      TEXT,
-    version    TEXT NOT NULL DEFAULT 'v1',
+        CONSTRAINT ar_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
+    model TEXT,
+    version TEXT NOT NULL DEFAULT 'v1',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (company_id, section, version)
 );
 
-CREATE INDEX idx_analysis_notes_company ON analysis_notes (company_id);
+CREATE INDEX idx_ar_company ON analysis_records (company_id);
 
--- ─── analysis_note_signals ──────────────────────────────────────────────────
--- Junction: analysis_notes ↔ signals (many-to-many with role).
+CREATE TRIGGER trg_ar_updated_at
+BEFORE UPDATE ON analysis_records
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
-CREATE TABLE analysis_note_signals (
-    analysis_note_id UUID NOT NULL REFERENCES analysis_notes(id) ON DELETE CASCADE,
-    signal_id        UUID NOT NULL REFERENCES signals(id)        ON DELETE CASCADE,
-    role             TEXT NOT NULL DEFAULT 'supports'
-                     CONSTRAINT analysis_note_signals_role_check
-                     CHECK (role IN ('supports', 'contradicts', 'context')),
-    note             TEXT,
-    PRIMARY KEY (analysis_note_id, signal_id)
+-- ─── analysis_links ────────────────────────────────────────────────────────
+
+CREATE TABLE analysis_links (
+    analysis_record_id UUID NOT NULL REFERENCES analysis_records(id) ON DELETE CASCADE,
+    research_record_id UUID NOT NULL REFERENCES research_records(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'supports'
+        CONSTRAINT al_role_check CHECK (role IN ('supports', 'contradicts', 'context')),
+    note TEXT,
+    PRIMARY KEY (analysis_record_id, research_record_id)
 );
 
-CREATE INDEX idx_ans_signal ON analysis_note_signals (signal_id);
+CREATE INDEX idx_al_research_record ON analysis_links (research_record_id);
 
--- ─── dossiers ───────────────────────────────────────────────────────────────
+-- ─── dossiers ──────────────────────────────────────────────────────────────
 
 CREATE TABLE dossiers (
-    company_id     UUID PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
-    summary_md     TEXT,
-    sections       JSONB NOT NULL DEFAULT '{}'::jsonb,
-    audit_md       TEXT,
-    table_fields   JSONB NOT NULL DEFAULT '{}'::jsonb,
-    version        TEXT NOT NULL DEFAULT 'v1',
-    generated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    notion_page_id TEXT
+    company_id UUID PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+    funding_stage TEXT,
+    funding_amount_usd BIGINT,
+    funding_date DATE,
+    team_size_estimate TEXT,
+    product_category TEXT,
+    ai_use_case TEXT,
+    icp_fit TEXT
+        CONSTRAINT dossiers_icp_fit_check CHECK (icp_fit IN ('strong', 'moderate', 'weak', 'unknown')),
+    last_news_date DATE,
+    extra_facts JSONB NOT NULL DEFAULT '{}'::jsonb,
+    section_summaries JSONB NOT NULL DEFAULT '{}'::jsonb,
+    summary_md TEXT,
+    audit_md TEXT,
+    notion_page_id TEXT,
+    notion_synced_at TIMESTAMPTZ,
+    derived_from_model TEXT,
+    version TEXT NOT NULL DEFAULT 'v1',
+    derived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_dossiers_icp_fit ON dossiers (icp_fit);
+CREATE INDEX idx_dossiers_funding_stage ON dossiers (funding_stage);
+CREATE INDEX idx_dossiers_derived_at ON dossiers (derived_at DESC);
+
+CREATE TRIGGER trg_dossiers_updated_at
+BEFORE UPDATE ON dossiers
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ─── dossier_links ─────────────────────────────────────────────────────────
+
+CREATE TABLE dossier_links (
+    company_id UUID NOT NULL REFERENCES dossiers(company_id) ON DELETE CASCADE,
+    analysis_record_id UUID NOT NULL REFERENCES analysis_records(id) ON DELETE CASCADE,
+    contributed_to TEXT,
+    PRIMARY KEY (company_id, analysis_record_id)
+);
+
+CREATE INDEX idx_dl_analysis_record ON dossier_links (analysis_record_id);
