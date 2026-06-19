@@ -25,8 +25,8 @@ def test_search_people_maps_response(respx_mock):
     )
     results = search_people("radai.com", "test_key")
     assert len(results) == 1
-    assert results[0]["first_name"] == "Sarah"
-    assert results[0]["last_name"] == "Chen"
+    assert results[0]["name"] == "Sarah Chen"
+    assert results[0]["contact_type"] == "person"
     assert results[0]["info"] == "Head of ML"
     assert results[0]["email"] is None
     assert results[0]["linkedin_url"] == "https://linkedin.com/in/sarahchen"

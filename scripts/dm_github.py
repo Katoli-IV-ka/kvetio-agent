@@ -3,7 +3,7 @@
 CLI:
     python scripts/dm_github.py --domain radai.com
 
-Reads GitHub org login from Supabase signals and writes JSON to stdout.
+Reads GitHub org login from Supabase research_records and writes JSON to stdout.
 """
 
 from __future__ import annotations
@@ -57,10 +57,10 @@ def is_real_email(email: str | None) -> bool:
 
 
 def get_github_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
-    """Find GitHub org login from stored company signals."""
-    signals = store.get_signals_for_company(domain)
-    for sig in signals:
-        url = sig.get("url") or ""
+    """Find GitHub org login from stored company research records."""
+    records = store.get_research_records_for_company(domain)
+    for record in records:
+        url = record.get("url") or ""
         login = extract_org_login(url)
         if login:
             return login
@@ -78,13 +78,12 @@ def fetch_user_profile(login: str, client: HttpClient) -> dict | None:
     data = client.get_json(f"{GH_API}/users/{login}")
     if not isinstance(data, dict) or "login" not in data:
         return None
-    first_name, last_name = _split_name(data.get("name") or login)
     other_channels = [{"type": "github", "url": f"https://github.com/{login}"}]
     if data.get("blog"):
         other_channels.append({"type": "personal_website", "url": data["blog"]})
     return {
-        "first_name": first_name,
-        "last_name": last_name,
+        "name": data.get("name") or login,
+        "contact_type": "person",
         "info": data.get("bio") or data.get("company"),
         "email": data.get("email"),
         "phone": None,
@@ -133,14 +132,13 @@ def fetch_commit_authors(org: str, client: HttpClient, max_repos: int = 3) -> li
             if not is_real_email(email) or email in seen_emails:
                 continue
             seen_emails.add(email)
-            first_name, last_name = _split_name(name)
             other_channels = []
             if login:
                 other_channels.append({"type": "github", "url": f"https://github.com/{login}"})
 
             results.append({
-                "first_name": first_name,
-                "last_name": last_name,
+                "name": name,
+                "contact_type": "person",
                 "info": f"Commit author in {org}/{repo_name}",
                 "email": email,
                 "phone": None,
@@ -178,7 +176,19 @@ def fetch(domain: str) -> list[dict]:
                 profiles.append(profile)
         commit_authors = fetch_commit_authors(org, client)
 
-    return profiles + commit_authors
+    org_contact = {
+        "name": f"{org} GitHub",
+        "contact_type": "organization",
+        "info": "GitHub organization profile",
+        "email": None,
+        "phone": None,
+        "linkedin_url": None,
+        "x_url": None,
+        "facebook_url": None,
+        "instagram_url": None,
+        "other_channels": [{"type": "github", "url": f"https://github.com/{org}"}],
+    }
+    return [org_contact] + profiles + commit_authors
 
 
 def main() -> None:

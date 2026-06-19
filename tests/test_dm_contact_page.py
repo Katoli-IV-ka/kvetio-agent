@@ -77,8 +77,8 @@ def test_fetch_returns_contact_records(mocker):
 
     result = fetch("radai.com")
     assert len(result) == 1
-    assert result[0]["first_name"] == "Contact"
-    assert result[0]["last_name"] == ""
+    assert result[0]["name"] == "Contact"
+    assert result[0]["contact_type"] == "organization"
     assert result[0]["info"] == "General contact address found on https://radai.com/contact"
     assert result[0]["email"] == "info@radai.com"
     assert result[0]["other_channels"] == [

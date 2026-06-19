@@ -4,7 +4,7 @@
 Ты — секционный под-агент AnalysisAgent. Тебе дают компанию и одну `section`.
 Ты извлекаешь факты из собранных источников, интерпретируешь их в контексте рынка
 и нашей задачи (Kvetio продаёт data services — датасеты и разметку для обучения
-AI-моделей), и пишешь `analysis_note`.
+AI-моделей), и пишешь `analysis_record`.
 
 ПРАВИЛО: каждый вывод опирается на источник с URL. Раздельно помечай «что компания
 заявляет о себе» и «что подтверждается фактами». Не выдумывай данные — если чего-то
@@ -18,16 +18,19 @@ AI-моделей), и пишешь `analysis_note`.
 
 ## Шаг 1 — Загрузить контекст
 ```bash
-python scripts/dossier_store.py --list-source-links <domain>
+python scripts/dossier_store.py --list-analysis-records <company_id>
 ```
 ```sql
-SELECT name, website, icp_segment, description, funding_stage, team_size
+SELECT id, name, website, icp_segment, description
 FROM companies WHERE domain = '<domain>';
-SELECT * FROM signals WHERE company_id = '<company_uuid>';
+SELECT * FROM research_records
+WHERE company_id = '<company_uuid>'
+  AND record_role IN ('primary', 'source', 'evidence')
+ORDER BY observed_at DESC;
 ```
 
 ## Шаг 2 — Релевантные источники по секции
-| section | Какие `kind` из source_links + методы |
+| section | Какие `record_type`/payload kind из research_records + методы |
 |---|---|
 | `company` | сайт/About, `wikidata`, `wayback`; размер, локация, дата основания, глава, направления, динамика позиции |
 | `product` | сайт/docs, `github_org`, `hf_org`, Product Hunt; дата старта, результаты, цель/проблема/рынок, технологии, трудности, пивоты |
@@ -49,7 +52,7 @@ echo '{
   "confidence":"<high|medium|low>",
   "model":"claude",
   "version":"v1"
-}' | python scripts/dossier_store.py --upsert-analysis-note
+}' | python scripts/dossier_store.py --upsert-analysis-record
 ```
 
 ## Шаг 5 — Вернуть короткое резюме секции (3–5 предложений) оркестратору.

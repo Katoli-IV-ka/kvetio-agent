@@ -89,14 +89,14 @@ def search_people(domain: str, api_key: str) -> list[dict]:
 
     results: list[dict] = []
     for person in data.get("people", []):
-        first_name = person.get("first_name")
-        last_name = person.get("last_name")
-        if not first_name:
-            first_name, inferred_last = _split_name(person.get("name", ""))
-            last_name = last_name or inferred_last
+        name = person.get("name")
+        if not name:
+            name = " ".join(
+                part for part in (person.get("first_name"), person.get("last_name")) if part
+            )
         results.append({
-            "first_name": first_name,
-            "last_name": last_name or "",
+            "name": name,
+            "contact_type": "person",
             "info": person.get("title") or person.get("seniority"),
             "email": None,
             "phone": None,

@@ -1,12 +1,7 @@
-"""CRUD для сущностей глубокого досье: source_links, analysis_notes, dossiers.
+"""CRUD for research_records, analysis_records, analysis_links, dossiers, dossier_links.
 
-Все таблицы ключуются по company_id (UUID), а не по company_domain.
-Для получения company_id используйте store.resolve_company_id(domain=...).
-
-CLI:
-    echo '{"company_id":"<uuid>","kind":"github_org","url":"https://github.com/acme"}' \
-        | python scripts/dossier_store.py --upsert-source-link
-    python scripts/dossier_store.py --list-source-links <company_id>
+All tables are keyed by company_id (UUID), not company_domain.
+For company_id lookup, use store.resolve_company_id(domain=...).
 """
 
 from __future__ import annotations
@@ -24,87 +19,79 @@ from supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
 
+DOSSIER_COLUMNS = (
+    "company_id",
+    "funding_stage",
+    "funding_amount_usd",
+    "funding_date",
+    "team_size_estimate",
+    "product_category",
+    "ai_use_case",
+    "icp_fit",
+    "last_news_date",
+    "extra_facts",
+    "section_summaries",
+    "summary_md",
+    "audit_md",
+    "notion_page_id",
+    "notion_synced_at",
+    "derived_from_model",
+    "version",
+)
 
-def upsert_source_link(store: SupabaseStore, link: dict) -> None:
-    """Upsert одной ссылки-источника. Conflict key: (company_id, kind, url)."""
+
+def upsert_analysis_record(store: SupabaseStore, record: dict) -> str | None:
+    """Upsert one analysis section. Conflict key: (company_id, section, version)."""
     row = {
-        "company_id": link["company_id"],
-        "kind": link["kind"],
-        "url": link["url"],
-        "source": link.get("source", "unknown"),
-        "confidence": confidence_to_score(link.get("confidence", "medium")),
-        "found_via": link.get("found_via"),
-        "source_signal_id": link.get("source_signal_id"),
-        "raw": link.get("raw", {}),
-        "fetched_at": datetime.utcnow().isoformat(),
+        "company_id": record["company_id"],
+        "section": record["section"],
+        "facts": record.get("facts", {}),
+        "confidence": confidence_to_score(record.get("confidence", "medium")),
+        "model": record.get("model"),
+        "version": record.get("version", "v1"),
+        "updated_at": datetime.utcnow().isoformat(),
     }
-    store._client.table("source_links").upsert(
-        row, on_conflict="company_id,kind,url"
-    ).execute()
-    logger.debug("upsert_source_link: %s / %s", row["company_id"], row["kind"])
-
-
-def get_source_links(store: SupabaseStore, company_id: str) -> list[dict]:
-    """Все ссылки-источники компании, свежие сверху."""
-    res = (
-        store._client.table("source_links")
-        .select("*")
-        .eq("company_id", company_id)
-        .order("fetched_at", desc=True)
-        .execute()
-    )
-    return res.data or []
-
-
-def upsert_analysis_note(store: SupabaseStore, note: dict) -> str | None:
-    """Upsert факта-секции этапа 4. Conflict key: (company_id, section, version).
-
-    Returns the note id (for linking to signals via link_note_to_signals).
-    """
-    row = {
-        "company_id": note["company_id"],
-        "section": note["section"],
-        "facts": note.get("facts", {}),
-        "confidence": confidence_to_score(note.get("confidence", "medium")),
-        "model": note.get("model"),
-        "version": note.get("version", "v1"),
-        "created_at": datetime.utcnow().isoformat(),
-    }
-    res = store._client.table("analysis_notes").upsert(
+    res = store._client.table("analysis_records").upsert(
         row, on_conflict="company_id,section,version"
     ).execute()
-    logger.debug("upsert_analysis_note: %s / %s", row["company_id"], row["section"])
+    logger.debug("upsert_analysis_record: %s / %s", row["company_id"], row["section"])
     rows = res.data or [{}]
     return rows[0].get("id") if rows else None
 
 
-def link_note_to_signals(
+def link_analysis_to_research(
     store: SupabaseStore,
-    note_id: str,
-    signal_ids: list[str],
+    analysis_record_id: str,
+    research_record_ids: list[str],
     role: str = "supports",
+    note: str | None = None,
 ) -> None:
-    """Link an analysis_note to one or more signals via the junction table.
-
-    Args:
-        role: 'supports' | 'contradicts' | 'context'
-    """
-    if not signal_ids:
+    """Link an analysis_record to one or more research_records."""
+    if not research_record_ids:
         return
     rows = [
-        {"analysis_note_id": note_id, "signal_id": sid, "role": role}
-        for sid in signal_ids
+        {
+            "analysis_record_id": analysis_record_id,
+            "research_record_id": rid,
+            "role": role,
+            "note": note,
+        }
+        for rid in research_record_ids
     ]
-    store._client.table("analysis_note_signals").upsert(
-        rows, on_conflict="analysis_note_id,signal_id"
+    store._client.table("analysis_links").upsert(
+        rows, on_conflict="analysis_record_id,research_record_id"
     ).execute()
-    logger.debug("link_note_to_signals: note=%s signals=%s", note_id, signal_ids)
+    logger.debug(
+        "link_analysis_to_research: analysis=%s research=%s",
+        analysis_record_id,
+        research_record_ids,
+    )
 
 
-def get_analysis_notes(store: SupabaseStore, company_id: str) -> list[dict]:
-    """Все факты-секции компании."""
+def get_analysis_records(store: SupabaseStore, company_id: str) -> list[dict]:
+    """All analysis records for a company."""
     res = (
-        store._client.table("analysis_notes")
+        store._client.table("analysis_records")
         .select("*")
         .eq("company_id", company_id)
         .execute()
@@ -113,16 +100,9 @@ def get_analysis_notes(store: SupabaseStore, company_id: str) -> list[dict]:
 
 
 def upsert_dossier(store: SupabaseStore, dossier: dict) -> None:
-    """Upsert финального досье. Conflict key: company_id (одно на компанию)."""
-    row = {
-        "company_id": dossier["company_id"],
-        "summary_md": dossier.get("summary_md"),
-        "sections": dossier.get("sections", {}),
-        "audit_md": dossier.get("audit_md"),
-        "table_fields": dossier.get("table_fields", {}),
-        "version": dossier.get("version", "v1"),
-        "generated_at": datetime.utcnow().isoformat(),
-    }
+    """Upsert one finalized typed dossier. Conflict key: company_id."""
+    row = {k: dossier[k] for k in DOSSIER_COLUMNS if k in dossier}
+    row["company_id"] = dossier["company_id"]
     store._client.table("dossiers").upsert(
         row, on_conflict="company_id"
     ).execute()
@@ -130,37 +110,59 @@ def upsert_dossier(store: SupabaseStore, dossier: dict) -> None:
 
 
 def get_dossier(store: SupabaseStore, company_id: str) -> dict | None:
-    """Досье компании или None."""
+    """Return one company dossier or None."""
     res = (
         store._client.table("dossiers")
         .select("*")
         .eq("company_id", company_id)
+        .limit(1)
         .execute()
     )
     rows = res.data or []
     return rows[0] if rows else None
 
 
+def link_dossier_to_analysis(
+    store: SupabaseStore,
+    company_id: str,
+    analysis_record_ids: list[str],
+    contributed_to_map: dict[str, str],
+) -> None:
+    """Link a dossier to the analysis_records that contributed to it."""
+    if not analysis_record_ids:
+        return
+    rows = [
+        {
+            "company_id": company_id,
+            "analysis_record_id": aid,
+            "contributed_to": contributed_to_map.get(aid),
+        }
+        for aid in analysis_record_ids
+    ]
+    store._client.table("dossier_links").upsert(
+        rows, on_conflict="company_id,analysis_record_id"
+    ).execute()
+
+
+def get_research_records(store: SupabaseStore, company_id: str) -> list[dict]:
+    """Convenience wrapper for analysis-agent input."""
+    return store.get_research_records_for_analysis(company_id)
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--upsert-source-link", action="store_true")
-    parser.add_argument("--list-source-links", metavar="COMPANY_ID")
-    parser.add_argument("--upsert-analysis-note", action="store_true")
-    parser.add_argument("--list-analysis-notes", metavar="COMPANY_ID")
+    parser.add_argument("--upsert-analysis-record", action="store_true")
+    parser.add_argument("--list-analysis-records", metavar="COMPANY_ID")
     parser.add_argument("--upsert-dossier", action="store_true")
     parser.add_argument("--get-dossier", metavar="COMPANY_ID")
     return parser
 
 
 def _run(args: argparse.Namespace, store: SupabaseStore) -> None:
-    if args.upsert_source_link:
-        upsert_source_link(store, json.load(sys.stdin))
-    elif args.list_source_links:
-        print(json.dumps(get_source_links(store, args.list_source_links), indent=2))
-    elif args.upsert_analysis_note:
-        upsert_analysis_note(store, json.load(sys.stdin))
-    elif args.list_analysis_notes:
-        print(json.dumps(get_analysis_notes(store, args.list_analysis_notes), indent=2))
+    if args.upsert_analysis_record:
+        upsert_analysis_record(store, json.load(sys.stdin))
+    elif args.list_analysis_records:
+        print(json.dumps(get_analysis_records(store, args.list_analysis_records), indent=2))
     elif args.upsert_dossier:
         upsert_dossier(store, json.load(sys.stdin))
     elif args.get_dossier:

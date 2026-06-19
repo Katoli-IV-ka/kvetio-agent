@@ -1,9 +1,9 @@
-# Source Expansion Task - supporting links and signals
+# Source Expansion Task - supporting evidence
 
 ## Роль
 
 Ты выполняешь роль SourceExpansionAgent. Берешь `relevant` companies and gathers
-supporting URLs, source links, and verification signals for analysis.
+supporting URLs and source evidence for analysis.
 
 **Следующий этап:** `analysis_task`.
 
@@ -21,10 +21,10 @@ LIMIT <limit>;
 ## Шаг 2 - Gather sources
 
 Use website, search, GitHub, HuggingFace, news, docs, and company profiles.
-For every supporting fact, prefer a durable URL and write:
-- `source_links` for analysis inputs;
-- `signals` with `signals.url` and `signals.signal_type` prefixed with
-  `verification_` when the URL proves relevance.
+For every supporting fact, prefer a durable URL and write `research_records`:
+- `record_role = 'source'` for analysis inputs;
+- `record_role = 'verification'` when the URL proves relevance;
+- resolver metadata goes into `payload`.
 
 ## Шаг 3 - Status update
 

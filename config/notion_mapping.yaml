@@ -21,7 +21,8 @@ contacts:
   db_table: contacts
   db_key: id
   fields:
-    - { db_column: contact_name,        notion_property: "Name",                  notion_type: title,        direction: forward }
+    - { db_column: name,                notion_property: "Name",                  notion_type: title,        direction: forward }
+    - { db_column: contact_type,        notion_property: "Type",                  notion_type: select,       direction: forward }
     - { db_column: info,                notion_property: "Информация о контакте", notion_type: rich_text,    direction: forward }
     - { db_column: email,               notion_property: "Email",                 notion_type: email,        direction: forward }
     - { db_column: phone,               notion_property: "Phone",                 notion_type: phone_number, direction: forward }
@@ -31,3 +32,16 @@ contacts:
     - { db_column: instagram_url,       notion_property: "Instagram",             notion_type: url,          direction: forward }
     - { db_column: other_channels_text, notion_property: "Другие каналы",         notion_type: rich_text,    direction: forward }
     - { db_column: company_page_ids,    notion_property: "Компании",              notion_type: relation,     direction: forward }
+
+dossiers:
+  notion_database_id_env: NOTION_DOSSIERS_DB_ID
+  db_table: dossiers
+  db_key: company_id
+  fields:
+    - { db_column: company_id,           notion_property: "Company ID",          notion_type: title,     direction: forward }
+    - { db_column: funding_stage,        notion_property: "Funding stage",       notion_type: select,    direction: forward }
+    - { db_column: team_size_estimate,   notion_property: "Team size",           notion_type: select,    direction: forward }
+    - { db_column: icp_fit,              notion_property: "ICP fit",             notion_type: select,    direction: forward }
+    - { db_column: product_category,     notion_property: "Product category",    notion_type: rich_text, direction: forward }
+    - { db_column: last_news_date,       notion_property: "Last news date",      notion_type: date,      direction: forward }
+    - { db_column: summary_md,           notion_property: "Summary",             notion_type: rich_text, direction: forward }

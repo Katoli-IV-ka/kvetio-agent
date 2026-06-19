@@ -1,7 +1,7 @@
-"""Этап 3 (Enrichment): резолверы ссылок-источников → source_links.
+"""Этап 3 (Enrichment): резолверы ссылок-источников -> research_records.
 
 Детерминированные HTTP-резолверы. MCP/WebSearch-ручки (HF org, новости, соцсети)
-собирает EnrichmentAgent в промпте и пишет через dossier_store.
+собирает EnrichmentAgent в промпте и пишет как source research records.
 
 CLI:
     python scripts/enrichment.py --domain radai.com
@@ -13,13 +13,14 @@ import argparse
 import json
 import logging
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Protocol
 
 sys.path.insert(0, str(Path(__file__).parent))
 from dm_github import extract_org_login
-from dossier_store import upsert_source_link
 from http_client import HttpClient
+from models import ResearchRecord
 from supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class GithubOrgResolver:
     enabled = True
 
     def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
-        for sig in store.get_signals_for_company(company["domain"]):
+        for sig in store.get_research_records_for_company(company["domain"]):
             url = sig.get("url") or ""
             login = extract_org_login(url)
             if login:
@@ -102,7 +103,7 @@ def run_enrichment(
     client: HttpClient,
     resolvers: list[Resolver] | None = None,
 ) -> list[dict]:
-    """Прогнать включённые резолверы, записать найденные ссылки в source_links."""
+    """Run enabled resolvers and write found source URLs as research_records."""
     active = resolvers if resolvers is not None else RESOLVERS
     written: list[dict] = []
     for r in active:
@@ -114,7 +115,26 @@ def run_enrichment(
             logger.warning("resolver %s failed: %s", getattr(r, "kind", "?"), exc)
             continue
         if link:
-            upsert_source_link(store, link)
+            payload = {
+                k: v for k, v in link.items()
+                if k not in {"company_id", "source", "url", "confidence"}
+            }
+            payload.setdefault("fetched_at", datetime.utcnow().isoformat())
+            entry = ResearchRecord(
+                source=link.get("source", "unknown"),
+                record_type="source_link",
+                company_name=company.get("name") or company["domain"],
+                domain=company.get("domain"),
+                linkedin_url=company.get("linkedin_url"),
+                url=link["url"],
+                observed_at=date.today(),
+                confidence=link.get("confidence", "medium"),
+                record_role="source",
+                agent="enrichment",
+                title=link.get("kind"),
+                payload=payload,
+            )
+            store.upsert_research_record(entry, domain=company["domain"])
             written.append(link)
     return written
 

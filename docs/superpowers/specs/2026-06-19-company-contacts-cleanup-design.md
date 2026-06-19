@@ -1,3 +1,5 @@
+> SUPERSEDED — see 2026-06-19-database-agent-cleanup-FINAL.md
+
 # Company And Contacts Cleanup — Design Spec
 **Date:** 2026-06-19  
 **Status:** Superseded

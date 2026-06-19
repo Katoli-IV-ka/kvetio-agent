@@ -3,13 +3,13 @@
 ## Роль
 
 Ты выполняешь роль ConclusionAgent. Берешь companies со статусом `analyzed`,
-читаешь `analysis_notes`, собираешь итоговое dossier и переводишь компанию в
+читаешь `analysis_records`, собираешь итоговое dossier и переводишь компанию в
 `dossier_ready`.
 
 ## Select companies
 
 ```sql
-SELECT domain, name, website, icp_segment, description, funding_stage, team_size
+SELECT id, domain, name, website, icp_segment, description
 FROM companies
 WHERE status = 'analyzed'
 ORDER BY updated_at DESC
@@ -19,7 +19,7 @@ LIMIT 10;
 ## Inputs
 
 ```bash
-python scripts/dossier_store.py --list-analysis-notes <domain>
+python scripts/dossier_store.py --list-analysis-records <company_id>
 ```
 
 ## Summary sections
@@ -37,6 +37,11 @@ python scripts/dossier_store.py --list-analysis-notes <domain>
 ```bash
 python scripts/dossier_store.py --upsert-dossier
 ```
+
+Write typed fields (`funding_stage`, `funding_amount_usd`, `funding_date`,
+`team_size_estimate`, `product_category`, `ai_use_case`, `icp_fit`,
+`last_news_date`), `section_summaries`, `summary_md`, and `audit_md`.
+Then write `dossier_links` for every contributing `analysis_record`.
 
 ## Status update
 

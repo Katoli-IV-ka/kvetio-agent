@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 sys.path.insert(0, str(Path(__file__).parent))
-from models import Company, RawSignal, confidence_to_score
+from models import Company, ResearchRecord, confidence_to_score
 
 logger = logging.getLogger(__name__)
 
@@ -60,13 +60,11 @@ class SupabaseStore:
             "linkedin_url": company.linkedin_url,
             "status": company.status,
             "icp_segment": company.icp_segment,
-            "funding_stage": company.funding_stage,
+            "description": getattr(company, "description", None),
+            "notion_page_id": company.notion_page_id,
+            "notion_synced_at": getattr(company, "notion_synced_at", None),
             "updated_at": datetime.utcnow().isoformat(),
         }
-        if company.last_verified:
-            row["last_verified"] = company.last_verified.isoformat()
-        if company.last_funding_date:
-            row["funding_date"] = company.last_funding_date.isoformat()
 
         self._client.table("companies").upsert(row, on_conflict="domain").execute()
         logger.debug("upsert_company: %s", company.normalized_domain)
@@ -137,7 +135,7 @@ class SupabaseStore:
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("domain", domain).execute()
 
-    # ── Signals ──────────────────────────────────────────────────────────────
+    # ── Research records ─────────────────────────────────────────────────────
 
     def resolve_company_id(
         self,
@@ -161,69 +159,122 @@ class SupabaseStore:
         return rows[0]["id"] if rows else None
 
     @staticmethod
-    def _dedupe_key(company_id: str, signal_type: str, url: str | None, fallback: str) -> str:
-        """SHA-1 of company_id:signal_type:url — deterministic dedup handle."""
-        basis = f"{company_id}:{signal_type}:{url or fallback}"
+    def _dedupe_key(company_id: str, record_type: str, url: str | None, fallback: str) -> str:
+        """SHA-1 of company_id:record_type:url — deterministic dedup handle."""
+        basis = f"{company_id}:{record_type}:{url or fallback}"
         return hashlib.sha1(basis.encode("utf-8")).hexdigest()
 
-    def upsert_signal(
+    def upsert_research_record(
         self,
-        signal: RawSignal,
+        entry: ResearchRecord,
         *,
         company_id: str | None = None,
         domain: str | None = None,
         run_id: str | None = None,
     ) -> bool:
-        """Insert or ignore a signal. Returns True if the row is new.
+        """Insert or ignore a research record. Returns True if the row is new.
 
         Pass either company_id (preferred) or domain (resolved via DB lookup).
-        Deduplication key: sha1(company_id:signal_type:url).
+        Deduplication key: sha1(company_id:record_type:url).
         """
         cid = self.resolve_company_id(
             company_id=company_id,
-            domain=domain or signal.domain,
+            domain=domain or entry.domain,
         )
         if not cid:
             raise ValueError(
-                f"upsert_signal: cannot resolve company for domain={domain or signal.domain!r}"
+                f"upsert_research_record: cannot resolve company for "
+                f"domain={domain or entry.domain!r}"
             )
         dedupe = self._dedupe_key(
-            cid, signal.signal_type, signal.url,
-            fallback=signal.signal_date.isoformat(),
+            cid, entry.record_type, entry.url,
+            fallback=entry.observed_at.isoformat(),
         )
         row = {
             "company_id": cid,
-            "signal_type": signal.signal_type,
-            "agent": signal.agent,
-            "source": signal.source,
-            "title": signal.title,
-            "url": signal.url,
-            "summary": signal.summary,
-            "confidence": confidence_to_score(signal.confidence),
-            "signal_date": signal.signal_date.isoformat(),
-            "payload": signal.payload or {},
-            "raw_data": signal.raw_payload or {},
+            "record_type": entry.record_type,
+            "agent": entry.agent,
+            "source": entry.source,
+            "title": entry.title,
+            "url": entry.url,
+            "summary": entry.summary,
+            "confidence": confidence_to_score(entry.confidence),
+            "observed_at": entry.observed_at.isoformat(),
+            "record_role": entry.record_role,
+            "payload": entry.payload or {},
+            "raw_data": entry.raw_payload or {},
             "run_id": run_id,
             "dedupe_key": dedupe,
         }
         res = (
-            self._client.table("signals")
+            self._client.table("research_records")
             .upsert(row, on_conflict="dedupe_key", ignore_duplicates=True)
             .execute()
         )
         # ignore_duplicates=True → empty data list when duplicate
         return bool(res.data)
 
-    def get_signals_for_company(self, domain: str) -> list[dict]:
-        """Fetch all signals for a company by domain."""
+    # Transitional alias for callers migrated in later tasks.
+    upsert_signal = upsert_research_record
+
+    def get_research_records_for_company(self, domain: str) -> list[dict]:
+        """Fetch all research records for a company by domain."""
         cid = self.resolve_company_id(domain=domain)
         if not cid:
             return []
         res = (
-            self._client.table("signals")
+            self._client.table("research_records")
             .select("*")
             .eq("company_id", cid)
-            .order("signal_date", desc=True)
+            .order("observed_at", desc=True)
+            .execute()
+        )
+        return res.data or []
+
+    # Transitional alias for callers migrated in later tasks.
+    get_signals_for_company = get_research_records_for_company
+
+    def get_latest_research_record(self, company_id: str) -> dict | None:
+        res = (
+            self._client.table("research_records")
+            .select("*")
+            .eq("company_id", company_id)
+            .order("observed_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0] if res.data else None
+
+    def get_verification_freshness(self, company_id: str) -> str | None:
+        res = (
+            self._client.table("research_records")
+            .select("observed_at")
+            .eq("company_id", company_id)
+            .eq("record_role", "verification")
+            .order("observed_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return res.data[0]["observed_at"] if res.data else None
+
+    def get_research_records_for_analysis(self, company_id: str) -> list[dict]:
+        res = (
+            self._client.table("research_records")
+            .select("*")
+            .eq("company_id", company_id)
+            .in_("record_role", ["primary", "source", "evidence"])
+            .order("observed_at", desc=True)
+            .execute()
+        )
+        return res.data or []
+
+    def get_funding_records(self, company_id: str) -> list[dict]:
+        res = (
+            self._client.table("research_records")
+            .select("*")
+            .eq("company_id", company_id)
+            .eq("record_type", "funding_announcement")
+            .order("observed_at", desc=True)
             .execute()
         )
         return res.data or []
@@ -301,15 +352,15 @@ class SupabaseStore:
         return res.data or []
 
     def list_stale_review_queue(self, days: int = 14, limit: int = 10) -> list[dict]:
-        """Компании, которые давно не проверялись или ещё ни разу не проверены."""
+        """Companies in review statuses, oldest updated first."""
         cutoff = date.today() - timedelta(days=days)
         review_statuses = ["discovered", "manual_review", "relevant"]
         res = (
             self._client.table("companies")
-            .select("name, domain, status, icp_segment, last_verified, updated_at")
+            .select("name, domain, status, icp_segment, updated_at")
             .in_("status", review_statuses)
-            .or_(f"last_verified.is.null,last_verified.lt.{cutoff.isoformat()}")
-            .order("last_verified", desc=False)
+            .or_(f"updated_at.is.null,updated_at.lt.{cutoff.isoformat()}")
+            .order("updated_at", desc=False)
             .limit(limit)
             .execute()
         )

@@ -1,7 +1,8 @@
 """Contract tests for the current database baseline schema.
 
-The project no longer keeps test-era migration history. `sql/schema.sql` is the
-single source of truth for creating the current clean Supabase schema.
+`sql/schema.sql` is the single source of truth for creating the current clean
+Supabase schema. Numbered migrations under `sql/migrations/` are live upgrade
+history, not the clean-install contract.
 """
 
 from __future__ import annotations
@@ -32,35 +33,33 @@ def test_schema_creates_current_runtime_tables() -> None:
     sql = _schema()
     for table in (
         "companies",
-        "signals",
         "run_logs",
+        "record_types",
+        "research_records",
         "contacts",
-        "source_links",
-        "analysis_notes",
+        "analysis_records",
+        "analysis_links",
         "dossiers",
+        "dossier_links",
     ):
         assert f"CREATE TABLE {table}" in sql
 
 
-def test_schema_does_not_create_removed_runtime_objects() -> None:
+def test_schema_has_no_legacy_tables() -> None:
     sql = _schema()
-    removed_objects = (
-        "pipeline_runs",
-        "bot_users",
-        "bot_dialog_state",
-        "bot_presets",
-        "contact_companies",
-        "github_org_cache",
-        "recent_leads",
-        "pipeline_stats",
-    )
-    for name in removed_objects:
-        assert name not in sql
+    for legacy in (
+        "signals",
+        "signal_types",
+        "source_links",
+        "analysis_notes",
+        "analysis_note_signals",
+        "dossiers_legacy",
+    ):
+        assert f"CREATE TABLE {legacy} (" not in sql
 
 
 def test_companies_status_contract_is_current() -> None:
-    sql = _schema()
-    companies = _table_body(sql, "companies")
+    companies = _table_body(_schema(), "companies")
     assert "status TEXT NOT NULL DEFAULT 'discovered'" in companies
     for status in (
         "discovered",
@@ -76,80 +75,53 @@ def test_companies_status_contract_is_current() -> None:
         assert f"'{legacy_status}'" not in companies
 
 
-def test_removed_company_fields_are_not_in_schema() -> None:
-    sql = _schema()
-    companies = _table_body(sql, "companies")
-    for column in (
-        "score",
-        "score_bucket",
-        "score_version",
-        "ai_direction",
-        "sources JSONB",
-        "latest_signal",
-        "reject_reason",
-        "outreach_status",
-        "outreach_note",
-        "source_page_url",
+def test_companies_has_no_legacy_columns() -> None:
+    body = _table_body(_schema(), "companies")
+    for col in (
+        "last_signal_date",
+        "last_verified",
+        "funding_stage",
+        "funding_amount",
+        "funding_date",
+        "team_size",
+        "site_note",
+        "website_snippet",
+        "dm_enriched_at",
+        "created_from_signal_id",
+        "last_signal_id",
     ):
-        assert column not in companies
+        assert col not in body
 
 
-def test_contacts_schema_is_compact_outreach_contract() -> None:
+def test_contacts_uses_name_and_type() -> None:
+    body = _table_body(_schema(), "contacts")
+    assert "name TEXT NOT NULL" in body
+    assert "contact_type TEXT NOT NULL DEFAULT 'person'" in body
+    assert "first_name" not in body
+    assert "last_name" not in body
+    assert "discovered_from_research_record_id UUID REFERENCES research_records(id)" in body
+
+
+def test_contacts_schema_uses_name_type_dedup() -> None:
     sql = _schema()
-    assert "CREATE TABLE contacts" in sql
-    for column in (
-        "company_id UUID NOT NULL REFERENCES companies(id)",
-        "first_name TEXT NOT NULL",
-        "last_name TEXT NOT NULL DEFAULT ''",
-        "info TEXT",
-        "email TEXT",
-        "phone TEXT",
-        "linkedin_url TEXT",
-        "x_url TEXT",
-        "facebook_url TEXT",
-        "instagram_url TEXT",
-        "other_channels JSONB NOT NULL DEFAULT '[]'::jsonb",
-        "notion_page_id TEXT",
-        "notion_synced_at TIMESTAMPTZ",
-    ):
-        assert column in sql
-
-
-def test_contacts_schema_removed_legacy_fields() -> None:
-    sql = _table_body(_schema(), "contacts")
-    for removed in (
-        "company_domain",
-        "full_name",
-        "title TEXT",
-        "title_normalized",
-        "dm_priority",
-        "email_status",
-        "email_source",
-        "twitter_handle",
-        "github_username",
-        "hf_username",
-        "personal_website",
-        "source_vector",
-        "source_url",
-        "confidence TEXT",
-        "raw_payload",
-        "contact_type",
-    ):
-        assert removed not in sql
-
-
-def test_contacts_schema_uses_company_name_dedup() -> None:
-    sql = _schema()
-    assert "CREATE UNIQUE INDEX idx_contacts_company_name" in sql
-    assert "ON contacts (company_id, lower(first_name), lower(last_name))" in sql
-    assert "CREATE UNIQUE INDEX idx_contacts_company_name_upsert" in sql
-    assert "ON contacts (company_id, first_name, last_name)" in sql
+    assert "CREATE UNIQUE INDEX idx_contacts_dedup" in sql
+    assert "ON contacts (company_id, contact_type, lower(name))" in sql
+    assert "CREATE UNIQUE INDEX idx_contacts_dedup_upsert" in sql
+    assert "ON contacts (company_id, contact_type, name)" in sql
     assert "idx_contacts_company_id" in sql
     assert "idx_contacts_email" in sql
 
 
-def test_deep_analysis_tables_have_expected_unique_keys() -> None:
+def test_research_records_has_record_role() -> None:
+    body = _table_body(_schema(), "research_records")
+    assert "record_role TEXT NOT NULL DEFAULT 'evidence'" in body
+    assert "observed_at DATE NOT NULL" in body
+    assert "record_type TEXT NOT NULL REFERENCES record_types(code)" in body
+
+
+def test_analysis_and_dossier_provenance_keys() -> None:
     sql = _schema()
-    assert "UNIQUE (company_id, kind, url)" in sql
     assert "UNIQUE (company_id, section, version)" in sql
-    assert "company_id   UUID PRIMARY KEY" in sql
+    assert "PRIMARY KEY (analysis_record_id, research_record_id)" in sql
+    assert "company_id UUID PRIMARY KEY REFERENCES companies(id)" in sql
+    assert "PRIMARY KEY (company_id, analysis_record_id)" in sql

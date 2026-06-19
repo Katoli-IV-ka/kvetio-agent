@@ -4,7 +4,7 @@ from datetime import date
 
 import pytest
 
-from scripts.models import RawSignal, confidence_to_score
+from scripts.models import ContactRecord, RawSignal, ResearchRecord, confidence_to_score
 
 
 def test_confidence_to_score_maps_labels():
@@ -67,3 +67,29 @@ def test_rawsignal_payload_and_raw_payload():
     )
     assert s.payload == {"num_models": 5}
     assert s.raw_payload == {"raw": "data"}
+
+
+def test_research_record_has_fields_and_default_role():
+    e = ResearchRecord(
+        source="github",
+        record_type="github_repo",
+        company_name="Rad AI",
+        domain="radai.com",
+        linkedin_url=None,
+        url="https://github.com/radai",
+        observed_at=date(2026, 6, 19),
+        confidence=0.8,
+    )
+    assert e.record_type == "github_repo"
+    assert e.observed_at == date(2026, 6, 19)
+    assert e.record_role == "evidence"
+
+
+def test_rawsignal_is_alias_of_research_record():
+    assert RawSignal is ResearchRecord
+
+
+def test_contact_record_uses_name_and_type():
+    c = ContactRecord(company_id="cid", name="Sarah Chen")
+    assert c.name == "Sarah Chen"
+    assert c.contact_type == "person"

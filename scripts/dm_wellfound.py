@@ -89,10 +89,9 @@ def _parse_people_from_json(data: dict, source_url: str) -> list[dict]:
             name = person.get("name") or person.get("fullName")
             if not name:
                 continue
-            first_name, last_name = _split_name(name)
             results.append({
-                "first_name": first_name,
-                "last_name": last_name,
+                "name": name,
+                "contact_type": "person",
                 "info": person.get("title") or person.get("role"),
                 "email": None,
                 "phone": None,
@@ -125,10 +124,10 @@ def scrape_wellfound(slug: str) -> list[dict]:
 
     for linkedin_url in extract_linkedin_urls(html)[:5]:
         slug_part = linkedin_url.rstrip("/").split("/")[-1]
-        first_name, last_name = _split_name(slug_part.replace("-", " ").title())
+        name = slug_part.replace("-", " ").title()
         results.append({
-            "first_name": first_name,
-            "last_name": last_name,
+            "name": name,
+            "contact_type": "person",
             "info": None,
             "email": None,
             "phone": None,

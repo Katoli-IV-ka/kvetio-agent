@@ -98,8 +98,8 @@ def fetch(domain: str) -> list[dict]:
 
     return [
         {
-            "first_name": "Contact",
-            "last_name": "",
+            "name": "Contact",
+            "contact_type": "organization",
             "info": f"General contact address found on {url}",
             "email": email,
             "phone": None,

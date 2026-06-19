@@ -5,6 +5,16 @@ from __future__ import annotations
 from pathlib import Path
 
 PROMPTS = Path(__file__).parent.parent / "agents" / "prompts"
+PROMPT_FILES = sorted(PROMPTS.glob("*.md"))
+FORBIDDEN_SCHEMA_TOKENS = [
+    "source_links",
+    "last_signal_date",
+    "last_verified",
+    "dm_enriched_at",
+    "analysis_notes",
+    "analysis_note_signals",
+    "signal_types",
+]
 
 
 def _read(name: str) -> str:
@@ -58,7 +68,8 @@ def test_enrichment_prompt_gathers_links_no_analysis():
     assert "EnrichmentAgent" in p
     assert "status = 'relevant'" in p
     assert "scripts/enrichment.py --domain" in p
-    assert "upsert-source-link" in p
+    assert "research_records" in p
+    assert "record_role='source'" in p or 'record_role = "source"' in p
     assert "sources_gathered" in p
     # Этап 3 не анализирует:
     assert "аудит" not in p.lower()
@@ -67,7 +78,7 @@ def test_enrichment_prompt_gathers_links_no_analysis():
 def test_analysis_section_prompt():
     p = _read("analysis_section_task.md")
     assert "section" in p
-    assert "upsert-analysis-note" in p
+    assert "upsert-analysis-record" in p
     # Разделение заявлений и фактов:
     assert "заявлен" in p.lower()
     assert "факт" in p.lower()
@@ -77,7 +88,7 @@ def test_analysis_section_prompt():
 
 def test_analysis_audit_prompt():
     p = _read("analysis_audit_task.md")
-    assert "list-analysis-notes" in p
+    assert "list-analysis-records" in p
     assert "audit" in p
     assert "продаж" in p.lower()  # вывод для нас: продажа датасетов
 
@@ -97,7 +108,7 @@ def test_conclusions_prompt():
     p = _read("conclusions_task.md")
     assert "ConclusionAgent" in p
     assert "status = 'analyzed'" in p
-    assert "list-analysis-notes" in p
+    assert "list-analysis-records" in p
     assert "upsert-dossier" in p
     assert "Notion" in p
     assert "dossier_ready" in p
@@ -163,16 +174,23 @@ def test_prompts_do_not_reference_removed_company_fields() -> None:
         assert term not in text
 
 
-def test_prompts_document_signal_type_prefixes() -> None:
+def test_prompts_document_record_roles() -> None:
     text = (PROMPTS / "pipeline_main_task.md").read_text(encoding="utf-8")
-    assert "primary_*" in text
-    assert "verification_*" in text
-    assert "monitor_*" in text
+    assert "record_role = 'primary'" in text
+    assert "record_role = 'verification'" in text
+    assert "record_role = 'monitor'" in text
 
 
 def test_dm_enrich_prompt_uses_compact_contact_schema():
     p = _read("dm_enrich_task.md")
-    for field in ("first_name", "last_name", "info", "phone", "x_url", "other_channels"):
+    for field in ("name", "contact_type", "info", "phone", "x_url", "other_channels"):
         assert field in p
-    for removed in ("full_name", "email_status", "confidence", "contact_type", "source_vector"):
+    for removed in ("first_name", "last_name", "full_name", "email_status", "confidence", "source_vector"):
         assert removed not in p
+
+
+def test_prompt_has_no_removed_schema_references():
+    for path in PROMPT_FILES:
+        text = path.read_text(encoding="utf-8")
+        for token in FORBIDDEN_SCHEMA_TOKENS:
+            assert token not in text, f"{path.name} still references {token}"
