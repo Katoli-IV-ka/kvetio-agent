@@ -7,7 +7,7 @@
 первичные факты.
 
 Discovery не делает relevance filtering и не решает релевантность. Его задача -
-создать `companies.status = 'discovered'` и `signals` с первичным evidence.
+создать `companies.status = 'discovered'` и `research_records` с первичным evidence.
 
 ## Параметры
 
@@ -32,11 +32,12 @@ python scripts/greenhouse.py --segment <segment>
 
 Для каждой принятой компании:
 - `companies.domain`, `name`, `website`, `icp_segment`, `status = 'discovered'`;
-- `signals.url`, `signals.signal_type` prefixed with `primary_`;
-- `signals.company_id`, `signals.payload`, `signals.confidence`.
+- `research_records.url`, `research_records.record_type`;
+- `research_records.record_role = 'primary'`;
+- `research_records.company_id`, `research_records.payload`, `research_records.confidence`.
 
 Не храни агрегированные source summaries на строке company. Latest evidence is
-derived from `signals`.
+derived from `research_records`.
 
 ## Отчет
 

@@ -34,8 +34,8 @@ contacts for a company that does not exist in companies.
 ```json
 {
   "company_id": "00000000-0000-0000-0000-000000000001",
-  "first_name": "Alice",
-  "last_name": "Chen",
+  "name": "Alice Chen",
+  "contact_type": "person",
   "info": "Head of ML; likely owns dataset/vendor decisions.",
   "email": "alice@acme.ai",
   "phone": "+1-555-0100",
@@ -49,6 +49,11 @@ contacts for a company that does not exist in companies.
   ]
 }
 ```
+
+Use `contact_type = "organization"` for company-level channels: shared inboxes,
+GitHub/HuggingFace org profiles, contact forms, Discord/Telegram/X pages.
+Write a `contact_found` row in `research_records` for auditability when a
+contact came from a specific source.
 
 Do not put `email`, `phone`, `linkedin_url`, `x_url`, `facebook_url`, or
 `instagram_url` into `other_channels`. These are primary channels and must live

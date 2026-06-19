@@ -7,11 +7,10 @@ MonitorAgent is a signal refresh loop, not a separate status machine.
 ## Select stale companies
 
 ```sql
-SELECT id, domain, name, icp_segment, last_verified, status
+SELECT id, domain, name, icp_segment, status
 FROM companies
 WHERE status IN ('relevant', 'sources_gathered', 'analyzed', 'dossier_ready', 'manual_review')
-  AND (last_verified IS NULL OR last_verified < CURRENT_DATE - INTERVAL '7 days')
-ORDER BY last_verified ASC NULLS FIRST
+ORDER BY updated_at ASC
 LIMIT 30;
 ```
 
@@ -23,10 +22,10 @@ For each company, check:
 - funding or product news;
 - public product/docs changes.
 
-For every new signal:
-- insert a row into `signals`;
-- use `signal_type` prefixed with `monitor_`;
-- update `companies.last_verified = CURRENT_DATE`.
+For every new finding:
+- insert a row into `research_records`;
+- use `record_role = 'monitor'`;
+- leave derived freshness to queries over `research_records.observed_at`.
 
 Do not write legacy monitor-only statuses, company summary fields, score fields,
 or score buckets.

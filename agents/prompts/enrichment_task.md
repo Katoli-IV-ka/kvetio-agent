@@ -3,7 +3,7 @@
 ## Роль
 
 Ты выполняешь роль EnrichmentAgent. Для каждой `relevant`-компании собираешь
-набор ссылок для будущего анализа и пишешь их в `source_links`.
+набор ссылок для будущего анализа и пишешь их в `research_records`.
 
 ВАЖНО: здесь ты НЕ интерпретируешь и НЕ анализируешь данные - только находишь и
 сохраняешь URL с provenance. Анализ выполняется в `analysis_task`.
@@ -34,15 +34,20 @@ LIMIT <limit>;
 python scripts/enrichment.py --domain <domain>
 ```
 
-Скрипт пишет найденные ссылки в `source_links`. Прочитай JSON-вывод.
+Скрипт пишет найденные ссылки в `research_records` с `record_role='source'`.
+Прочитай JSON-вывод.
 
 ## Шаг 3 - MCP/WebSearch-ручки
 
-Добери источники, которых нет в скрипте, и запиши каждую ссылку:
+Добери источники, которых нет в скрипте, и запиши каждую ссылку как
+`research_records` row:
 
-```bash
-echo '{"company_id":"<company_uuid>","kind":"<kind>","url":"<url>","source":"<resolver>","confidence":"medium"}' \
-  | python scripts/dossier_store.py --upsert-source-link
+```sql
+INSERT INTO research_records
+  (company_id, record_type, record_role, source, url, confidence, observed_at, payload, dedupe_key)
+VALUES
+  ('<company_uuid>', 'source_link', 'source', '<resolver>', '<url>', 0.5, CURRENT_DATE,
+   '{"kind":"<kind>"}'::jsonb, '<sha1>');
 ```
 
 Собирай, если найдено:

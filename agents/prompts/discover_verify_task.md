@@ -3,7 +3,8 @@
 УСТАРЕЛ: этот combined prompt больше не используется для штатного pipeline.
 
 Используй отдельные этапы:
-- `discovery_task.md` writes discovered companies and `primary_*` signals.
+- `discovery_task.md` writes discovered companies and `research_records`
+  with `record_role = 'primary'`.
 - `relevance_task.md` sets `relevant`, `not_relevant`, or `manual_review`.
 - `source_expansion_task.md` gathers supporting links and sets `sources_gathered`.
 

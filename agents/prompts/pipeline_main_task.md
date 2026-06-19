@@ -8,20 +8,21 @@
 `agents/prompts/pipeline_task.md` при каждом запуске Routine.
 
 Pipeline stages:
-1. Discovery writes candidates and primary signals.
+1. Discovery writes candidates and primary research records.
 2. Relevance sets companies.status to relevant, not_relevant, or manual_review.
 3. Source expansion gathers supporting links and sets sources_gathered.
 4. Analysis writes structured notes and sets analyzed.
 5. Conclusions writes final dossier and sets dossier_ready.
 
-Signal type convention:
-- primary_* = signal that first brought the company into the database.
-- verification_* = supporting signal found during initial validation.
-- monitor_* = new signal for an already known company.
+Research record role convention:
+- `record_role = 'primary'` = evidence that first brought the company into the database.
+- `record_role = 'verification'` = supporting evidence found during initial validation.
+- `record_role = 'source'` = source URL gathered for analysis.
+- `record_role = 'monitor'` = new finding for an already known company.
 
 Do not write legacy company summary fields removed by the cleanup migration,
-score fields, or standalone AI direction fields. Evidence belongs in `signals`
-with `signals.url` and `signals.signal_type`.
+score fields, or standalone AI direction fields. Evidence belongs in
+`research_records` with `url`, `record_type`, and `record_role`.
 
 ## Главные правила выполнения
 
@@ -107,8 +108,8 @@ python scripts/greenhouse.py --segment <segment>
 
 В `dry_run=false` записывай:
 - `companies` со статусом `discovered`;
-- `signals` keyed by `company_id` (uuid), deduplicated via `dedupe_key`;
-  each signal carries `payload` (structured fields) + optional `raw_data` (raw snapshot);
+- `research_records` keyed by `company_id` (uuid), deduplicated via `dedupe_key`;
+  each record carries `payload` (structured fields) + optional `raw_data` (raw snapshot);
 - `run_logs` для `discovery_task`.
 
 ## Шаг 5 - Relevance
@@ -127,8 +128,8 @@ ORDER BY created_at DESC
 LIMIT <limit>;
 ```
 
-В `dry_run=false` обновляй `companies.status`, записывай `verification_*`
-signals и `run_logs`.
+В `dry_run=false` обновляй `companies.status`, записывай verification
+`research_records` и `run_logs`.
 
 ## Шаг 6 - Source expansion
 
@@ -146,7 +147,7 @@ ORDER BY updated_at DESC
 LIMIT <limit>;
 ```
 
-В `dry_run=false` дополняй supporting links and signals, затем ставь
+В `dry_run=false` дополняй supporting links and research records, затем ставь
 `status = 'sources_gathered'`.
 
 ## Шаг 7 - Enrichment
@@ -166,7 +167,7 @@ LIMIT <limit>;
 ```
 
 Если source expansion уже перевел компанию в `sources_gathered`, enrichment может
-пропустить ее или только добавить недостающие `source_links`.
+пропустить ее или только добавить недостающие source `research_records`.
 
 ## Шаг 8 - Analysis
 
@@ -188,7 +189,7 @@ LIMIT <limit>;
 - `agents/prompts/analysis_section_task.md`;
 - `agents/prompts/analysis_audit_task.md`.
 
-В `dry_run=false` sub-agents пишут `analysis_notes`, затем компания переходит в
+В `dry_run=false` sub-agents пишут `analysis_records`, затем компания переходит в
 `analyzed`.
 
 ## Шаг 9 - Conclusions и Notion sync
@@ -200,7 +201,7 @@ cat agents/prompts/conclusions_task.md
 ```
 
 ```sql
-SELECT domain, name, website, icp_segment, description, funding_stage, team_size
+SELECT id, domain, name, website, icp_segment, description
 FROM companies
 WHERE status = 'analyzed' AND icp_segment = '<segment>'
 ORDER BY updated_at DESC

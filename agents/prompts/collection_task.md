@@ -12,18 +12,20 @@
 - `icp_segment`;
 - `status = 'discovered'`.
 
-## Required signal fields
+## Required research record fields
 
 - `source`;
-- `signal_type` prefixed with `primary_`;
+- `record_type`;
+- `record_role = 'primary'`;
 - `url`;
 - `company_id`;
 - `confidence`;
+- `payload`;
 - `raw_data`.
 
 ## Rules
 
 - Deduplicate by normalized domain.
 - Prefer direct company domains over profile-only candidates.
-- Keep all evidence URLs in `signals`.
-- Use `site_note` only for short human-readable notes when needed.
+- Keep all evidence URLs in `research_records`.
+- Do not write derived notes or summaries onto `companies`.

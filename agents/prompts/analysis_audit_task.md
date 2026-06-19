@@ -7,7 +7,7 @@
 
 ## Шаг 1 — Загрузить ноты секций
 ```bash
-python scripts/dossier_store.py --list-analysis-notes <domain>
+python scripts/dossier_store.py --list-analysis-records <company_id>
 ```
 Должны быть ноты: company, product, collaboration, financials, news.
 
@@ -36,5 +36,5 @@ echo '{
   "confidence":"<high|medium|low>",
   "model":"claude",
   "version":"v1"
-}' | python scripts/dossier_store.py --upsert-analysis-note
+}' | python scripts/dossier_store.py --upsert-analysis-record
 ```

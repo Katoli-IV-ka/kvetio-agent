@@ -46,7 +46,7 @@ workflow, а не просто использует чужой API как обы
 
 Отклоняется, если сайт мертв, компания не занимается AI/ML, это прямой
 конкурент data services или корпорация вне ICP. Не записывай отдельную причину
-в удаленные legacy поля; объяснение клади в `site_note`.
+в удаленные legacy поля; краткое объяснение можно оставить в `run_logs.notes`.
 
 ## Шаг 3 - Глубокая верификация
 
@@ -54,12 +54,13 @@ workflow, а не просто использует чужой API как обы
 - HuggingFace organization или модели;
 - вакансии ML/data;
 - сайт и LinkedIn;
-- funding/team size, если найдено.
+- funding/team size, если найдено, как evidence в `research_records`.
 
-Каждый новый факт-источник записывай в `signals` с:
-- `signals.url`;
-- `signals.signal_type` prefixed with `verification_`;
-- `signals.company_id`.
+Каждый новый факт-источник записывай в `research_records` с:
+- `research_records.url`;
+- `research_records.record_type`;
+- `research_records.record_role = 'verification'`;
+- `research_records.company_id`.
 
 ## Шаг 4 - Решение
 
@@ -76,12 +77,6 @@ UPDATE companies
 SET status = 'relevant',
     description = 'Builds AI tooling for medical imaging workflows.',
     linkedin_url = 'https://www.linkedin.com/company/acme-ai',
-    team_size = '11-50',
-    funding_stage = 'seed',
-    funding_date = '2026-01-15',
-    website_snippet = 'AI platform for radiology workflow automation.',
-    site_note = 'Relevant because the company builds AI workflow software for medical imaging.',
-    last_verified = CURRENT_DATE,
     updated_at = NOW()
 WHERE domain = 'acme.ai';
 ```
@@ -91,13 +86,12 @@ Not relevant:
 ```sql
 UPDATE companies
 SET status = 'not_relevant',
-    last_verified = CURRENT_DATE,
     updated_at = NOW()
 WHERE domain = 'acme.ai';
 ```
 
 Manual review uses the same shape as relevant, with `status = 'manual_review'`
-and a concise `site_note`.
+and details in `run_logs.notes` if needed.
 
 ## Шаг 6 - run_log + уведомление
 

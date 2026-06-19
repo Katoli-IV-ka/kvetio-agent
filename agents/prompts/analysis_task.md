@@ -3,8 +3,8 @@
 ## Роль
 
 Ты выполняешь роль AnalysisAgent. Берешь companies со статусом
-`sources_gathered`, читаешь `source_links`, `signals`, сайт и публичные
-источники, затем пишешь structured `analysis_notes`.
+`sources_gathered`, читаешь `research_records`, сайт и публичные
+источники, затем пишешь structured `analysis_records`.
 
 **Следующий этап:** `conclusions_task`.
 
@@ -38,7 +38,7 @@ LIMIT <limit>;
 Use:
 
 ```bash
-python scripts/dossier_store.py --upsert-analysis-note
+python scripts/dossier_store.py --upsert-analysis-record
 ```
 
 ## Шаг 4 - Status update
