@@ -146,9 +146,7 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
 
 
 def contact_display_name(row: dict) -> str:
-    first = str(row.get("first_name") or "").strip()
-    last = str(row.get("last_name") or "").strip()
-    return " ".join(part for part in (first, last) if part) or "Unknown contact"
+    return str(row.get("name") or "").strip() or "Unknown contact"
 
 
 def other_channels_text(row: dict) -> str | None:
@@ -179,7 +177,7 @@ def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
         page_id = page_id_by_company_id.get(row.get("company_id"))
         enriched.append({
             **row,
-            "contact_name": contact_display_name(row),
+            "name": contact_display_name(row),
             "other_channels_text": other_channels_text(row),
             "company_page_ids": [page_id] if page_id else [],
         })
@@ -364,10 +362,10 @@ class NotionSync:
                         company = company_by_page_id.get(value[0])
                         if not company:
                             raise ValueError(f"company relation not found: {value[0]}")
-                    elif field["db_column"] == "contact_name":
-                        parts = str(value or "").strip().split(maxsplit=1)
-                        changes["first_name"] = parts[0] if parts else ""
-                        changes["last_name"] = parts[1] if len(parts) > 1 else ""
+                    elif field["db_column"] == "name":
+                        changes["name"] = str(value or "").strip()
+                    elif field["db_column"] == "contact_type":
+                        changes["contact_type"] = value or "person"
                     else:
                         changes[field["db_column"]] = value
 
@@ -435,19 +433,22 @@ class NotionSync:
         return self.sync_reverse(entity, dry_run=dry_run)
 
     def sync_dossiers(self, dry_run=False) -> dict:
-        """Пишет summary_md + audit_md в тело страницы компании."""
-        companies = {c["domain"]: c for c in self.db.fetch("companies")
+        """Append typed dossier summaries and narrative to the company page."""
+        companies = {c["id"]: c for c in self.db.fetch("companies")
                      if c.get("notion_page_id")}
         dossiers = self.db.fetch("dossiers")
         updated = errors = 0
         for d in dossiers:
-            company = companies.get(d["company_domain"])
+            company = companies.get(d.get("company_id"))
             if not company:
                 continue
             try:
                 blocks = []
                 if d.get("summary_md"):
                     blocks += md_to_blocks("Досье — саммари", d["summary_md"])
+                for section, body in (d.get("section_summaries") or {}).items():
+                    if body:
+                        blocks += md_to_blocks(str(section), str(body))
                 if d.get("audit_md"):
                     blocks += md_to_blocks("Аудит", d["audit_md"])
                 if blocks and not dry_run:
@@ -455,7 +456,7 @@ class NotionSync:
                 if blocks:
                     updated += 1
             except Exception as exc:  # noqa: BLE001
-                logger.error("dossier %s: %s", d["company_domain"], exc)
+                logger.error("dossier %s: %s", d.get("company_id"), exc)
                 errors += 1
         return {"entity": "dossiers", "updated": updated, "errors": errors}
 

@@ -24,7 +24,8 @@ def test_contacts_mapping_has_company_relation_and_name():
     by_column = {field["db_column"]: field for field in fields}
 
     assert by_column["company_page_ids"]["notion_type"] == "relation"
-    assert by_column["contact_name"]["notion_property"] == "Name"
+    assert by_column["name"]["notion_property"] == "Name"
+    assert by_column["contact_type"]["notion_type"] == "select"
     assert "contact" + "_result" not in by_column
 
 
@@ -304,9 +305,12 @@ def test_sync_dossier_appends_blocks_to_company_page():
     notion = FakeNotion()
     notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
     db = FakeDb([])
-    db.tables["companies"] = [{"domain": "acme.com", "notion_page_id": "page-1"}]
-    db.tables["dossiers"] = [{"company_domain": "acme.com",
+    db.tables["companies"] = [{"id": "cid", "domain": "acme.com", "notion_page_id": "page-1"}]
+    db.tables["dossiers"] = [{"company_id": "cid",
                               "summary_md": "## О компании\nтекст",
+                              "section_summaries": {"financials": "Seed."},
+                              "funding_stage": "seed",
+                              "icp_fit": "strong",
                               "audit_md": "вывод"}]
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
                          env={"NOTION_COMPANIES_DB_ID": "DBID"})
@@ -339,6 +343,7 @@ def test_contacts_mapping_matches_compact_schema():
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
     assert contacts_fields == {
         "Name",
+        "Type",
         "Информация о контакте",
         "Email",
         "Phone",
@@ -376,7 +381,7 @@ def test_validate_mapping_accepts_phone_number_and_relation():
         "contacts": {
             "notion_database_id_env": "NOTION_CONTACTS_DB_ID",
             "fields": [
-                {"db_column": "contact_name",     "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
+                {"db_column": "name",             "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
                 {"db_column": "phone",            "notion_property": "Phone",     "notion_type": "phone_number", "direction": "forward"},
                 {"db_column": "company_page_ids", "notion_property": "Компании",  "notion_type": "relation",     "direction": "forward"},
             ],
@@ -388,8 +393,8 @@ def test_validate_mapping_accepts_phone_number_and_relation():
 
 def test_enrich_contact_rows_uses_company_id_relation():
     rows = [
-        {"id": "c1", "first_name": "Alice", "last_name": "", "company_id": "co1"},
-        {"id": "c2", "first_name": "Bob", "last_name": "", "company_id": "co2"},
+        {"id": "c1", "name": "Alice", "company_id": "co1"},
+        {"id": "c2", "name": "Bob", "company_id": "co2"},
     ]
     companies = [
         {"id": "co1", "domain": "acme.com", "notion_page_id": "np-acme"},
@@ -412,8 +417,7 @@ def test_enrich_contact_rows_adds_display_name_and_other_channels_text():
     rows = [
         {
             "id": "c1",
-            "first_name": "Alice",
-            "last_name": "Chen",
+            "name": "Alice Chen",
             "company_id": "co1",
             "other_channels": [
                 {"type": "github", "url": "https://github.com/alice", "label": "GitHub"},
@@ -433,7 +437,7 @@ def test_enrich_contact_rows_adds_display_name_and_other_channels_text():
 
     enriched = ns.enrich_contact_rows(rows, FakeDb())
 
-    assert enriched[0]["contact_name"] == "Alice Chen"
+    assert enriched[0]["name"] == "Alice Chen"
     assert enriched[0]["company_page_ids"] == ["np-acme"]
     assert enriched[0]["other_channels_text"] == (
         "GitHub: https://github.com/alice\n"
@@ -448,7 +452,8 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
             "db_table": "contacts",
             "db_key": "id",
             "fields": [
-                {"db_column": "contact_name", "notion_property": "Name", "notion_type": "title", "direction": "reverse"},
+                {"db_column": "name", "notion_property": "Name", "notion_type": "title", "direction": "reverse"},
+                {"db_column": "contact_type", "notion_property": "Type", "notion_type": "select", "direction": "reverse"},
                 {"db_column": "email", "notion_property": "Email", "notion_type": "email", "direction": "reverse"},
                 {"db_column": "company_page_ids", "notion_property": "Компания", "notion_type": "relation", "direction": "reverse"},
             ],
@@ -462,6 +467,7 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
                     "id": "notion-contact-1",
                     "properties": {
                         "Name": {"title": [{"plain_text": "Alice"}]},
+                        "Type": {"select": {"name": "person"}},
                         "Email": {"email": "alice@acme.ai"},
                         "Компания": {"relation": [{"id": "notion-company-1"}]},
                     },
@@ -506,11 +512,36 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
         (
             "contacts",
             {
-                "first_name": "Alice",
-                "last_name": "",
+                "name": "Alice",
+                "contact_type": "person",
                 "email": "alice@acme.ai",
                 "company_id": "company-uuid",
                 "notion_page_id": "notion-contact-1",
             },
         )
     ]
+
+
+def test_contact_display_name_uses_name_field():
+    assert ns.contact_display_name({"name": "Sarah Chen"}) == "Sarah Chen"
+
+
+def test_sync_dossiers_reads_typed_fields():
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb([])
+    db.tables["companies"] = [{"id": "cid", "notion_page_id": "page-1"}]
+    db.tables["dossiers"] = [{
+        "company_id": "cid",
+        "summary_md": "# Rad AI",
+        "section_summaries": {"financials": "Seed."},
+        "funding_stage": "seed",
+        "icp_fit": "strong",
+    }]
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+
+    result = sync.sync_dossiers(dry_run=True)
+
+    assert result["entity"] == "dossiers"
+    assert result["updated"] == 1
