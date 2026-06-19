@@ -146,7 +146,10 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
 
 
 def contact_display_name(row: dict) -> str:
-    return str(row.get("name") or "").strip() or "Unknown contact"
+    first = str(row.get("first_name") or "").strip()
+    last = str(row.get("last_name") or "").strip()
+    full_name = " ".join(part for part in (first, last) if part)
+    return full_name or str(row.get("name") or "").strip() or "Unknown contact"
 
 
 def other_channels_text(row: dict) -> str | None:
@@ -177,7 +180,7 @@ def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
         page_id = page_id_by_company_id.get(row.get("company_id"))
         enriched.append({
             **row,
-            "name": contact_display_name(row),
+            "contact_name": contact_display_name(row),
             "other_channels_text": other_channels_text(row),
             "company_page_ids": [page_id] if page_id else [],
         })
