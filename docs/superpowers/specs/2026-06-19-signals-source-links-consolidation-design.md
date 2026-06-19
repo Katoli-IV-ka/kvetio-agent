@@ -1,6 +1,11 @@
 # Signals And Source Links Consolidation — Design Spec
 **Date:** 2026-06-19
-**Status:** Draft for review
+**Status:** Superseded
+
+Superseded by
+`docs/superpowers/specs/2026-06-19-database-agent-cleanup-consolidated-design.md`.
+Use the consolidated design as the active contract for companies, contacts,
+signals, source links, scripts, and agent prompts.
 
 ## Goal
 

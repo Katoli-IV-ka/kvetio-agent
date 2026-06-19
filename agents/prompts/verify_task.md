@@ -20,9 +20,9 @@ LIMIT <limit>;
 
 Check website, LinkedIn, HuggingFace, GitHub, jobs, funding/news, and product
 pages. Store evidence as `signals`:
-- `signals.evidence_url`;
+- `signals.url`;
 - `signals.signal_type` prefixed with `verification_`;
-- `signals.normalized_domain`.
+- `signals.company_id`.
 
 ## Output
 

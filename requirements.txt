@@ -30,6 +30,9 @@ notion-client>=2.2
 # LLM fallback для GitHub domain inference
 anthropic>=0.39
 
+# NLP intent parsing for Telegram /ask
+google-genai>=1.0.0
+
 # Telegram management bot (bot/)
 fastapi>=0.111
 uvicorn[standard]>=0.30

@@ -57,7 +57,7 @@ def test_filters_non_data_jobs(
     # Из 4 вакансий: 1001 (RLHF) + 1003 (Data Annotation, MRI) — два валидных сигнала.
     # 1002 — frontend, не data. 1004 — старше 180 дней.
     assert len(signals) == 2
-    titles = {s.raw_payload["title"] for s in signals}
+    titles = {s.title for s in signals}
     assert any("RLHF" in t for t in titles)
     assert any("Annotation" in t for t in titles)
 
@@ -75,11 +75,11 @@ def test_signal_fields(
         with GreenhouseAdapter(slugs_csv=slugs_csv, rate_limit_rps=0) as adapter:
             signals = list(adapter.fetch(query))
 
-    s = next(s for s in signals if "Annotation" in s.raw_payload["title"])
+    s = next(s for s in signals if "Annotation" in s.title)
     assert s.source == "greenhouse"
     assert s.signal_type == "job_posting"
     assert s.company_name == "Example Corp"
-    assert s.evidence_url.startswith("https://boards.greenhouse.io/")
+    assert s.url.startswith("https://boards.greenhouse.io/")
     assert s.confidence == "high"
     # signal_date берётся из updated_at в фикстуре (2026-04-22).
     assert s.signal_date == date(2026, 4, 22)
@@ -103,7 +103,7 @@ def test_strong_keyword_segment_filter(
 
     # Только 1003 содержит DICOM/MRI; 1001 (RLHF) — отбрасывается сегмент-фильтром.
     assert len(signals) == 1
-    assert "Annotation" in signals[0].raw_payload["title"]
+    assert "Annotation" in signals[0].title
 
 
 def test_empty_response(slugs_csv: Path, query: ICPQuery) -> None:

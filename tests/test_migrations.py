@@ -150,6 +150,6 @@ def test_contacts_schema_uses_company_name_dedup() -> None:
 
 def test_deep_analysis_tables_have_expected_unique_keys() -> None:
     sql = _schema()
-    assert "UNIQUE (company_domain, kind, url)" in sql
-    assert "UNIQUE (company_domain, section, version)" in sql
-    assert "company_domain TEXT PRIMARY KEY" in sql
+    assert "UNIQUE (company_id, kind, url)" in sql
+    assert "UNIQUE (company_id, section, version)" in sql
+    assert "company_id   UUID PRIMARY KEY" in sql

@@ -46,6 +46,42 @@ class TestConfigToText:
         assert cfg.limit_per_segment == 5
         assert "limit=5" in config_to_text(cfg)
 
+    def test_icp_segment_includes_run_mode_prefix(self) -> None:
+        text = config_to_text(self._cfg())
+        assert text.startswith("mode=icp_segment; ")
+
+    def test_single_company_text(self) -> None:
+        cfg = RunConfig(
+            run_mode="single_company",
+            segments=[],
+            limit_per_segment=5,
+            stages="full",
+            company_name="OpenAI",
+            company_url="https://openai.com",
+        )
+
+        assert config_to_text(cfg) == (
+            "mode=single_company; company=OpenAI; company_url=https://openai.com; "
+            "stages=full; notion_sync=true"
+        )
+
+    def test_startup_research_text(self) -> None:
+        cfg = RunConfig(
+            run_mode="startup_research",
+            segments=[],
+            limit_per_segment=5,
+            stages="full",
+            startup_description="AI video from text, Series C",
+            company_name="Synthesia",
+            focus_areas=["market", "team"],
+            notion_sync=False,
+        )
+
+        assert config_to_text(cfg) == (
+            "mode=startup_research; description=AI video from text, Series C; "
+            "company=Synthesia; focus_areas=market,team; notion_sync=false"
+        )
+
 
 # ── fire() ────────────────────────────────────────────────────────────────────
 

@@ -32,8 +32,8 @@ python scripts/greenhouse.py --segment <segment>
 
 Для каждой принятой компании:
 - `companies.domain`, `name`, `website`, `icp_segment`, `status = 'discovered'`;
-- `signals.evidence_url`, `signals.signal_type` prefixed with `primary_`;
-- `signals.normalized_domain`, `signals.raw_data`, `signals.confidence`.
+- `signals.url`, `signals.signal_type` prefixed with `primary_`;
+- `signals.company_id`, `signals.payload`, `signals.confidence`.
 
 Не храни агрегированные source summaries на строке company. Latest evidence is
 derived from `signals`.

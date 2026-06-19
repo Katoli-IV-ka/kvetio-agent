@@ -21,7 +21,7 @@ Signal type convention:
 
 Do not write legacy company summary fields removed by the cleanup migration,
 score fields, or standalone AI direction fields. Evidence belongs in `signals`
-with `signals.evidence_url` and `signals.signal_type`.
+with `signals.url` and `signals.signal_type`.
 
 ## Главные правила выполнения
 
@@ -107,8 +107,8 @@ python scripts/greenhouse.py --segment <segment>
 
 В `dry_run=false` записывай:
 - `companies` со статусом `discovered`;
-- `signals` с `evidence_url`, `normalized_domain`, `raw_data`, `signal_type`
-  prefixed with `primary_`;
+- `signals` keyed by `company_id` (uuid), deduplicated via `dedupe_key`;
+  each signal carries `payload` (structured fields) + optional `raw_data` (raw snapshot);
 - `run_logs` для `discovery_task`.
 
 ## Шаг 5 - Relevance

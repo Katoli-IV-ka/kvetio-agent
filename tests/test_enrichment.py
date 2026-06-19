@@ -26,17 +26,17 @@ class _FakeResolver:
         return self._link
 
 
-def _link(domain, kind):
-    return {"company_domain": domain, "kind": kind, "url": f"https://x/{kind}"}
+def _link(company_id, kind):
+    return {"company_id": company_id, "kind": kind, "url": f"https://x/{kind}"}
 
 
 def test_run_enrichment_skips_disabled():
     store = MagicMock()
     client = MagicMock()
-    company = {"domain": "radai.com"}
+    company = {"domain": "radai.com", "id": "00000000-0000-0000-0000-000000000001"}
     resolvers = [
-        _FakeResolver("a", True, _link("radai.com", "a")),
-        _FakeResolver("b", False, _link("radai.com", "b")),
+        _FakeResolver("a", True, _link(company["id"], "a")),
+        _FakeResolver("b", False, _link(company["id"], "b")),
     ]
     written = run_enrichment(company, store, client, resolvers=resolvers)
     kinds = [w["kind"] for w in written]
@@ -65,22 +65,26 @@ def test_disabled_stub_is_disabled_and_returns_none():
     assert stub.resolve({"domain": "radai.com"}, MagicMock(), MagicMock()) is None
 
 
+_COMPANY = {"domain": "radai.com", "id": "00000000-0000-0000-0000-000000000001"}
+
+
 def test_github_org_resolver_from_signals():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"evidence_url": "https://github.com/radai-robolab/some-repo"},
+        {"url": "https://github.com/radai-robolab/some-repo"},
     ]
-    link = GithubOrgResolver().resolve({"domain": "radai.com"}, store, MagicMock())
+    link = GithubOrgResolver().resolve(_COMPANY, store, MagicMock())
     assert link["kind"] == "github_org"
     assert link["url"] == "https://github.com/radai-robolab"
+    assert link["company_id"] == _COMPANY["id"]
 
 
 def test_github_org_resolver_none_when_no_github_signal():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"evidence_url": "https://huggingface.co/radai"},
+        {"url": "https://huggingface.co/radai"},
     ]
-    assert GithubOrgResolver().resolve({"domain": "radai.com"}, store, MagicMock()) is None
+    assert GithubOrgResolver().resolve(_COMPANY, store, MagicMock()) is None
 
 
 @pytest.mark.respx(base_url="http://archive.org")
@@ -93,9 +97,10 @@ def test_wayback_resolver_returns_snapshot(respx_mock):
         })
     )
     with HttpClient(rate_limit_rps=0) as client:
-        link = WaybackResolver().resolve({"domain": "radai.com"}, MagicMock(), client)
+        link = WaybackResolver().resolve(_COMPANY, MagicMock(), client)
     assert link["kind"] == "wayback"
     assert "web.archive.org" in link["url"]
+    assert link["company_id"] == _COMPANY["id"]
 
 
 @pytest.mark.respx(base_url="http://archive.org")
@@ -104,4 +109,4 @@ def test_wayback_resolver_none_when_no_snapshot(respx_mock):
         return_value=Response(200, json={"archived_snapshots": {}})
     )
     with HttpClient(rate_limit_rps=0) as client:
-        assert WaybackResolver().resolve({"domain": "radai.com"}, MagicMock(), client) is None
+        assert WaybackResolver().resolve(_COMPANY, MagicMock(), client) is None

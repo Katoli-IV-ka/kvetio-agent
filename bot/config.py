@@ -16,7 +16,7 @@ Usage:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 # Valid pipeline stages
@@ -38,6 +38,7 @@ DEFAULT_LIMIT_PER_SEGMENT = 5
 
 RunStatus = Literal["draft", "queued", "running", "succeeded", "failed", "cancelled"]
 TriggerType = Literal["manual", "scheduled", "api"]
+RunMode = Literal["icp_segment", "single_company", "startup_research"]
 
 
 @dataclass
@@ -49,15 +50,30 @@ class RunConfig:
     notion_sync: bool = True
     triggered_by: str = ""
     trigger_type: TriggerType = "manual"
+    run_mode: RunMode = "icp_segment"
+    company_name: str = ""
+    company_url: str = ""
+    startup_description: str = ""
+    focus_areas: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
-        if not self.segments:
-            raise ValueError("segments must be non-empty")
-        unknown = set(self.segments) - VALID_SEGMENTS
-        if unknown:
-            raise ValueError(f"unknown segments: {unknown}")
-        if not (1 <= self.limit_per_segment <= 200):
-            raise ValueError("limit_per_segment must be between 1 and 200")
+        if self.run_mode == "icp_segment":
+            if not self.segments:
+                raise ValueError("segments must be non-empty")
+            unknown = set(self.segments) - VALID_SEGMENTS
+            if unknown:
+                raise ValueError(f"unknown segments: {unknown}")
+            if not (1 <= self.limit_per_segment <= 200):
+                raise ValueError("limit_per_segment must be between 1 and 200")
+        elif self.run_mode == "single_company":
+            if not self.company_name:
+                raise ValueError("company_name is required for single_company mode")
+        elif self.run_mode == "startup_research":
+            if not self.startup_description:
+                raise ValueError("description is required for startup_research mode")
+        else:
+            raise ValueError(f"invalid run_mode: {self.run_mode}")
+
         if self.stages != "full":
             if not isinstance(self.stages, list) or not self.stages:
                 raise ValueError("stages must be 'full' or a non-empty list")
@@ -69,6 +85,7 @@ class RunConfig:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "run_mode": self.run_mode,
             "segments": self.segments,
             "limit_per_segment": self.limit_per_segment,
             "stages": self.stages,
@@ -76,16 +93,25 @@ class RunConfig:
             "notion_sync": self.notion_sync,
             "triggered_by": self.triggered_by,
             "trigger_type": self.trigger_type,
+            "company_name": self.company_name,
+            "company_url": self.company_url,
+            "startup_description": self.startup_description,
+            "focus_areas": self.focus_areas,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RunConfig":
         return cls(
-            segments=data["segments"],
+            segments=data.get("segments", []),
             limit_per_segment=data.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT),
             stages=data.get("stages", "full"),
             dry_run=data.get("dry_run", False),
             notion_sync=data.get("notion_sync", True),
             triggered_by=data.get("triggered_by", ""),
             trigger_type=data.get("trigger_type", "manual"),
+            run_mode=data.get("run_mode", "icp_segment"),
+            company_name=data.get("company_name", ""),
+            company_url=data.get("company_url", ""),
+            startup_description=data.get("startup_description", ""),
+            focus_areas=data.get("focus_areas", []),
         )

@@ -11,7 +11,7 @@ For every candidate keep:
 - company name;
 - normalized or raw domain when available;
 - website or profile URL;
-- `signals.evidence_url`;
+- `signals.url`;
 - `signals.signal_type` prefixed with `primary_`;
 - confidence and raw payload.
 
@@ -20,9 +20,9 @@ in `signals`, not on the company row.
 
 ## Adapter hints
 
-- YC: use company page URL as `signals.evidence_url`.
-- HuggingFace: use organization or model URL as `signals.evidence_url`.
-- Greenhouse/Lever: use job board or job posting URL as `signals.evidence_url`.
-- GitHub: use organization/repository URL as `signals.evidence_url`.
+- YC: use company page URL as `signals.url`.
+- HuggingFace: use organization or model URL as `signals.url`.
+- Greenhouse/Lever: use job board or job posting URL as `signals.url`.
+- GitHub: use organization/repository URL as `signals.url`.
 
 Return JSON rows that DiscoveryAgent can normalize before writing to Supabase.

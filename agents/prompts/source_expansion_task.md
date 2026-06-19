@@ -23,7 +23,7 @@ LIMIT <limit>;
 Use website, search, GitHub, HuggingFace, news, docs, and company profiles.
 For every supporting fact, prefer a durable URL and write:
 - `source_links` for analysis inputs;
-- `signals` with `signals.evidence_url` and `signals.signal_type` prefixed with
+- `signals` with `signals.url` and `signals.signal_type` prefixed with
   `verification_` when the URL proves relevance.
 
 ## Шаг 3 - Status update

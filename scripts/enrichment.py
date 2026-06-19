@@ -53,11 +53,11 @@ class GithubOrgResolver:
 
     def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
         for sig in store.get_signals_for_company(company["domain"]):
-            url = sig.get("evidence_url") or ""
+            url = sig.get("url") or ""
             login = extract_org_login(url)
             if login:
                 return {
-                    "company_domain": company["domain"],
+                    "company_id": company["id"],
                     "kind": self.kind,
                     "url": f"https://github.com/{login}",
                     "source": "github_org_resolver",
@@ -82,7 +82,7 @@ class WaybackResolver:
         if not url:
             return None
         return {
-            "company_domain": company["domain"],
+            "company_id": company["id"],
             "kind": self.kind,
             "url": url,
             "source": "wayback_resolver",

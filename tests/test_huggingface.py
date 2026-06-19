@@ -58,12 +58,11 @@ def test_fetch_yields_signal_for_org_with_website(query: ICPQuery) -> None:
     assert s.company_name == "Deepgram"
     assert s.domain == "https://deepgram.com"
     assert s.linkedin_url is None
-    assert s.evidence_url == "https://huggingface.co/deepgram"
+    assert s.url == "https://huggingface.co/deepgram"
     assert s.confidence == "medium"
-    assert "automatic-speech-recognition" in s.raw_payload["pipeline_tags"]
-    assert s.raw_payload["num_models"] == 8
-    assert s.raw_payload["num_members"] == 45
-    assert s.parser_version == "2026-05"
+    assert "automatic-speech-recognition" in s.payload["pipeline_tags"]
+    assert s.payload["num_models"] == 8
+    assert s.payload["num_members"] == 45
 
 
 # ── Тест 2: org без website → domain=None, сигнал не теряется ────────────
@@ -146,7 +145,7 @@ def test_deduplication_same_org_two_tags(query: ICPQuery) -> None:
             signals = list(adapter.fetch(query))
 
     assert len(signals) == 1  # один сигнал, не два
-    tags = signals[0].raw_payload["pipeline_tags"]
+    tags = signals[0].payload["pipeline_tags"]
     assert "automatic-speech-recognition" in tags
     assert "text-to-speech" in tags
 

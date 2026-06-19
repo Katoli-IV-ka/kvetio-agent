@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import json
 import logging
 import os
@@ -29,7 +30,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 sys.path.insert(0, str(Path(__file__).parent))
-from models import Company, RawSignal
+from models import Company, RawSignal, confidence_to_score
 
 logger = logging.getLogger(__name__)
 
@@ -138,33 +139,90 @@ class SupabaseStore:
 
     # ── Signals ──────────────────────────────────────────────────────────────
 
-    def upsert_signal(self, signal: RawSignal, normalized_domain: str | None) -> bool:
-        """Возвращает True если сигнал новый. evidence_url — UNIQUE."""
+    def resolve_company_id(
+        self,
+        *,
+        company_id: str | None = None,
+        domain: str | None = None,
+    ) -> str | None:
+        """Resolve a company UUID from an explicit ID or a domain lookup."""
+        if company_id:
+            return company_id
+        if not domain:
+            return None
+        res = (
+            self._client.table("companies")
+            .select("id")
+            .eq("domain", domain)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        return rows[0]["id"] if rows else None
+
+    @staticmethod
+    def _dedupe_key(company_id: str, signal_type: str, url: str | None, fallback: str) -> str:
+        """SHA-1 of company_id:signal_type:url — deterministic dedup handle."""
+        basis = f"{company_id}:{signal_type}:{url or fallback}"
+        return hashlib.sha1(basis.encode("utf-8")).hexdigest()
+
+    def upsert_signal(
+        self,
+        signal: RawSignal,
+        *,
+        company_id: str | None = None,
+        domain: str | None = None,
+        run_id: str | None = None,
+    ) -> bool:
+        """Insert or ignore a signal. Returns True if the row is new.
+
+        Pass either company_id (preferred) or domain (resolved via DB lookup).
+        Deduplication key: sha1(company_id:signal_type:url).
+        """
+        cid = self.resolve_company_id(
+            company_id=company_id,
+            domain=domain or signal.domain,
+        )
+        if not cid:
+            raise ValueError(
+                f"upsert_signal: cannot resolve company for domain={domain or signal.domain!r}"
+            )
+        dedupe = self._dedupe_key(
+            cid, signal.signal_type, signal.url,
+            fallback=signal.signal_date.isoformat(),
+        )
         row = {
-            "source": signal.source,
+            "company_id": cid,
             "signal_type": signal.signal_type,
-            "company_name": signal.company_name,
-            "domain": signal.domain,
-            "normalized_domain": normalized_domain,
-            "evidence_url": signal.evidence_url,
+            "agent": signal.agent,
+            "source": signal.source,
+            "title": signal.title,
+            "url": signal.url,
+            "summary": signal.summary,
+            "confidence": confidence_to_score(signal.confidence),
             "signal_date": signal.signal_date.isoformat(),
-            "confidence": signal.confidence,
-            "parser_version": signal.parser_version,
-            "raw_data": signal.raw_payload,
+            "payload": signal.payload or {},
+            "raw_data": signal.raw_payload or {},
+            "run_id": run_id,
+            "dedupe_key": dedupe,
         }
         res = (
             self._client.table("signals")
-            .upsert(row, on_conflict="evidence_url", ignore_duplicates=True)
+            .upsert(row, on_conflict="dedupe_key", ignore_duplicates=True)
             .execute()
         )
-        # ignore_duplicates=True → пустой массив data если дубликат
+        # ignore_duplicates=True → empty data list when duplicate
         return bool(res.data)
 
     def get_signals_for_company(self, domain: str) -> list[dict]:
+        """Fetch all signals for a company by domain."""
+        cid = self.resolve_company_id(domain=domain)
+        if not cid:
+            return []
         res = (
             self._client.table("signals")
             .select("*")
-            .eq("normalized_domain", domain)
+            .eq("company_id", cid)
             .order("signal_date", desc=True)
             .execute()
         )

@@ -164,6 +164,8 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> str:
         "other_channels": normalize_other_channels(contact),
         "updated_at": datetime.utcnow().isoformat(),
     }
+    if contact.get("discovered_from_signal_id"):
+        row["discovered_from_signal_id"] = contact["discovered_from_signal_id"]
     res = store._client.table("contacts").upsert(
         row, on_conflict="company_id,first_name,last_name"
     ).execute()

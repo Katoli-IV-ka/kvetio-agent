@@ -23,7 +23,7 @@ python scripts/dossier_store.py --list-analysis-notes <domain>
 ## Шаг 3 — Записать ноту аудита
 ```bash
 echo '{
-  "company_domain":"<domain>",
+  "company_id":"<company_uuid>",
   "section":"audit",
   "facts":{
     "claims_vs_reality":"<...>",
@@ -32,7 +32,7 @@ echo '{
     "sales_opportunity":"<...>",
     "contact_angle":"<...>"
   },
-  "sources":[ {"url":"<url>","note":"<...>"} ],
+  
   "confidence":"<high|medium|low>",
   "model":"claude",
   "version":"v1"

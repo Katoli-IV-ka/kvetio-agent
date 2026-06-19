@@ -41,7 +41,7 @@ python scripts/enrichment.py --domain <domain>
 Добери источники, которых нет в скрипте, и запиши каждую ссылку:
 
 ```bash
-echo '{"company_domain":"<domain>","kind":"<kind>","url":"<url>","source":"<resolver>","confidence":"medium"}' \
+echo '{"company_id":"<company_uuid>","kind":"<kind>","url":"<url>","source":"<resolver>","confidence":"medium"}' \
   | python scripts/dossier_store.py --upsert-source-link
 ```
 
