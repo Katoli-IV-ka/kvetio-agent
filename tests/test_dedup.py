@@ -83,7 +83,7 @@ def test_list_hot_leads_queries_relevant_companies_without_score():
 
 
 def test_list_stale_review_queue_queries_unverified_or_old_companies(monkeypatch):
-    """Stale review queue выбирает записи без проверки или старше порога."""
+    """Stale review queue uses only lean company columns."""
     from supabase_store import SupabaseStore
 
     class FakeDate(date):
@@ -114,29 +114,32 @@ def test_list_stale_review_queue_queries_unverified_or_old_companies(monkeypatch
         "status",
         ["discovered", "manual_review", "relevant"],
     )
-    query.or_.assert_called_with("last_verified.is.null,last_verified.lt.2026-05-13")
-    query.order.assert_called_with("last_verified", desc=False)
+    query.or_.assert_called_with("updated_at.is.null,updated_at.lt.2026-05-13")
+    query.order.assert_called_with("updated_at", desc=False)
     query.limit.assert_called_with(10)
 
 
-# ── New signal upsert tests ───────────────────────────────────────────────────
+# ── Research record upsert tests ──────────────────────────────────────────────
 
-def _make_raw_signal(url: str = "https://github.com/acme", signal_type: str = "github_repo"):
-    from scripts.models import RawSignal
-    return RawSignal(
+def _make_research_record(
+    url: str = "https://github.com/acme",
+    record_type: str = "github_repo",
+):
+    from scripts.models import ResearchRecord
+    return ResearchRecord(
         source="github",
-        signal_type=signal_type,
+        record_type=record_type,
         company_name="Acme",
         domain="acme.com",
         linkedin_url=None,
         url=url,
-        signal_date=date(2026, 6, 1),
+        observed_at=date(2026, 6, 1),
         confidence="high",
         agent="discovery",
     )
 
 
-def test_upsert_signal_uses_dedupe_key():
+def test_upsert_research_record_uses_dedupe_key():
     from supabase_store import SupabaseStore
 
     store = SupabaseStore.__new__(SupabaseStore)
@@ -148,9 +151,9 @@ def test_upsert_signal_uses_dedupe_key():
     upsert_chain.execute.return_value.data = [{"id": "sig-1"}]
     mock_client.table.return_value.upsert.return_value = upsert_chain
 
-    sig = _make_raw_signal()
-    result = store.upsert_signal(
-        sig,
+    entry = _make_research_record()
+    result = store.upsert_research_record(
+        entry,
         company_id="11111111-1111-1111-1111-111111111111",
     )
 
@@ -160,11 +163,13 @@ def test_upsert_signal_uses_dedupe_key():
     assert call_kwargs[1]["on_conflict"] == "dedupe_key"
     assert "dedupe_key" in row
     assert row["company_id"] == "11111111-1111-1111-1111-111111111111"
+    assert row["record_type"] == "github_repo"
+    assert row["observed_at"] == "2026-06-01"
     assert row["url"] == "https://github.com/acme"
     assert row["confidence"] == 0.9   # "high" -> 0.9
 
 
-def test_upsert_signal_resolves_domain_when_no_company_id():
+def test_upsert_research_record_resolves_domain_when_no_company_id():
     from supabase_store import SupabaseStore
 
     store = SupabaseStore.__new__(SupabaseStore)
@@ -181,14 +186,14 @@ def test_upsert_signal_resolves_domain_when_no_company_id():
     mock_client.table.return_value.select.return_value.eq.return_value.limit.return_value = resolve_chain
     mock_client.table.return_value.upsert.return_value = upsert_chain
 
-    sig = _make_raw_signal()
-    store.upsert_signal(sig, domain="acme.com")
+    entry = _make_research_record()
+    store.upsert_research_record(entry, domain="acme.com")
 
     row = mock_client.table.return_value.upsert.call_args[0][0]
     assert row["company_id"] == "cid-resolved"
 
 
-def test_upsert_signal_raises_when_company_not_found():
+def test_upsert_research_record_raises_when_company_not_found():
     from supabase_store import SupabaseStore
 
     store = SupabaseStore.__new__(SupabaseStore)
@@ -197,9 +202,9 @@ def test_upsert_signal_raises_when_company_not_found():
 
     mock_client.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value.data = []
 
-    sig = _make_raw_signal()
+    entry = _make_research_record()
     try:
-        store.upsert_signal(sig, domain="unknown.com")
+        store.upsert_research_record(entry, domain="unknown.com")
         assert False, "Should have raised ValueError"
     except ValueError:
         pass
@@ -214,7 +219,7 @@ def test_dedupe_key_is_deterministic():
     assert len(k1) == 40  # SHA-1 hex
 
 
-def test_get_signals_for_company_uses_company_id():
+def test_get_research_records_for_company_uses_company_id():
     from supabase_store import SupabaseStore
 
     store = SupabaseStore.__new__(SupabaseStore)
@@ -225,9 +230,9 @@ def test_get_signals_for_company_uses_company_id():
     resolve_chain.execute.return_value.data = [{"id": "cid-xyz"}]
     mock_client.table.return_value.select.return_value.eq.return_value.limit.return_value = resolve_chain
 
-    signals_chain = MagicMock()
-    signals_chain.execute.return_value.data = [{"id": "sig-1", "company_id": "cid-xyz"}]
-    mock_client.table.return_value.select.return_value.eq.return_value.order.return_value = signals_chain
+    records_chain = MagicMock()
+    records_chain.execute.return_value.data = [{"id": "rr-1", "company_id": "cid-xyz"}]
+    mock_client.table.return_value.select.return_value.eq.return_value.order.return_value = records_chain
 
-    result = store.get_signals_for_company("acme.com")
-    assert result == [{"id": "sig-1", "company_id": "cid-xyz"}]
+    result = store.get_research_records_for_company("acme.com")
+    assert result == [{"id": "rr-1", "company_id": "cid-xyz"}]
