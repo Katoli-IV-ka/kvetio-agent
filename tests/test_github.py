@@ -91,12 +91,12 @@ def test_signal_fields(query_dicom: ICPQuery) -> None:
 
     signal = signals[0]
     assert signal.domain == "medvision.ai"
-    assert signal.evidence_url == "https://github.com/MedVision-AI"
+    assert signal.url == "https://github.com/MedVision-AI"
     assert signal.signal_date == date(2026, 4, 20)
     assert signal.confidence == "medium"
     assert signal.linkedin_url is None
-    assert signal.raw_payload["org_login"] == "MedVision-AI"
-    assert signal.raw_payload["repo_count"] == 12
+    assert signal.payload["org_login"] == "MedVision-AI"
+    assert signal.payload["repo_count"] == 12
 
 
 def test_deduplicates_org_across_keywords() -> None:

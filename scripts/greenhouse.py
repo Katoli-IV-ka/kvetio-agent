@@ -200,18 +200,18 @@ class GreenhouseAdapter:
             company_name=company_name,
             domain=domain,  # None если website не задан в CSV — агент найдёт через WebSearch
             linkedin_url=None,
-            evidence_url=evidence_url,
+            url=evidence_url,
             signal_date=signal_date,
             confidence="high",
-            raw_payload={
+            agent="discovery",
+            title=title[:120] if title else None,
+            payload={
                 "slug": slug,
                 "job_id": job.get("id"),
-                "title": title,
                 "snippet": content_text[:300],
                 "location": (job.get("location") or {}).get("name"),
-                "website_from_csv": website,  # для отладки
+                "website_from_csv": website,
             },
-            parser_version=self.parser_version,
         )
 
 
@@ -238,11 +238,13 @@ def _signal_to_dict(s: RawSignal) -> dict:
         "signal_type": s.signal_type,
         "company_name": s.company_name,
         "domain": s.domain,
-        "evidence_url": s.evidence_url,
+        "url": s.url,
         "signal_date": s.signal_date.isoformat(),
         "confidence": s.confidence,
+        "agent": s.agent,
+        "title": s.title,
+        "payload": s.payload,
         "raw_payload": s.raw_payload,
-        "parser_version": s.parser_version,
     }
 
 

@@ -1,5 +1,28 @@
 # Database Field Audit - 2026-06-18
 
+## Changelog
+
+### signals redesign (2026-06-18)
+
+- `signals` table re-keyed from `normalized_domain TEXT` to `company_id UUID`
+  (FK → `companies.id`).
+- Added `signal_types` vocabulary table with 17 seed rows; `signal_type` column
+  now has an FK constraint.
+- Added `dedupe_key TEXT UNIQUE` (SHA-1 of `company_id:signal_type:url`) for
+  idempotent upserts.
+- `confidence` changed from `TEXT` to `NUMERIC(3,2)` (0.00–1.00).
+- Added `payload JSONB` (structured agent fields) and `raw_data JSONB` (optional
+  raw snapshot).
+- `evidence_url` renamed to `url` in `RawSignal` dataclass and all adapters.
+- `source_links`, `analysis_notes`, `dossiers` re-keyed from `company_domain`
+  to `company_id UUID`.
+- Added `analysis_note_signals` junction table.
+- Provenance FKs added: `signals.discovered_from_signal_id`,
+  `contacts.discovered_from_signal_id`.
+- All prompt files updated; no stale `evidence_url`/`normalized_domain` refs
+  remain.
+- Test suite: 258 tests pass, ruff clean.
+
 Source of truth: `sql/schema.sql`, runtime scripts under `scripts/`, prompts
 under `agents/prompts/`, Notion mapping in `config/notion_mapping.yaml`, and
 pytest contracts under `tests/`.

@@ -57,9 +57,9 @@ workflow, а не просто использует чужой API как обы
 - funding/team size, если найдено.
 
 Каждый новый факт-источник записывай в `signals` с:
-- `signals.evidence_url`;
+- `signals.url`;
 - `signals.signal_type` prefixed with `verification_`;
-- `signals.normalized_domain`.
+- `signals.company_id`.
 
 ## Шаг 4 - Решение
 

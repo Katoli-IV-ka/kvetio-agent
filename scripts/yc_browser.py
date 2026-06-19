@@ -278,10 +278,11 @@ def company_to_signal(company: dict) -> Optional[dict]:
         "batch": batch,
         "tags": tags,
         "team_size": company.get("team_size"),
-        "evidence_url": f"{YC_COMPANY_BASE_URL}/{slug}" if slug else None,
+        "url": f"{YC_COMPANY_BASE_URL}/{slug}" if slug else None,
         "signal_date": datetime.utcnow().strftime("%Y-%m-%d"),
         "confidence": "high",
-        "raw_data": {
+        "agent": "discovery",
+        "payload": {
             "yc_id": company.get("id"),
             "yc_slug": slug,
             "batch": batch,

@@ -19,7 +19,7 @@ from http_client import HttpClient
 def test_get_hf_org_for_domain_finds_org():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"evidence_url": "https://huggingface.co/radai-robolab"},
+        {"url": "https://huggingface.co/radai-robolab"},
     ]
     result = get_hf_org_for_domain("radai.com", store)
     assert result == "radai-robolab"
@@ -28,7 +28,7 @@ def test_get_hf_org_for_domain_finds_org():
 def test_get_hf_org_for_domain_skips_non_hf():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"evidence_url": "https://github.com/radai-robolab"},
+        {"url": "https://github.com/radai-robolab"},
     ]
     result = get_hf_org_for_domain("radai.com", store)
     assert result is None
@@ -37,7 +37,7 @@ def test_get_hf_org_for_domain_skips_non_hf():
 def test_get_hf_org_skips_system_paths():
     store = MagicMock()
     store.get_signals_for_company.return_value = [
-        {"evidence_url": "https://huggingface.co/models"},
+        {"url": "https://huggingface.co/models"},
     ]
     result = get_hf_org_for_domain("radai.com", store)
     assert result is None

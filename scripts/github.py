@@ -163,17 +163,17 @@ class GitHubAdapter:
             company_name=company_name,
             domain=domain,
             linkedin_url=None,
-            evidence_url=f"https://github.com/{org_login}",
+            url=f"https://github.com/{org_login}",
             signal_date=last_pushed.date(),
             confidence="medium",
-            raw_payload={
+            agent="discovery",
+            payload={
                 "org_login": org_login,
                 "repo_count": org_data.get("public_repos"),
                 "followers": org_data.get("followers"),
                 "description": (org_data.get("description") or "")[:200],
                 "last_pushed_at": last_pushed.isoformat(),
             },
-            parser_version=self.parser_version,
         )
 
     def _extract_domain(self, org_data: dict, org_login: str) -> str | None:
@@ -243,11 +243,12 @@ def _signal_to_dict(signal: RawSignal) -> dict:
         "company_name": signal.company_name,
         "domain": signal.domain,
         "linkedin_url": signal.linkedin_url,
-        "evidence_url": signal.evidence_url,
+        "url": signal.url,
         "signal_date": signal.signal_date.isoformat(),
         "confidence": signal.confidence,
+        "agent": signal.agent,
+        "payload": signal.payload,
         "raw_payload": signal.raw_payload,
-        "parser_version": signal.parser_version,
     }
 
 

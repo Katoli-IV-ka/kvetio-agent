@@ -16,8 +16,8 @@
 
 - `source`;
 - `signal_type` prefixed with `primary_`;
-- `evidence_url`;
-- `normalized_domain`;
+- `url`;
+- `company_id`;
 - `confidence`;
 - `raw_data`.
 

@@ -25,7 +25,23 @@ SignalType = Literal[
     "scale_customer",
     "wandb_run",
     "directory_listing",
+    "contact_found",
+    "source_link",
+    "news",
+    "product_update",
+    "foundation_model",
+    "proprietary_ai",
+    "proprietary_models",
 ]
+
+CONFIDENCE_SCORE: dict[str, float] = {"high": 0.9, "medium": 0.5, "low": 0.2}
+
+
+def confidence_to_score(value: "Confidence | float | int") -> float:
+    """Convert a text confidence label or numeric value to a float in 0..1."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    return CONFIDENCE_SCORE.get(str(value), 0.5)
 Status = Literal[
     "discovered",
     "relevant",
@@ -71,7 +87,7 @@ class ICPQuery:
 class RawSignal:
     """Минимальная единица найденного сигнала — то, что возвращает source-адаптер.
 
-    Один сигнал = одна страница / вакансия / репозиторий, ровно одна evidence_url.
+    Один сигнал = одно атомарное наблюдение о компании, привязанное к company_id.
     """
 
     source: str
@@ -79,15 +95,18 @@ class RawSignal:
     company_name: str
     domain: str | None          # сырой домен; нормализуется при записи в storage
     linkedin_url: str | None
-    evidence_url: str
+    url: str                    # evidence link (NOT unique; replaces evidence_url)
     signal_date: date
-    confidence: Confidence
-    raw_payload: dict = field(default_factory=dict)
-    parser_version: str = "unknown"
+    confidence: "Confidence | float"
+    agent: str | None = None    # producing agent name (discovery, dm_enrich, ...)
+    title: str | None = None    # short human-readable label
+    summary: str | None = None  # short description of the finding
+    payload: dict = field(default_factory=dict)      # structured extracted fields
+    raw_payload: dict = field(default_factory=dict)  # optional raw API snapshot
 
     def __post_init__(self) -> None:
-        if not self.evidence_url:
-            raise ValueError("RawSignal.evidence_url обязателен")
+        if not self.url:
+            raise ValueError("RawSignal.url обязателен")
         if not self.company_name.strip():
             raise ValueError("RawSignal.company_name не может быть пустым")
 

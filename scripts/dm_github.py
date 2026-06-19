@@ -60,7 +60,7 @@ def get_github_org_for_domain(domain: str, store: SupabaseStore) -> str | None:
     """Find GitHub org login from stored company signals."""
     signals = store.get_signals_for_company(domain)
     for sig in signals:
-        url = sig.get("evidence_url") or ""
+        url = sig.get("url") or ""
         login = extract_org_login(url)
         if login:
             return login

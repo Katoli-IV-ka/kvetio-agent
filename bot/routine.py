@@ -20,13 +20,40 @@ def _routine_env(name: str) -> str:
 def config_to_text(cfg: RunConfig) -> str:
     """Serialize RunConfig to a text string for the routine's `text` field."""
     stages = cfg.stages if cfg.stages == "full" else ",".join(cfg.stages)
-    return (
-        f"segments={','.join(cfg.segments)}; "
-        f"limit={cfg.limit_per_segment}; "
-        f"stages={stages}; "
-        f"dry_run={'true' if cfg.dry_run else 'false'}; "
-        f"notion_sync={'true' if cfg.notion_sync else 'false'}"
-    )
+    if cfg.run_mode == "icp_segment":
+        return (
+            "mode=icp_segment; "
+            f"segments={','.join(cfg.segments)}; "
+            f"limit={cfg.limit_per_segment}; "
+            f"stages={stages}; "
+            f"dry_run={'true' if cfg.dry_run else 'false'}; "
+            f"notion_sync={'true' if cfg.notion_sync else 'false'}"
+        )
+
+    if cfg.run_mode == "single_company":
+        parts = ["mode=single_company", f"company={cfg.company_name}"]
+        if cfg.company_url:
+            parts.append(f"company_url={cfg.company_url}")
+        parts.extend(
+            [
+                f"stages={stages}",
+                f"notion_sync={'true' if cfg.notion_sync else 'false'}",
+            ]
+        )
+        return "; ".join(parts)
+
+    if cfg.run_mode == "startup_research":
+        parts = ["mode=startup_research", f"description={cfg.startup_description}"]
+        if cfg.company_name:
+            parts.append(f"company={cfg.company_name}")
+        if cfg.company_url:
+            parts.append(f"company_url={cfg.company_url}")
+        if cfg.focus_areas:
+            parts.append(f"focus_areas={','.join(cfg.focus_areas)}")
+        parts.append(f"notion_sync={'true' if cfg.notion_sync else 'false'}")
+        return "; ".join(parts)
+
+    raise ValueError(f"unsupported run_mode: {cfg.run_mode}")
 
 
 def fire(text: str = "") -> dict:

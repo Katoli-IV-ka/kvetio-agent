@@ -23,7 +23,7 @@ python scripts/dossier_store.py --list-source-links <domain>
 ```sql
 SELECT name, website, icp_segment, description, funding_stage, team_size
 FROM companies WHERE domain = '<domain>';
-SELECT * FROM signals WHERE normalized_domain = '<domain>';
+SELECT * FROM signals WHERE company_id = '<company_uuid>';
 ```
 
 ## Шаг 2 — Релевантные источники по секции
@@ -42,10 +42,10 @@ SELECT * FROM signals WHERE normalized_domain = '<domain>';
 ## Шаг 4 — Записать ноту
 ```bash
 echo '{
-  "company_domain":"<domain>",
+  "company_id":"<company_uuid>",
   "section":"<section>",
   "facts":{ "<ключ>":"<значение>" },
-  "sources":[ {"url":"<url>","note":"<что отсюда>"} ],
+  
   "confidence":"<high|medium|low>",
   "model":"claude",
   "version":"v1"

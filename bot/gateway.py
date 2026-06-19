@@ -16,6 +16,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +32,15 @@ load_dotenv(ROOT / ".env")
 
 from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig  # noqa: E402
 from bot.dialog import apply_encoded_callback, build_step_message  # noqa: E402
+from bot.intent_agent import ParsedIntent, parse_intent  # noqa: E402
 from bot.routine import config_to_text, fire  # noqa: E402
+from bot.scenarios import SCENARIOS  # noqa: E402
+from bot.session import BotSession, SessionStore  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="kvetio-bot-gateway", version="2.0.0")
+session_store = SessionStore()
 
 
 def _make_supabase():
@@ -91,7 +97,13 @@ async def _handle_message(
     chat_id = str(msg.get("chat", {}).get("id", ""))
     text = (msg.get("text") or "").strip()
 
-    if not chat_id or not text.startswith("/"):
+    if not chat_id or not text:
+        return
+
+    if not text.startswith("/"):
+        session = await session_store.get(chat_id)
+        if session and session.state == "clarifying":
+            await _handle_ask_followup(chat_id, text, session, tg)
         return
 
     command = text.split()[0].lower().rstrip("@")
@@ -146,6 +158,10 @@ async def _handle_message(
         text_out, keyboard = build_step_message("segments", draft)
         await tg.send_with_keyboard(chat_id, text_out, keyboard)
 
+    elif command == "/ask":
+        prompt = " ".join(args)
+        await _handle_ask_command(chat_id, prompt, tg)
+
     elif command in ("/digest", "/hot", "/stale"):
         await _handle_routine_command(command, chat_id, args, tg)
 
@@ -166,6 +182,10 @@ async def _handle_callback(
     cq_id = cq.get("id", "")
 
     await tg.answer_callback(cq_id)
+
+    if data.startswith("a1:"):
+        await _handle_ask_callback(chat_id, message_id, data, tg)
+        return
 
     try:
         next_step, new_draft = apply_encoded_callback(data)
@@ -207,6 +227,189 @@ async def _handle_callback(
     else:
         text_out, keyboard = build_step_message(next_step, new_draft)
         await tg.edit_message_with_keyboard(chat_id, message_id, text_out, keyboard)
+
+
+async def _handle_ask_command(chat_id: str, prompt: str, tg: "TelegramSender") -> None:
+    messages = []
+    if prompt:
+        messages.append({"role": "user", "parts": [{"text": prompt}]})
+
+    session = BotSession(
+        chat_id=chat_id,
+        messages=messages,
+        parsed_intent=None,
+        state="clarifying",
+        clarification_count=0,
+        created_at=datetime.now(UTC),
+    )
+    await session_store.set(session)
+
+    if not prompt:
+        await tg.send(chat_id, "Что хочешь исследовать?")
+        return
+
+    parsed = await parse_intent(messages)
+    await _advance_ask_dialog(chat_id, session, parsed, tg)
+
+
+async def _handle_ask_followup(
+    chat_id: str,
+    text: str,
+    session: BotSession,
+    tg: "TelegramSender",
+) -> None:
+    session.messages.append({"role": "user", "parts": [{"text": text}]})
+    parsed = await parse_intent(session.messages)
+    await _advance_ask_dialog(chat_id, session, parsed, tg)
+
+
+async def _advance_ask_dialog(
+    chat_id: str,
+    session: BotSession,
+    parsed: ParsedIntent,
+    tg: "TelegramSender",
+) -> None:
+    session.parsed_intent = parsed
+    if parsed.missing_fields and session.clarification_count < 3:
+        session.clarification_count += 1
+        session.state = "clarifying"
+        await session_store.set(session)
+        await tg.send(chat_id, parsed.clarification_question or "Уточни параметры запуска.")
+        return
+
+    session.state = "confirming"
+    await session_store.set(session)
+    text, keyboard = _ask_confirmation(parsed)
+    await tg.send_with_keyboard(chat_id, text, keyboard)
+
+
+async def _handle_ask_callback(
+    chat_id: str,
+    message_id: int,
+    data: str,
+    tg: "TelegramSender",
+) -> None:
+    session = await session_store.get(chat_id)
+    if not session:
+        await tg.edit_message(chat_id, message_id, "Сессия устарела. Используйте /ask заново.")
+        return
+
+    action = data.split(":", 1)[1]
+    if action == "cancel":
+        await session_store.delete(chat_id)
+        await tg.edit_message(chat_id, message_id, "❌ Запуск отменён")
+        return
+
+    if action == "edit":
+        session.state = "clarifying"
+        await session_store.set(session)
+        await tg.edit_message(chat_id, message_id, "Что хочешь изменить?")
+        return
+
+    if action != "confirm" or not session.parsed_intent:
+        await tg.edit_message(chat_id, message_id, "Сессия устарела. Используйте /ask заново.")
+        return
+
+    try:
+        cfg = _run_config_from_intent(session.parsed_intent)
+        cfg.validate()
+    except ValueError as exc:
+        await tg.edit_message(chat_id, message_id, f"❌ Ошибка конфига: {escape(str(exc))}")
+        return
+
+    result = fire(config_to_text(cfg))
+    await session_store.delete(chat_id)
+    if result.get("dev_mode"):
+        await tg.edit_message(chat_id, message_id, "🟡 <b>[dev] Рутина запущена</b>")
+    elif "error" in result:
+        await tg.edit_message(chat_id, message_id, f"❌ Ошибка запуска: {escape(result['error'])}")
+    else:
+        routine_session_id = result.get("claude_code_session_id", "?")
+        await tg.edit_message(
+            chat_id,
+            message_id,
+            f"🟢 <b>Рутина запущена</b>\nSession: <code>{escape(str(routine_session_id))}</code>",
+        )
+
+
+def _ask_confirmation(parsed: ParsedIntent) -> tuple[str, list[list[dict]]]:
+    scenario = SCENARIOS[parsed.mode]
+    lines = [
+        "🔍 <b>Понял запрос</b>",
+        "",
+        f"Сценарий: <b>{escape(scenario.name)}</b>",
+    ]
+    params = parsed.params
+    if parsed.mode == "icp_segment":
+        lines.append(f"Сегменты: <b>{escape(', '.join(params.get('segments') or []))}</b>")
+        lines.append(f"Лимит: <b>{escape(str(params.get('limit_per_segment', 5)))}</b>")
+        lines.append(f"Стадии: <b>{escape(_stages_label(params.get('stages', 'full')))}</b>")
+    elif parsed.mode == "single_company":
+        lines.append(f"Компания: <b>{escape(str(params.get('company_name', '')))}</b>")
+        if params.get("company_url"):
+            lines.append(f"URL: <b>{escape(str(params['company_url']))}</b>")
+        lines.append(f"Стадии: <b>{escape(_stages_label(params.get('stages', 'full')))}</b>")
+    elif parsed.mode == "startup_research":
+        if params.get("company_name"):
+            lines.append(f"Компания: <b>{escape(str(params['company_name']))}</b>")
+        if params.get("company_url"):
+            lines.append(f"URL: <b>{escape(str(params['company_url']))}</b>")
+        lines.append(f"Описание: <b>{escape(str(params.get('description', '')))}</b>")
+        if params.get("focus_areas"):
+            lines.append(f"Фокус: <b>{escape(', '.join(params['focus_areas']))}</b>")
+
+    keyboard = [
+        [
+            {"text": "🚀 Запустить", "callback_data": "a1:confirm"},
+            {"text": "✏️ Уточнить", "callback_data": "a1:edit"},
+        ],
+        [{"text": "❌ Отмена", "callback_data": "a1:cancel"}],
+    ]
+    return "\n".join(lines), keyboard
+
+
+def _run_config_from_intent(parsed: ParsedIntent) -> RunConfig:
+    params = parsed.params
+    if parsed.mode == "icp_segment":
+        return RunConfig(
+            run_mode="icp_segment",
+            segments=list(params.get("segments") or []),
+            limit_per_segment=int(params.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT)),
+            stages=params.get("stages", "full"),
+            dry_run=bool(params.get("dry_run", False)),
+            notion_sync=bool(params.get("notion_sync", True)),
+        )
+    if parsed.mode == "single_company":
+        return RunConfig(
+            run_mode="single_company",
+            segments=[],
+            limit_per_segment=DEFAULT_LIMIT_PER_SEGMENT,
+            stages=params.get("stages", "full"),
+            notion_sync=bool(params.get("notion_sync", True)),
+            company_name=str(params.get("company_name", "")),
+            company_url=str(params.get("company_url", "")),
+        )
+    if parsed.mode == "startup_research":
+        return RunConfig(
+            run_mode="startup_research",
+            segments=[],
+            limit_per_segment=DEFAULT_LIMIT_PER_SEGMENT,
+            stages=params.get("stages", "full"),
+            notion_sync=bool(params.get("notion_sync", True)),
+            company_name=str(params.get("company_name", "")),
+            company_url=str(params.get("company_url", "")),
+            startup_description=str(params.get("description", "")),
+            focus_areas=list(params.get("focus_areas") or []),
+        )
+    raise ValueError(f"unknown run mode: {parsed.mode}")
+
+
+def _stages_label(stages: str | list[str]) -> str:
+    if stages == "full":
+        return "полный pipeline"
+    if isinstance(stages, list):
+        return ", ".join(stages)
+    return str(stages)
 
 
 async def _handle_routine_command(
@@ -263,6 +466,7 @@ def _start_text() -> str:
             "Бот сам не выполняет pipeline. Он собирает параметры и отправляет запуск в Claude Code Routine через /fire. После завершения рутина сама присылает сводку в Telegram.",
             "",
             "/run — мастер запуска с выбором параметров",
+            "/ask <запрос> — запуск через свободный текст",
             "/help — все команды",
         ]
     )
@@ -280,6 +484,7 @@ def _help_text() -> str:
             "",
             "<b>Запуск агента</b>",
             "/run — мастер запуска с выбором сегментов, лимита, stages и флагов",
+            "/ask <запрос> — разобрать свободный текст и запустить подходящий сценарий",
             "",
             "<b>Статус и отчеты</b>",
             "/status — текущий активный ран",

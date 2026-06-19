@@ -43,13 +43,30 @@ Monitor is a signal refresh loop, not a separate status machine.
 
 ## Signal Model
 
-Evidence belongs in `signals`.
+Every piece of evidence about a company is one row in `signals`. The table is
+company-centric: every row carries `company_id UUID` (FK to `companies.id`),
+not a domain string.
+
+Key fields:
+
+- `company_id` — canonical FK; all joins go through this UUID.
+- `signal_type` — validated against the `signal_types` vocabulary table.
+- `dedupe_key TEXT UNIQUE` — SHA-1 of `company_id:signal_type:url`; prevents
+  duplicates across runs without any manual bookkeeping.
+- `url TEXT NOT NULL` — the source URL that produced this finding.
+- `confidence NUMERIC(3,2)` — stored as a float (0.00–1.00); labels
+  `"high"` → 0.9, `"medium"` → 0.5, `"low"` → 0.2 via `confidence_to_score()`.
+- `payload JSONB` — structured, agent-specific fields.
+- `raw_data JSONB` — optional raw API snapshot.
 
 Signal type prefixes:
 
 - `primary_*`: signal that first brought the company into the database.
 - `verification_*`: supporting signal found during validation or source expansion.
 - `monitor_*`: new signal for an already known company.
+
+Agents write signals; interpretation stays in agent logic. `signal_types` is the
+authoritative vocabulary — new types require a migration seed row.
 
 Latest signal display is derived from `signals`, usually by newest
 `signal_date` or `updated_at` depending on the view.
@@ -96,7 +113,6 @@ Active runtime tables:
 Contacts:
 
 - `contacts.company_id -> companies.id` is canonical.
-- `contacts.company_domain` remains transitional compatibility data.
 - Contact writes must fail if the company cannot be resolved.
 
 ## Notion Sync

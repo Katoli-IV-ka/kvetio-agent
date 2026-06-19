@@ -1,4 +1,4 @@
-"""dossier_store tests с замоканным Supabase-клиентом (по образцу test_contacts_store)."""
+"""dossier_store tests — company_id keyed, numeric confidence, junction table."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from dossier_store import (
     get_analysis_notes,
     get_dossier,
     get_source_links,
+    link_note_to_signals,
     upsert_analysis_note,
     upsert_dossier,
     upsert_source_link,
@@ -30,86 +31,106 @@ def mock_store():
     return store
 
 
-def test_upsert_source_link_sets_fields(mock_store):
+def test_upsert_source_link_keyed_by_company_id(mock_store):
     link = {
-        "company_domain": "radai.com",
+        "company_id": "cid-1",
         "kind": "github_org",
-        "url": "https://github.com/radai",
+        "url": "https://github.com/acme",
         "source": "github_resolver",
         "confidence": "high",
     }
     upsert_source_link(mock_store, link)
     mock_store._client.table.assert_called_with("source_links")
-    call = mock_store._client.table.return_value.upsert.call_args
-    row = call[0][0]
-    assert row["company_domain"] == "radai.com"
+    call_args = mock_store._client.table.return_value.upsert.call_args
+    row = call_args[0][0]
+    assert row["company_id"] == "cid-1"
     assert row["kind"] == "github_org"
-    assert row["url"] == "https://github.com/radai"
-    assert call[1]["on_conflict"] == "company_domain,kind,url"
+    assert row["url"] == "https://github.com/acme"
+    assert call_args[1]["on_conflict"] == "company_id,kind,url"
+
+
+def test_upsert_source_link_numeric_confidence(mock_store):
+    upsert_source_link(mock_store, {
+        "company_id": "cid-1",
+        "kind": "wayback",
+        "url": "https://web.archive.org/web/2025/https://acme.com",
+        "confidence": "high",
+    })
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["confidence"] == 0.9
 
 
 def test_upsert_source_link_defaults(mock_store):
     upsert_source_link(mock_store, {
-        "company_domain": "radai.com",
+        "company_id": "cid-1",
         "kind": "wayback",
-        "url": "https://web.archive.org/web/2025/https://radai.com",
+        "url": "https://web.archive.org/",
     })
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
     assert row["source"] == "unknown"
-    assert row["confidence"] == "medium"
+    assert row["confidence"] == 0.5   # "medium" -> 0.5
     assert row["raw"] == {}
+    assert row["source_signal_id"] is None
 
 
-def test_get_source_links_queries_by_domain(mock_store):
-    get_source_links(mock_store, "radai.com")
+def test_get_source_links_queries_by_company_id(mock_store):
+    get_source_links(mock_store, "cid-xyz")
     mock_store._client.table.assert_called_with("source_links")
-    mock_store._client.table.return_value.eq.assert_called_with(
-        "company_domain", "radai.com"
-    )
+    mock_store._client.table.return_value.eq.assert_called_with("company_id", "cid-xyz")
 
 
-def test_upsert_analysis_note_sets_fields(mock_store):
+def test_upsert_analysis_note_keyed_by_company_id(mock_store):
     note = {
-        "company_domain": "radai.com",
+        "company_id": "cid-1",
         "section": "product",
         "facts": {"start_date": "2021"},
-        "sources": [{"url": "https://radai.com/about", "note": "about page"}],
         "confidence": "high",
         "model": "claude",
         "version": "v1",
     }
     upsert_analysis_note(mock_store, note)
     mock_store._client.table.assert_called_with("analysis_notes")
-    call = mock_store._client.table.return_value.upsert.call_args
-    row = call[0][0]
+    call_args = mock_store._client.table.return_value.upsert.call_args
+    row = call_args[0][0]
+    assert row["company_id"] == "cid-1"
     assert row["section"] == "product"
     assert row["facts"] == {"start_date": "2021"}
-    assert call[1]["on_conflict"] == "company_domain,section,version"
+    assert call_args[1]["on_conflict"] == "company_id,section,version"
+    assert "sources" not in row   # removed: replaced by junction table
 
 
-def test_upsert_analysis_note_defaults(mock_store):
-    upsert_analysis_note(mock_store, {
-        "company_domain": "radai.com",
-        "section": "company",
-    })
+def test_upsert_analysis_note_numeric_confidence(mock_store):
+    upsert_analysis_note(mock_store, {"company_id": "cid-1", "section": "company"})
     row = mock_store._client.table.return_value.upsert.call_args[0][0]
-    assert row["facts"] == {}
-    assert row["sources"] == []
-    assert row["confidence"] == "medium"
+    assert row["confidence"] == 0.5   # "medium" -> 0.5
     assert row["version"] == "v1"
 
 
-def test_get_analysis_notes_queries_by_domain(mock_store):
-    get_analysis_notes(mock_store, "radai.com")
+def test_get_analysis_notes_queries_by_company_id(mock_store):
+    get_analysis_notes(mock_store, "cid-xyz")
     mock_store._client.table.assert_called_with("analysis_notes")
-    mock_store._client.table.return_value.eq.assert_called_with(
-        "company_domain", "radai.com"
-    )
+    mock_store._client.table.return_value.eq.assert_called_with("company_id", "cid-xyz")
 
 
-def test_upsert_dossier_sets_fields(mock_store):
+def test_link_note_to_signals_inserts_rows(mock_store):
+    link_note_to_signals(mock_store, "note-1", ["sig-1", "sig-2"], role="supports")
+    mock_store._client.table.assert_called_with("analysis_note_signals")
+    call_args = mock_store._client.table.return_value.upsert.call_args
+    rows = call_args[0][0]
+    assert len(rows) == 2
+    assert rows[0] == {"analysis_note_id": "note-1", "signal_id": "sig-1", "role": "supports"}
+    assert rows[1] == {"analysis_note_id": "note-1", "signal_id": "sig-2", "role": "supports"}
+    assert call_args[1]["on_conflict"] == "analysis_note_id,signal_id"
+
+
+def test_link_note_to_signals_noop_for_empty(mock_store):
+    link_note_to_signals(mock_store, "note-1", [])
+    mock_store._client.table.assert_not_called()
+
+
+def test_upsert_dossier_keyed_by_company_id(mock_store):
     dossier = {
-        "company_domain": "radai.com",
+        "company_id": "cid-1",
         "summary_md": "## О компании\n...",
         "sections": {"company": "..."},
         "audit_md": "## Аудит\n...",
@@ -118,22 +139,22 @@ def test_upsert_dossier_sets_fields(mock_store):
     }
     upsert_dossier(mock_store, dossier)
     mock_store._client.table.assert_called_with("dossiers")
-    call = mock_store._client.table.return_value.upsert.call_args
-    row = call[0][0]
-    assert row["company_domain"] == "radai.com"
+    call_args = mock_store._client.table.return_value.upsert.call_args
+    row = call_args[0][0]
+    assert row["company_id"] == "cid-1"
     assert row["summary_md"].startswith("## О компании")
-    assert call[1]["on_conflict"] == "company_domain"
+    assert call_args[1]["on_conflict"] == "company_id"
 
 
 def test_get_dossier_returns_single_or_none(mock_store):
     mock_store._client.table.return_value.execute.return_value = MagicMock(data=[])
-    assert get_dossier(mock_store, "radai.com") is None
+    assert get_dossier(mock_store, "cid-1") is None
 
     mock_store._client.table.return_value.execute.return_value = MagicMock(
-        data=[{"company_domain": "radai.com"}]
+        data=[{"company_id": "cid-1"}]
     )
-    result = get_dossier(mock_store, "radai.com")
-    assert result["company_domain"] == "radai.com"
+    result = get_dossier(mock_store, "cid-1")
+    assert result["company_id"] == "cid-1"
 
 
 def test_cli_run_upsert_analysis_note(mock_store, monkeypatch):
@@ -142,7 +163,7 @@ def test_cli_run_upsert_analysis_note(mock_store, monkeypatch):
 
     from dossier_store import _build_parser, _run
 
-    payload = {"company_domain": "radai.com", "section": "product", "facts": {"x": 1}}
+    payload = {"company_id": "cid-1", "section": "product", "facts": {"x": 1}}
     monkeypatch.setattr("sys.stdin", io.StringIO(_json.dumps(payload)))
     args = _build_parser().parse_args(["--upsert-analysis-note"])
     _run(args, mock_store)
@@ -152,7 +173,7 @@ def test_cli_run_upsert_analysis_note(mock_store, monkeypatch):
 def test_cli_run_list_analysis_notes(mock_store, capsys):
     from dossier_store import _build_parser, _run
 
-    args = _build_parser().parse_args(["--list-analysis-notes", "radai.com"])
+    args = _build_parser().parse_args(["--list-analysis-notes", "cid-1"])
     _run(args, mock_store)
     mock_store._client.table.assert_called_with("analysis_notes")
 
@@ -163,7 +184,7 @@ def test_cli_run_upsert_dossier(mock_store, monkeypatch):
 
     from dossier_store import _build_parser, _run
 
-    payload = {"company_domain": "radai.com", "summary_md": "## О компании\n..."}
+    payload = {"company_id": "cid-1", "summary_md": "## О компании\n..."}
     monkeypatch.setattr("sys.stdin", io.StringIO(_json.dumps(payload)))
     args = _build_parser().parse_args(["--upsert-dossier"])
     _run(args, mock_store)
@@ -173,6 +194,6 @@ def test_cli_run_upsert_dossier(mock_store, monkeypatch):
 def test_cli_run_get_dossier(mock_store):
     from dossier_store import _build_parser, _run
 
-    args = _build_parser().parse_args(["--get-dossier", "radai.com"])
+    args = _build_parser().parse_args(["--get-dossier", "cid-1"])
     _run(args, mock_store)
     mock_store._client.table.assert_called_with("dossiers")

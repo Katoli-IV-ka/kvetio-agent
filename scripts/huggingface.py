@@ -183,16 +183,16 @@ class HuggingFaceAdapter:
                 company_name=org.get("fullname") or org_name,
                 domain=website,  # None для большинства — fallback через WebSearch в агенте
                 linkedin_url=None,
-                evidence_url=f"https://huggingface.co/{org_name}",
+                url=f"https://huggingface.co/{org_name}",
                 signal_date=date.today(),
                 confidence="medium",
-                raw_payload={
-                    **org,
+                agent="discovery",
+                payload={
                     "pipeline_tags": matched_tags,
                     "num_models": org.get("numModels", 0),
                     "num_members": org.get("numMembers", 0),
                 },
-                parser_version=self.parser_version,
+                raw_payload=org,
             )
 
 
@@ -235,11 +235,11 @@ def main() -> None:
         {
             "company_name": s.company_name,
             "domain": s.domain,
-            "evidence_url": s.evidence_url,
+            "url": s.url,
             "signal_date": str(s.signal_date),
-            "pipeline_tags": s.raw_payload.get("pipeline_tags", []),
-            "num_models": s.raw_payload.get("num_models", 0),
-            "num_members": s.raw_payload.get("num_members", 0),
+            "pipeline_tags": s.payload.get("pipeline_tags", []),
+            "num_models": s.payload.get("num_models", 0),
+            "num_members": s.payload.get("num_members", 0),
         }
         for s in signals
     ]

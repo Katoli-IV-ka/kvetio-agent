@@ -184,3 +184,24 @@ def test_resolve_company_ref_raises_for_missing_company(mock_store):
 
     with pytest.raises(ValueError, match="company not found for contact"):
         resolve_company_ref(mock_store, domain="missing.ai")
+
+
+def test_upsert_contact_forwards_signal_provenance(mock_store):
+    upsert_contact(mock_store, {
+        "company_id": "company-uuid",
+        "first_name": "Sam",
+        "last_name": "Lee",
+        "discovered_from_signal_id": "sig-9",
+    })
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert row["discovered_from_signal_id"] == "sig-9"
+
+
+def test_upsert_contact_no_signal_provenance_key_absent(mock_store):
+    upsert_contact(mock_store, {
+        "company_id": "company-uuid",
+        "first_name": "Sam",
+        "last_name": "Lee",
+    })
+    row = mock_store._client.table.return_value.upsert.call_args[0][0]
+    assert "discovered_from_signal_id" not in row

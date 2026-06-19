@@ -34,7 +34,7 @@ def test_company_to_signal_basic():
     assert signal["source"] == "yc_browser"
     assert signal["signal_type"] == "yc_company"
     assert signal["batch"] == "W24"
-    assert signal["evidence_url"] == "https://www.ycombinator.com/companies/acme-ai"
+    assert signal["url"] == "https://www.ycombinator.com/companies/acme-ai"
 
 
 def test_company_to_signal_empty_returns_none():
