@@ -5,3 +5,8 @@ builder = "nixpacks"
 startCommand = "uvicorn bot.gateway:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/healthz"
 healthcheckTimeout = 30
+
+[[services]]
+name = "notion-sync-cron"
+cronSchedule = "0 9 * * *"
+startCommand = "curl -s -X POST $BOT_INTERNAL_URL/internal/notion-sync -H 'Authorization: Bearer $SYNC_SECRET'"
