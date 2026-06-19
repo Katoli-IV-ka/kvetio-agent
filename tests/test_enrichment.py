@@ -41,6 +41,10 @@ def test_run_enrichment_skips_disabled():
     written = run_enrichment(company, store, client, resolvers=resolvers)
     kinds = [w["kind"] for w in written]
     assert kinds == ["a"]
+    assert store.upsert_research_record.call_count == 1
+    entry = store.upsert_research_record.call_args[0][0]
+    assert entry.record_type == "source_link"
+    assert entry.record_role == "source"
 
 
 def test_run_enrichment_swallows_resolver_errors():
@@ -68,9 +72,9 @@ def test_disabled_stub_is_disabled_and_returns_none():
 _COMPANY = {"domain": "radai.com", "id": "00000000-0000-0000-0000-000000000001"}
 
 
-def test_github_org_resolver_from_signals():
+def test_github_org_resolver_from_research_records():
     store = MagicMock()
-    store.get_signals_for_company.return_value = [
+    store.get_research_records_for_company.return_value = [
         {"url": "https://github.com/radai-robolab/some-repo"},
     ]
     link = GithubOrgResolver().resolve(_COMPANY, store, MagicMock())
@@ -81,7 +85,7 @@ def test_github_org_resolver_from_signals():
 
 def test_github_org_resolver_none_when_no_github_signal():
     store = MagicMock()
-    store.get_signals_for_company.return_value = [
+    store.get_research_records_for_company.return_value = [
         {"url": "https://huggingface.co/radai"},
     ]
     assert GithubOrgResolver().resolve(_COMPANY, store, MagicMock()) is None
