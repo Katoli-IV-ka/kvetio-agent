@@ -180,7 +180,7 @@ def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
         page_id = page_id_by_company_id.get(row.get("company_id"))
         enriched.append({
             **row,
-            "contact_name": contact_display_name(row),
+            "name": contact_display_name(row),
             "other_channels_text": other_channels_text(row),
             "company_page_ids": [page_id] if page_id else [],
         })

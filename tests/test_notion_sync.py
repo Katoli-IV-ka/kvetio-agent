@@ -24,7 +24,8 @@ def test_contacts_mapping_has_company_relation_and_name():
     by_column = {field["db_column"]: field for field in fields}
 
     assert by_column["company_page_ids"]["notion_type"] == "relation"
-    assert by_column["contact_name"]["notion_property"] == "Name"
+    assert by_column["name"]["notion_property"] == "Name"
+    assert by_column["contact_type"]["notion_type"] == "select"
     assert "contact" + "_result" not in by_column
 
 
@@ -342,6 +343,7 @@ def test_contacts_mapping_matches_compact_schema():
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
     assert contacts_fields == {
         "Name",
+        "Type",
         "Информация о контакте",
         "Email",
         "Phone",
@@ -409,7 +411,7 @@ def test_validate_mapping_accepts_phone_number_and_relation():
         "contacts": {
             "notion_database_id_env": "NOTION_CONTACTS_DB_ID",
             "fields": [
-                {"db_column": "contact_name",     "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
+                {"db_column": "name",             "notion_property": "Name",      "notion_type": "title",        "direction": "forward"},
                 {"db_column": "phone",            "notion_property": "Phone",     "notion_type": "phone_number", "direction": "forward"},
                 {"db_column": "company_page_ids", "notion_property": "Компании",  "notion_type": "relation",     "direction": "forward"},
             ],
@@ -421,8 +423,8 @@ def test_validate_mapping_accepts_phone_number_and_relation():
 
 def test_enrich_contact_rows_uses_company_id_relation():
     rows = [
-        {"id": "c1", "first_name": "Alice", "last_name": "", "company_id": "co1"},
-        {"id": "c2", "first_name": "Bob", "last_name": "", "company_id": "co2"},
+        {"id": "c1", "name": "Alice", "company_id": "co1"},
+        {"id": "c2", "name": "Bob", "company_id": "co2"},
     ]
     companies = [
         {"id": "co1", "domain": "acme.com", "notion_page_id": "np-acme"},
@@ -445,8 +447,7 @@ def test_enrich_contact_rows_adds_display_name_and_other_channels_text():
     rows = [
         {
             "id": "c1",
-            "first_name": "Alice",
-            "last_name": "Chen",
+            "name": "Alice Chen",
             "company_id": "co1",
             "other_channels": [
                 {"type": "github", "url": "https://github.com/alice", "label": "GitHub"},
@@ -466,7 +467,7 @@ def test_enrich_contact_rows_adds_display_name_and_other_channels_text():
 
     enriched = ns.enrich_contact_rows(rows, FakeDb())
 
-    assert enriched[0]["contact_name"] == "Alice Chen"
+    assert enriched[0]["name"] == "Alice Chen"
     assert enriched[0]["company_page_ids"] == ["np-acme"]
     assert enriched[0]["other_channels_text"] == (
         "GitHub: https://github.com/alice\n"
