@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from bot import gateway
 from bot.intent_agent import ParsedIntent
@@ -165,3 +166,57 @@ async def test_ask_confirm_fires_routine_once_and_deletes_session(monkeypatch) -
     assert fire_calls == ["mode=single_company; company=OpenAI; stages=full; notion_sync=true"]
     assert tg.edits == [("10", 99, "🟡 <b>[dev] Рутина запущена</b>")]
     assert await gateway.session_store.get("10") is None
+
+
+def test_internal_notion_sync_rejects_invalid_bearer(monkeypatch) -> None:
+    monkeypatch.setenv("SYNC_SECRET", "expected-secret")
+
+    client = TestClient(gateway.app)
+    response = client.post(
+        "/internal/notion-sync",
+        headers={"Authorization": "Bearer wrong-secret"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_internal_notion_sync_queues_sync_with_valid_bearer(monkeypatch) -> None:
+    calls: list[str | None] = []
+    monkeypatch.setenv("SYNC_SECRET", "expected-secret")
+
+    async def fake_run_and_notify(notify_chat_id: str | None = None) -> None:
+        calls.append(notify_chat_id)
+
+    monkeypatch.setattr(gateway, "_run_notion_sync_and_notify", fake_run_and_notify)
+
+    client = TestClient(gateway.app)
+    response = client.post(
+        "/internal/notion-sync",
+        headers={"Authorization": "Bearer expected-secret"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued"}
+    assert calls == [None]
+
+
+@pytest.mark.asyncio
+async def test_notion_sync_command_runs_sync_and_reports_counts(monkeypatch) -> None:
+    tg = FakeTelegram()
+
+    async def fake_run_and_notify(notify_chat_id: str | None = None, tg=None) -> None:
+        assert tg is not None
+        await tg.send(
+            notify_chat_id,
+            "✅ Синхронизировано: 2 компаний, 3 контактов",
+        )
+
+    monkeypatch.setattr(gateway, "_run_notion_sync_and_notify", fake_run_and_notify)
+
+    await gateway._handle_message(
+        {"chat": {"id": 10}, "text": "/notion_sync"},
+        client=None,
+        tg=tg,
+    )
+
+    assert tg.sent == [("10", "✅ Синхронизировано: 2 компаний, 3 контактов")]

@@ -146,7 +146,10 @@ def md_to_blocks(heading: str, body: str) -> list[dict]:
 
 
 def contact_display_name(row: dict) -> str:
-    return str(row.get("name") or "").strip() or "Unknown contact"
+    first = str(row.get("first_name") or "").strip()
+    last = str(row.get("last_name") or "").strip()
+    full_name = " ".join(part for part in (first, last) if part)
+    return full_name or str(row.get("name") or "").strip() or "Unknown contact"
 
 
 def other_channels_text(row: dict) -> str | None:

@@ -13,6 +13,7 @@ Run locally:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -23,7 +24,7 @@ from typing import Any
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 ROOT = Path(__file__).parent.parent
@@ -58,6 +59,13 @@ def _deps():
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
+
+
+@app.post("/internal/notion-sync")
+async def internal_notion_sync(request: Request, background_tasks: BackgroundTasks):
+    _verify_sync_secret(request.headers.get("Authorization", ""))
+    background_tasks.add_task(_run_notion_sync_and_notify, notify_chat_id=None)
+    return {"status": "queued"}
 
 
 # ── Telegram Webhook ──────────────────────────────────────────────────────────
@@ -164,6 +172,9 @@ async def _handle_message(
 
     elif command in ("/digest", "/hot", "/stale"):
         await _handle_routine_command(command, chat_id, args, tg)
+
+    elif command == "/notion_sync":
+        await _handle_notion_sync_command(chat_id, tg)
 
     elif command == "/settings":
         await tg.send(
@@ -431,6 +442,43 @@ async def _handle_routine_command(
         await tg.send(chat_id, f"❌ Ошибка рутины: {exc}")
 
 
+async def _handle_notion_sync_command(chat_id: str, tg: "TelegramSender") -> None:
+    await _run_notion_sync_and_notify(notify_chat_id=chat_id, tg=tg)
+
+
+def _run_notion_sync_blocking() -> dict:
+    """Runs in thread pool; sync uses Notion API and Supabase directly."""
+    from notion_sync import NotionSync, _make_db, _make_notion
+
+    sync = NotionSync(notion=_make_notion(), db=_make_db())
+    companies = sync.sync_forward("companies")
+    contacts = sync.sync_forward("contacts")
+    return {"companies": companies, "contacts": contacts}
+
+
+async def _run_notion_sync_and_notify(
+    notify_chat_id: str | None = None,
+    tg: "TelegramSender | None" = None,
+) -> None:
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, _run_notion_sync_blocking)
+
+    if notify_chat_id is None:
+        return
+
+    sender = tg or TelegramSender()
+    companies_count = _notion_sync_changed_count(result["companies"])
+    contacts_count = _notion_sync_changed_count(result["contacts"])
+    await sender.send(
+        notify_chat_id,
+        f"✅ Синхронизировано: {companies_count} компаний, {contacts_count} контактов",
+    )
+
+
+def _notion_sync_changed_count(result: dict[str, Any]) -> int:
+    return int(result.get("created", 0) or 0) + int(result.get("updated", 0) or 0)
+
+
 def _fetch_active_run(client: Any) -> dict[str, Any] | None:
     """Return the most recent run_log with no finished_at (in progress)."""
     result = (
@@ -492,6 +540,7 @@ def _help_text() -> str:
             "/digest [limit] — дайджест",
             "/hot [limit] — горячие лиды",
             "/stale [limit] — очередь на проверку",
+            "/notion_sync — синхронизация Supabase → Notion",
             "",
             "/settings — где менять параметры запуска",
         ]
@@ -573,6 +622,15 @@ def _verify_webhook_secret(token: str) -> None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="invalid webhook secret",
+        )
+
+
+def _verify_sync_secret(authorization: str) -> None:
+    expected = os.environ.get("SYNC_SECRET", "")
+    if not expected or authorization != f"Bearer {expected}":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="invalid sync secret",
         )
 
 

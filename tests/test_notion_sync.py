@@ -348,11 +348,41 @@ def test_contacts_mapping_matches_compact_schema():
         "Email",
         "Phone",
         "LinkedIn",
-        "X",
         "Facebook",
         "Instagram",
-        "Другие каналы",
         "Компании",
+    }
+
+
+def test_companies_mapping_matches_release_schema():
+    mapping = ns.load_mapping()
+    fields = {f["db_column"]: f for f in mapping["companies"]["fields"]}
+
+    assert fields == {
+        "name": {
+            "db_column": "name",
+            "notion_property": "Company Name",
+            "notion_type": "title",
+            "direction": "forward",
+        },
+        "website": {
+            "db_column": "website",
+            "notion_property": "Website",
+            "notion_type": "url",
+            "direction": "forward",
+        },
+        "linkedin_url": {
+            "db_column": "linkedin_url",
+            "notion_property": "LinkedIn",
+            "notion_type": "url",
+            "direction": "forward",
+        },
+        "description": {
+            "db_column": "description",
+            "notion_property": "Sammary",
+            "notion_type": "rich_text",
+            "direction": "forward",
+        },
     }
 
 
@@ -524,6 +554,10 @@ def test_sync_reverse_imports_new_contact_with_single_company_relation():
 
 def test_contact_display_name_uses_name_field():
     assert ns.contact_display_name({"name": "Sarah Chen"}) == "Sarah Chen"
+
+
+def test_contact_display_name_uses_first_and_last_name():
+    assert ns.contact_display_name({"first_name": "Sarah", "last_name": "Chen"}) == "Sarah Chen"
 
 
 def test_sync_dossiers_reads_typed_fields():

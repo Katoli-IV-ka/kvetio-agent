@@ -9,12 +9,10 @@ companies:
   db_key: domain
   db_status_filter: [relevant, sources_gathered, analyzed, dossier_ready]
   fields:
-    # — Таблица (видимые колонки) ——————————————————————————————————————————
-    - { db_column: name,             notion_property: "Company name",  notion_type: title,     direction: forward }
-    - { db_column: icp_segment,      notion_property: "ICP Segment",   notion_type: select,    direction: forward }
-    # — Страница (скрытые свойства, доступны при открытии карточки) ————————
-    - { db_column: linkedin_url,     notion_property: "LinkedIn",      notion_type: url,       direction: forward }
-    - { db_column: website,          notion_property: "Website",       notion_type: url,       direction: forward }
+    - { db_column: name,         notion_property: "Company Name", notion_type: title,     direction: forward }
+    - { db_column: website,      notion_property: "Website",      notion_type: url,       direction: forward }
+    - { db_column: linkedin_url, notion_property: "LinkedIn",     notion_type: url,       direction: forward }
+    - { db_column: description,  notion_property: "Sammary",      notion_type: rich_text, direction: forward }
 
 contacts:
   notion_database_id_env: NOTION_CONTACTS_DB_ID
@@ -27,10 +25,8 @@ contacts:
     - { db_column: email,               notion_property: "Email",                 notion_type: email,        direction: forward }
     - { db_column: phone,               notion_property: "Phone",                 notion_type: phone_number, direction: forward }
     - { db_column: linkedin_url,        notion_property: "LinkedIn",              notion_type: url,          direction: forward }
-    - { db_column: x_url,               notion_property: "X",                     notion_type: url,          direction: forward }
     - { db_column: facebook_url,        notion_property: "Facebook",              notion_type: url,          direction: forward }
     - { db_column: instagram_url,       notion_property: "Instagram",             notion_type: url,          direction: forward }
-    - { db_column: other_channels_text, notion_property: "Другие каналы",         notion_type: rich_text,    direction: forward }
     - { db_column: company_page_ids,    notion_property: "Компании",              notion_type: relation,     direction: forward }
 
 dossiers:
