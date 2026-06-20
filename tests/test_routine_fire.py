@@ -82,6 +82,44 @@ class TestConfigToText:
             "company=Synthesia; focus_areas=market,team; notion_sync=false"
         )
 
+    def test_enrich_existing_text_all_segments(self) -> None:
+        cfg = RunConfig(
+            run_mode="enrich_existing",
+            segments=[],
+            limit_per_segment=30,
+            stages=["enrichment", "analysis", "conclusions"],
+            dry_run=False,
+            notion_sync=True,
+        )
+
+        assert config_to_text(cfg) == (
+            "mode=enrich_existing; segments=; limit=30; "
+            "stages=enrichment,analysis,conclusions; dry_run=false; notion_sync=true"
+        )
+
+    def test_enrich_existing_validates_stages_without_discovery(self) -> None:
+        cfg = RunConfig(
+            run_mode="enrich_existing",
+            segments=[],
+            limit_per_segment=30,
+            stages=["relevance", "scoring", "enrichment", "analysis", "conclusions"],
+        )
+
+        cfg.validate()
+
+    def test_enrich_existing_rejects_discovery_stage(self) -> None:
+        cfg = RunConfig(
+            run_mode="enrich_existing",
+            segments=[],
+            limit_per_segment=30,
+            stages=["discovery"],
+        )
+
+        import pytest
+
+        with pytest.raises(ValueError, match="unknown stages"):
+            cfg.validate()
+
 
 # ── fire() ────────────────────────────────────────────────────────────────────
 

@@ -220,3 +220,58 @@ async def test_notion_sync_command_runs_sync_and_reports_counts(monkeypatch) -> 
     )
 
     assert tg.sent == [("10", "✅ Синхронизировано: 2 компаний, 3 контактов")]
+
+
+@pytest.mark.asyncio
+async def test_refill_command_starts_enrich_existing_wizard() -> None:
+    tg = FakeTelegram()
+
+    await gateway._handle_message({"chat": {"id": 10}, "text": "/refill"}, client=None, tg=tg)
+
+    assert len(tg.keyboards) == 1
+    _, text, keyboard = tg.keyboards[0]
+    assert "Пустой выбор = все компании в БД" in text
+    assert "r1:" in keyboard[0][0]["callback_data"]
+
+
+@pytest.mark.asyncio
+async def test_ask_confirm_fires_enrich_existing(monkeypatch) -> None:
+    tg = FakeTelegram()
+    fire_calls: list[str] = []
+
+    async def fake_parse(messages: list[dict]) -> ParsedIntent:
+        return ParsedIntent(
+            mode="enrich_existing",
+            params={
+                "segments": [],
+                "limit_per_segment": 30,
+                "stages": ["enrichment", "analysis", "conclusions"],
+                "dry_run": False,
+                "notion_sync": True,
+            },
+            missing_fields=[],
+            clarification_question=None,
+            confidence=0.9,
+        )
+
+    def fake_fire(text: str) -> dict[str, Any]:
+        fire_calls.append(text)
+        return {"dev_mode": True}
+
+    monkeypatch.setattr(gateway, "parse_intent", fake_parse)
+    monkeypatch.setattr(gateway, "fire", fake_fire)
+
+    await gateway._handle_message({"chat": {"id": 10}, "text": "/ask дозаполни базу"}, None, tg)
+    await gateway._handle_callback(
+        {
+            "id": "cq1",
+            "data": "a1:confirm",
+            "message": {"message_id": 99, "chat": {"id": 10}},
+        },
+        tg,
+    )
+
+    assert fire_calls == [
+        "mode=enrich_existing; segments=; limit=30; "
+        "stages=enrichment,analysis,conclusions; dry_run=false; notion_sync=true"
+    ]

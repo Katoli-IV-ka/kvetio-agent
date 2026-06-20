@@ -69,4 +69,27 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         },
         defaults={"notion_sync": True},
     ),
+    "enrich_existing": ScenarioSpec(
+        name="Дозаполнение существующих",
+        description=(
+            "Полный pipeline (без discovery) для компаний, уже в БД, "
+            "с пропущенными данными"
+        ),
+        required_params=[],
+        optional_params=["segments", "limit_per_segment", "stages", "dry_run", "notion_sync"],
+        param_descriptions={
+            "segments": "CSV сегментов; пусто = все сегменты в БД",
+            "limit_per_segment": "максимум компаний на сегмент (1-200), по умолчанию 30",
+            "stages": "relevance, scoring, enrichment, analysis, conclusions",
+            "dry_run": "true/false, по умолчанию false",
+            "notion_sync": "true/false, по умолчанию true",
+        },
+        defaults={
+            "segments": [],
+            "limit_per_segment": 30,
+            "stages": ["relevance", "scoring", "enrichment", "analysis", "conclusions"],
+            "dry_run": False,
+            "notion_sync": True,
+        },
+    ),
 }

@@ -23,6 +23,14 @@ from typing import Any, Literal
 VALID_STAGES = frozenset(
     ["discovery", "relevance", "scoring", "enrichment", "analysis", "conclusions"]
 )
+ENRICH_DEFAULT_STAGES = [
+    "relevance",
+    "scoring",
+    "enrichment",
+    "analysis",
+    "conclusions",
+]
+ENRICH_VALID_STAGES = frozenset(ENRICH_DEFAULT_STAGES)
 VALID_SEGMENTS = frozenset(
     [
         "medical-imaging",
@@ -38,7 +46,7 @@ DEFAULT_LIMIT_PER_SEGMENT = 5
 
 RunStatus = Literal["draft", "queued", "running", "succeeded", "failed", "cancelled"]
 TriggerType = Literal["manual", "scheduled", "api"]
-RunMode = Literal["icp_segment", "single_company", "startup_research"]
+RunMode = Literal["icp_segment", "single_company", "startup_research", "enrich_existing"]
 
 
 @dataclass
@@ -71,13 +79,25 @@ class RunConfig:
         elif self.run_mode == "startup_research":
             if not self.startup_description:
                 raise ValueError("description is required for startup_research mode")
+        elif self.run_mode == "enrich_existing":
+            unknown = set(self.segments) - VALID_SEGMENTS
+            if unknown:
+                raise ValueError(f"unknown segments: {unknown}")
+            if self.limit_per_segment < 1 or self.limit_per_segment > 200:
+                raise ValueError("limit_per_segment must be between 1 and 200")
         else:
             raise ValueError(f"invalid run_mode: {self.run_mode}")
 
-        if self.stages != "full":
+        if self.run_mode == "icp_segment" and self.stages != "full":
             if not isinstance(self.stages, list) or not self.stages:
                 raise ValueError("stages must be 'full' or a non-empty list")
             unknown_stages = set(self.stages) - VALID_STAGES
+            if unknown_stages:
+                raise ValueError(f"unknown stages: {unknown_stages}")
+        if self.run_mode == "enrich_existing":
+            if not isinstance(self.stages, list) or not self.stages:
+                raise ValueError("stages must be a non-empty list")
+            unknown_stages = set(self.stages) - ENRICH_VALID_STAGES
             if unknown_stages:
                 raise ValueError(f"unknown stages: {unknown_stages}")
         if self.trigger_type not in ("manual", "scheduled", "api"):

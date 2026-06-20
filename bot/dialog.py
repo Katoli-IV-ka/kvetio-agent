@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from bot.config import DEFAULT_LIMIT_PER_SEGMENT
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT, ENRICH_DEFAULT_STAGES
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,7 @@ ALL_SEGMENTS = [
 ]
 
 ALL_STAGES = ["discovery", "relevance", "scoring", "enrichment", "analysis", "conclusions"]
+ENRICH_STAGES = list(ENRICH_DEFAULT_STAGES)
 LIMIT_PRESETS = [5, 10, 30]
 
 
@@ -39,8 +40,9 @@ def encode_callback(draft: dict[str, Any], action: str) -> str:
     limit = int(draft.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT))
     dry_run = "1" if draft.get("dry_run", False) else "0"
     notion_sync = "1" if draft.get("notion_sync", True) else "0"
+    mode = "e" if draft.get("run_mode") == "enrich_existing" else "i"
     payload = (
-        f"r1:s{segments_mask:x}:l{limit}:g{stages_value}:"
+        f"r1:m{mode}:s{segments_mask:x}:l{limit}:g{stages_value}:"
         f"d{dry_run}:n{notion_sync}:a{action}"
     )
     if len(payload.encode("utf-8")) > 64:
@@ -69,6 +71,8 @@ def decode_callback(data: str) -> tuple[dict[str, Any], str]:
             "dry_run": values["d"] == "1",
             "notion_sync": values["n"] == "1",
         }
+        if values.get("m") == "e":
+            draft["run_mode"] = "enrich_existing"
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise ValueError("invalid run callback data") from exc
     return draft, action
@@ -83,6 +87,8 @@ def apply_encoded_callback(data: str) -> tuple[str, dict[str, Any]]:
 
 def build_step_message(step: str, draft: dict[str, Any]) -> tuple[str, list[list[dict]]]:
     """Return (text, inline_keyboard) for the given step."""
+    if draft.get("run_mode") == "enrich_existing":
+        return build_enrich_step_message(step, draft)
     if step == "segments":
         return _segments_step(draft)
     if step == "limit":
@@ -93,6 +99,22 @@ def build_step_message(step: str, draft: dict[str, Any]) -> tuple[str, list[list
         return _flags_step(draft)
     if step == "confirm":
         return _confirm_step(draft)
+    return "Неизвестный шаг", []
+
+
+def build_enrich_step_message(step: str, draft: dict[str, Any]) -> tuple[str, list[list[dict]]]:
+    """Return (text, inline_keyboard) for the /refill wizard."""
+    draft = {"run_mode": "enrich_existing", **draft}
+    if step == "segments":
+        return _enrich_segments_step(draft)
+    if step == "limit":
+        return _limit_step(draft)
+    if step == "stages":
+        return _enrich_stages_step(draft)
+    if step == "flags":
+        return _flags_step(draft)
+    if step == "confirm":
+        return _enrich_confirm_step(draft)
     return "Неизвестный шаг", []
 
 
@@ -155,7 +177,10 @@ def apply_callback(
 
     elif step == "stages":
         if data == "stages_full":
-            draft["stages"] = "full"
+            if draft.get("run_mode") == "enrich_existing":
+                draft["stages"] = list(ENRICH_DEFAULT_STAGES)
+            else:
+                draft["stages"] = "full"
             return "flags", draft
         elif data.startswith("stages_toggle:"):
             stage = data.split(":", 1)[1]
@@ -218,6 +243,30 @@ def _segments_step(draft: dict) -> tuple[str, list[list[dict]]]:
     return text, keyboard
 
 
+def _enrich_segments_step(draft: dict) -> tuple[str, list[list[dict]]]:
+    selected = set(draft.get("segments") or [])
+    text = (
+        "📋 <b>Шаг 1/5: Выбор сегментов</b>\n"
+        "Выберите сегменты для фильтрации. Пустой выбор = все компании в БД."
+    )
+    keyboard = []
+    row: list[dict] = []
+    for i, seg in enumerate(ALL_SEGMENTS):
+        mark = "✅" if seg in selected else "◻️"
+        btn = {"text": f"{mark} {seg}", "callback_data": encode_callback(draft, f"st{i}")}
+        row.append(btn)
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([
+        {"text": "🌐 Все", "callback_data": encode_callback(draft, "sa")},
+        {"text": "Далее →", "callback_data": encode_callback(draft, "sn")},
+    ])
+    return text, keyboard
+
+
 def _limit_step(draft: dict) -> tuple[str, list[list[dict]]]:
     segs = draft.get("segments") or []
     text = (
@@ -254,6 +303,35 @@ def _stages_step(draft: dict) -> tuple[str, list[list[dict]]]:
     for i, stage in enumerate(ALL_STAGES):
         mark = "✅" if stage in selected_set else "◻️"
         row2.append({"text": f"{mark} {stage}", "callback_data": encode_callback(draft, f"gt{i}")})
+    keyboard.append(row2[:3])
+    keyboard.append(row2[3:])
+    keyboard.append([{"text": "Далее →", "callback_data": encode_callback(draft, "gn")}])
+    return text, keyboard
+
+
+def _enrich_stages_step(draft: dict) -> tuple[str, list[list[dict]]]:
+    selected_stages = draft.get("stages") or list(ENRICH_DEFAULT_STAGES)
+    if selected_stages == "full":
+        selected_stages = list(ENRICH_DEFAULT_STAGES)
+    selected_set = set(selected_stages)
+    text = (
+        "📋 <b>Шаг 3/5: Стадии pipeline</b>\n"
+        "`discovery` пропускается — компании уже в базе.\n\n"
+        "relevance — проверить соответствие ICP\n"
+        "scoring — рассчитать приоритет\n"
+        "enrichment — собрать источники и контакты\n"
+        "analysis — подготовить аналитические заметки\n"
+        "conclusions — собрать выводы и витрину\n\n"
+        "Выберите стадии:"
+    )
+    keyboard = [[{"text": "⚡ Все стадии", "callback_data": encode_callback(draft, "gf")}]]
+    row2: list[dict] = []
+    for stage in ENRICH_STAGES:
+        stage_index = ALL_STAGES.index(stage)
+        mark = "✅" if stage in selected_set else "◻️"
+        row2.append(
+            {"text": f"{mark} {stage}", "callback_data": encode_callback(draft, f"gt{stage_index}")}
+        )
     keyboard.append(row2[:3])
     keyboard.append(row2[3:])
     keyboard.append([{"text": "Далее →", "callback_data": encode_callback(draft, "gn")}])
@@ -297,6 +375,33 @@ def _confirm_step(draft: dict) -> tuple[str, list[list[dict]]]:
     text = (
         f"📋 <b>Шаг 5/5: Подтверждение</b>\n\n"
         "Проверьте параметры перед отправкой запуска в Claude Code Routine.\n\n"
+        f"Сегменты: <b>{segs}</b>\n"
+        f"Лимит: <b>{limit}</b>\n"
+        f"Стадии: <b>{stages_str}</b>\n"
+        f"Dry-run: {dry_run}\n"
+        f"Notion sync: {notion}\n\n"
+        "Запустить pipeline?"
+    )
+    keyboard = [
+        [
+            {"text": "🚀 Запустить", "callback_data": encode_callback(draft, "cr")},
+            {"text": "✏️ Изменить", "callback_data": encode_callback(draft, "ce")},
+        ],
+        [{"text": "❌ Отмена", "callback_data": encode_callback(draft, "cc")}],
+    ]
+    return text, keyboard
+
+
+def _enrich_confirm_step(draft: dict) -> tuple[str, list[list[dict]]]:
+    segs = ", ".join(draft.get("segments") or []) or "все сегменты"
+    limit = draft.get("limit_per_segment", DEFAULT_LIMIT_PER_SEGMENT)
+    stages = draft.get("stages", list(ENRICH_DEFAULT_STAGES))
+    stages_str = stages if isinstance(stages, str) else " → ".join(stages)
+    dry_run = "✅ да" if draft.get("dry_run") else "нет"
+    notion = "✅ да" if draft.get("notion_sync", True) else "нет"
+    text = (
+        f"📋 <b>Шаг 5/5: Подтверждение</b>\n\n"
+        "<b>Дозаполнение существующих компаний</b>\n\n"
         f"Сегменты: <b>{segs}</b>\n"
         f"Лимит: <b>{limit}</b>\n"
         f"Стадии: <b>{stages_str}</b>\n"

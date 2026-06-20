@@ -13,6 +13,7 @@ def test_start_text_exposes_run_without_presets_or_quickrun() -> None:
 def test_help_text_exposes_run_without_presets_or_quickrun() -> None:
     text = _help_text()
     assert "/run" in text
+    assert "/refill" in text
     assert "/notion_sync" in text
     assert "/pre" + "sets" not in text
     assert "/quick" + "run" not in text

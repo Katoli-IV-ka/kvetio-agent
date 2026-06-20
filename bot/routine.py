@@ -53,6 +53,18 @@ def config_to_text(cfg: RunConfig) -> str:
         parts.append(f"notion_sync={'true' if cfg.notion_sync else 'false'}")
         return "; ".join(parts)
 
+    if cfg.run_mode == "enrich_existing":
+        stages = cfg.stages if cfg.stages == "full" else ",".join(cfg.stages)
+        parts = [
+            "mode=enrich_existing",
+            f"segments={','.join(cfg.segments)}" if cfg.segments else "segments=",
+            f"limit={cfg.limit_per_segment}",
+            f"stages={stages}",
+            f"dry_run={'true' if cfg.dry_run else 'false'}",
+            f"notion_sync={'true' if cfg.notion_sync else 'false'}",
+        ]
+        return "; ".join(parts)
+
     raise ValueError(f"unsupported run_mode: {cfg.run_mode}")
 
 

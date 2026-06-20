@@ -31,8 +31,8 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 load_dotenv(ROOT / ".env")
 
-from bot.config import DEFAULT_LIMIT_PER_SEGMENT, RunConfig  # noqa: E402
-from bot.dialog import apply_encoded_callback, build_step_message  # noqa: E402
+from bot.config import DEFAULT_LIMIT_PER_SEGMENT, ENRICH_DEFAULT_STAGES, RunConfig  # noqa: E402
+from bot.dialog import apply_encoded_callback, build_enrich_step_message, build_step_message  # noqa: E402
 from bot.intent_agent import ParsedIntent, parse_intent  # noqa: E402
 from bot.routine import config_to_text, fire  # noqa: E402
 from bot.scenarios import SCENARIOS  # noqa: E402
@@ -166,6 +166,18 @@ async def _handle_message(
         text_out, keyboard = build_step_message("segments", draft)
         await tg.send_with_keyboard(chat_id, text_out, keyboard)
 
+    elif command == "/refill":
+        draft = {
+            "run_mode": "enrich_existing",
+            "segments": [],
+            "limit_per_segment": 30,
+            "stages": list(ENRICH_DEFAULT_STAGES),
+            "dry_run": False,
+            "notion_sync": True,
+        }
+        text_out, keyboard = build_enrich_step_message("segments", draft)
+        await tg.send_with_keyboard(chat_id, text_out, keyboard)
+
     elif command == "/ask":
         prompt = " ".join(args)
         await _handle_ask_command(chat_id, prompt, tg)
@@ -206,6 +218,7 @@ async def _handle_callback(
 
     if next_step == "done":
         cfg = RunConfig(
+            run_mode=new_draft.get("run_mode", "icp_segment"),
             segments=new_draft.get("segments", []),
             limit_per_segment=new_draft.get(
                 "limit_per_segment",
@@ -368,6 +381,13 @@ def _ask_confirmation(parsed: ParsedIntent) -> tuple[str, list[list[dict]]]:
         lines.append(f"Описание: <b>{escape(str(params.get('description', '')))}</b>")
         if params.get("focus_areas"):
             lines.append(f"Фокус: <b>{escape(', '.join(params['focus_areas']))}</b>")
+    elif parsed.mode == "enrich_existing":
+        segs = params.get("segments") or []
+        lines.append(f"Сегменты: <b>{escape(', '.join(segs) or 'все сегменты')}</b>")
+        lines.append(f"Лимит: <b>{escape(str(params.get('limit_per_segment', 30)))}</b> на сегмент")
+        lines.append(f"Стадии: <b>{escape(_stages_label(params.get('stages', [])))}</b>")
+        notion = params.get("notion_sync", True)
+        lines.append(f"Notion sync: <b>{'да' if notion else 'нет'}</b>")
 
     keyboard = [
         [
@@ -411,6 +431,15 @@ def _run_config_from_intent(parsed: ParsedIntent) -> RunConfig:
             company_url=str(params.get("company_url", "")),
             startup_description=str(params.get("description", "")),
             focus_areas=list(params.get("focus_areas") or []),
+        )
+    if parsed.mode == "enrich_existing":
+        return RunConfig(
+            run_mode="enrich_existing",
+            segments=list(params.get("segments") or []),
+            limit_per_segment=int(params.get("limit_per_segment", 30)),
+            stages=list(params.get("stages") or ENRICH_DEFAULT_STAGES),
+            dry_run=bool(params.get("dry_run", False)),
+            notion_sync=bool(params.get("notion_sync", True)),
         )
     raise ValueError(f"unknown run mode: {parsed.mode}")
 
@@ -532,6 +561,7 @@ def _help_text() -> str:
             "",
             "<b>Запуск агента</b>",
             "/run — мастер запуска с выбором сегментов, лимита, stages и флагов",
+            "/refill — дозаполнение существующих компаний с неполными данными",
             "/ask <запрос> — разобрать свободный текст и запустить подходящий сценарий",
             "",
             "<b>Статус и отчеты</b>",
