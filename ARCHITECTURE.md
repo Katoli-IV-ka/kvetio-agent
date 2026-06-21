@@ -292,10 +292,12 @@ stateDiagram-v2
     discovered --> relevant : RelevanceAgent
     discovered --> not_relevant : RelevanceAgent
     discovered --> manual_review : RelevanceAgent
+    discovered --> data_partner : RelevanceAgent (дата-провайдер)
 
     manual_review --> relevant : ручная переквалификация
 
     relevant --> sources_gathered : SourceExpansionAgent / EnrichmentAgent
+    data_partner --> sources_gathered : downstream-стадии (партнёрский трек)
     sources_gathered --> analyzed : AnalysisAgent
     analyzed --> dossier_ready : ConclusionAgent
 
@@ -306,6 +308,8 @@ stateDiagram-v2
 ```
 
 Статус только повышается в рамках пайплайна. Понижать нельзя. Добавлять новые статусы нельзя без изменения `CHECK` constraint в `sql/schema.sql`.
+
+`data_partner` — исход Relevance для компаний, которые сами продают датасеты/разметку (партнёрский трек вместо `not_relevant`). Downstream-стадии выбирают `relevant` И `data_partner`. Так как статус только повышается, партнёрская принадлежность дополнительно фиксируется durable-записью `research_records` с `record_type='data_partner_flag'` — по ней downstream-агенты и Аудит определяют трек, а не по текущему статусу.
 
 ### Пайплайн агентов
 
@@ -319,11 +323,12 @@ stateDiagram-v2
     DiscoveryAgent --> RelevanceAgent
     RelevanceAgent --> SourceExpansionAgent
     SourceExpansionAgent --> EnrichmentAgent
-    EnrichmentAgent --> AnalysisAgent
+    EnrichmentAgent --> ContactsAgent
+    ContactsAgent --> AnalysisAgent
     AnalysisAgent --> ConclusionAgent
     ConclusionAgent --> [*]
 
-    DMEnrichAgent : DMEnrichAgent · опционально, вне основного потока
+    ContactsAgent : ContactsAgent · стадия contacts (бывший DMEnrich), между enrichment и analysis
     MonitorAgent : MonitorAgent · опционально, refresh loop
 ```
 
@@ -372,7 +377,9 @@ stateDiagram-v2
 
 **Промпт:** `agents/prompts/relevance_task.md`
 
-**Роль:** Квалифицирует компании: релевантные, нерелевантные, требующие ручной проверки.
+**Роль:** Квалифицирует компании: релевантные, нерелевантные, требующие ручной проверки, дата-партнёры.
+
+> **Phase 1:** добавлен исход `data_partner` — компании, которые сами продают датасеты/разметку, идут в партнёрский трек, а не в `not_relevant`. Relevance ставит статус `data_partner` И пишет durable-запись `research_records` с `record_type='data_partner_flag'`.
 
 **Как работает:**
 1. **Quick Filter** — открывает сайт компании через WebFetch. Вопрос: разрабатывает ли компания собственные AI/ML модели или tooling, а не просто использует чужой API? Признаки: обучение моделей, fine-tuning, ML вакансии, публичные модели, научные публикации.
@@ -413,6 +420,8 @@ stateDiagram-v2
 **Роль:** Запускает детерминированные резолверы для поиска структурированных источников. Не интерпретирует — только находит и сохраняет URL.
 
 **Как работает:** запускает `enrichment.py --domain` — скрипт автоматически находит HuggingFace org, Wikidata, news feeds, social links. Добирает вручную через WebSearch то, чего не нашёл скрипт.
+
+**Резолверы (`scripts/enrichment.py`):** `GithubOrgResolver`, `WaybackResolver`, `ArxivResolver`, `PapersWithCodeResolver`, `WikidataResolver`, `OpenCorporatesResolver` (Phase 3) и финансовые резолверы Phase 1 — `SecEdgarResolver` (Form D → `form_d`), `SbirGrantsResolver` (SBIR.gov → `grant`), `GdeltFundingResolver` (GDELT funding-news → `funding_announcement`). Каждый резолвер возвращает link-dict; `run_enrichment` пишет `research_records` с `record_type` из `link['record_type']` (по умолчанию `source_link`). Активность — в `config/sources.yaml`. Платные стабы (`linkedin`, `crunchbase`, `similarweb`) выключены.
 
 **Пишет в БД:**
 - `research_records`: `record_role='source'`, тип из словаря `record_types`.
@@ -477,13 +486,15 @@ stateDiagram-v2
 
 ---
 
-### DMEnrichAgent
+### ContactsAgent (бывший DMEnrichAgent)
 
-**Промпт:** `agents/prompts/dm_enrich_task.md` — опциональный
+**Промпт:** `agents/prompts/dm_enrich_task.md`
 
-**Роль:** Находит decision makers и контакты для компаний.
+**Роль:** Находит ЛПР (decision makers) и контакты для компаний.
 
-**Как работает:** берёт компании со статусом `relevant` и выше, ищет людей и каналы через несколько источников. Каждый контакт — upsert с дедупликацией `(company_id, contact_type, name)`. Провенанс контакта фиксируется в `research_records` с `record_type='contact_found'`.
+> **Phase 1:** стадия `contacts` поднята в основной поток между enrichment и analysis (раздел «Сотрудничество» в анализе опирается на собранные контакты). Обрабатывает компании со статусом `relevant` И `data_partner`. Каждому человеку проставляется tier 1–3 + короткое обоснование «почему ЛПР по датасетам» текстом в `contacts.info` (отдельных колонок нет). Стадия добавлена в `VALID_STAGES` (`bot/config.py`) и в порядок стадий `pipeline_main_task.md`. Статус компании эта стадия не меняет.
+
+**Как работает:** берёт компании со статусом `relevant`/`data_partner` и выше, ищет людей и каналы через несколько источников. Каждый контакт — upsert с дедупликацией `(company_id, contact_type, name)`. Провенанс контакта фиксируется в `research_records` с `record_type='contact_found'`.
 
 **Источники данных:**
 - `scripts/dm_apollo.py` — Apollo API: email, должность.
@@ -664,7 +675,9 @@ stateDiagram-v2
 
 **Категории:** `discovery`, `people`, `sources`, `monitoring`, `financials`, `crypto`.
 
-**Текущие типы:** `github_repo`, `hf_org`, `hf_model`, `job_posting`, `papers_with_code`, `funding_announcement`, `kaggle_sponsor`, `scale_customer`, `wandb_run`, `directory_listing`, `contact_found`, `source_link`, `news`, `product_update`, `foundation_model`, `proprietary_ai`, `proprietary_models`.
+**Текущие типы:** `github_repo`, `hf_org`, `hf_model`, `job_posting`, `papers_with_code`, `funding_announcement`, `kaggle_sponsor`, `scale_customer`, `wandb_run`, `directory_listing`, `contact_found`, `source_link`, `news`, `product_update`, `foundation_model`, `proprietary_ai`, `proprietary_models`, `form_d`, `grant`, `quote`, `job_count`, `market_quote`, `arxiv_paper`, `data_partner_flag`.
+
+> **Phase 1 (agent upgrade)** добавил: `form_d` (SEC EDGAR Form D), `grant` (SBIR/NIH/CORDIS гранты), `quote`/`job_count`/`market_quote` (финансовые сигналы, пока резолверами не пишутся), `arxiv_paper` (arXiv), `data_partner_flag` (durable-флаг партнёрского трека). Категории: `financials` для form_d/grant/quote/job_count/market_quote, `sources` для arxiv_paper, `discovery` для data_partner_flag.
 
 ### `run_logs`
 
