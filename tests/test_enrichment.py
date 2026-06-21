@@ -11,6 +11,7 @@ from enrichment import (
     ArxivResolver,
     GdeltFundingResolver,
     GithubOrgResolver,
+    MarketDataResolver,
     OpenCorporatesResolver,
     PapersWithCodeResolver,
     SbirGrantsResolver,
@@ -334,6 +335,37 @@ def test_gdelt_funding_resolver_empty(respx_mock):
     respx_mock.get("/api/v2/doc/doc").mock(return_value=Response(200, json={"articles": []}))
     with HttpClient(rate_limit_rps=0) as client:
         assert GdeltFundingResolver().resolve(_NAMED_COMPANY, MagicMock(), client) == []
+
+
+_STOOQ_CSV = (
+    "Symbol,Date,Time,Open,High,Low,Close,Volume\n"
+    "AAPL.US,2026-06-20,22:00:02,200.0,205.0,199.0,203.5,12345\n"
+)
+
+
+@pytest.mark.respx(base_url="https://stooq.com")
+def test_market_data_resolver_with_ticker(respx_mock):
+    respx_mock.get("/q/l/").mock(return_value=Response(200, text=_STOOQ_CSV))
+    store = MagicMock()
+    store.get_research_records_for_company.return_value = [
+        {"payload": {"ticker": "AAPL.US"}},
+    ]
+    with HttpClient(rate_limit_rps=0) as client:
+        link = MarketDataResolver().resolve(_NAMED_COMPANY, store, client)
+    assert link["record_type"] == "market_quote"
+    assert link["kind"] == "market_data"
+    assert link["ticker"] == "AAPL.US"
+    assert link["close"] == "203.5"
+    assert link["quote_date"] == "2026-06-20"
+    assert "stooq.com" in link["url"]
+
+
+def test_market_data_resolver_no_ticker_returns_none():
+    store = MagicMock()
+    store.get_research_records_for_company.return_value = [
+        {"payload": {"kind": "wayback"}},
+    ]
+    assert MarketDataResolver().resolve(_NAMED_COMPANY, store, MagicMock()) is None
 
 
 def test_run_enrichment_honours_per_link_record_type():

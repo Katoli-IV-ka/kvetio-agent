@@ -454,6 +454,63 @@ class GdeltFundingResolver:
         return links
 
 
+STOOQ_QUOTE_CSV = "https://stooq.com/q/l/"
+
+
+def _ticker_from_records(company: dict, store: SupabaseStore) -> str | None:
+    """Find a stock ticker in the company's stored research_records payloads.
+
+    Tickers come from earlier resolvers (e.g. Wikidata P249) or manual enrichment;
+    they live under payload['ticker']. No ticker → the company is treated as private.
+    """
+    for rec in store.get_research_records_for_company(company.get("domain") or ""):
+        payload = rec.get("payload") or {}
+        ticker = payload.get("ticker")
+        if ticker:
+            return str(ticker)
+    return None
+
+
+class MarketDataResolver:
+    """Stooq public CSV quote for a listed company — optional market signal (financials).
+
+    Only acts when a ticker is already known (public companies); otherwise no-op. The
+    spec marks market data as optional (Phase 3), so this is safe to leave enabled.
+    """
+
+    kind = "market_data"
+    enabled = True
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> dict | None:
+        ticker = _ticker_from_records(company, store)
+        if not ticker:
+            return None
+        csv_text = client.get_text(
+            STOOQ_QUOTE_CSV,
+            params={"s": ticker, "f": "sd2t2ohlcv", "h": "", "e": "csv"},
+        )
+        lines = [ln for ln in csv_text.splitlines() if ln.strip()]
+        if len(lines) < 2:
+            return None
+        header = [h.strip().lower() for h in lines[0].split(",")]
+        row = lines[1].split(",")
+        fields = dict(zip(header, [c.strip() for c in row]))
+        close = fields.get("close")
+        if not close or close in {"N/D", "0"}:
+            return None
+        return {
+            "company_id": company["id"],
+            "kind": self.kind,
+            "record_type": "market_quote",
+            "url": f"https://stooq.com/q/?s={ticker}",
+            "source": "stooq_resolver",
+            "confidence": "medium",
+            "ticker": ticker,
+            "close": close,
+            "quote_date": fields.get("date"),
+        }
+
+
 # Стабы платных источников (tier C). Зарегистрированы, но выключены.
 LINKEDIN_STUB = _DisabledStub("linkedin")
 CRUNCHBASE_STUB = _DisabledStub("crunchbase")
@@ -516,6 +573,7 @@ RESOLVERS: list[Resolver] = [
     SecEdgarResolver(),
     SbirGrantsResolver(),
     GdeltFundingResolver(),
+    MarketDataResolver(),
     LINKEDIN_STUB,
     CRUNCHBASE_STUB,
     SIMILARWEB_STUB,
