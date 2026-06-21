@@ -8,8 +8,18 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bot.config import RunConfig
+from bot.config import VALID_STAGES, RunConfig
 from bot.routine import config_to_text, fire
+
+
+def test_contacts_is_a_recognized_stage() -> None:
+    """Phase 1 promotes Contacts into the main pipeline flow."""
+    assert "contacts" in VALID_STAGES
+
+
+def test_verification_is_a_recognized_stage() -> None:
+    """Phase 2 adds the Verification gate before Conclusions."""
+    assert "verification" in VALID_STAGES
 
 
 # ── config_to_text ────────────────────────────────────────────────────────────

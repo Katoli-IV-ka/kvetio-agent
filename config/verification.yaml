@@ -1,0 +1,24 @@
+# Verification stage thresholds (Phase 2, agent upgrade).
+# Freshness gates live here, NOT in prompts — easy to tune without touching agents.
+# See docs/superpowers/specs/2026-06-21-agent-upgrade-design.md §7.
+
+freshness:
+  # News: an event older than this is stale (drops out of the dossier headline).
+  news_event_months: 12
+  # News priority window: events within this are "current".
+  news_priority_months: 6
+  # "Money now" signal: a round/grant older than this is no longer a current signal.
+  funding_signal_months: 18
+
+# Record types treated as financial "money now" signals for freshness purposes.
+financial_record_types:
+  - form_d
+  - grant
+  - funding_announcement
+  - quote
+  - market_quote
+
+# Link-liveness: a URL is "dead" (→ unverified) when it 404s, redirects to the
+# site root, or only survives on web.archive.org.
+liveness:
+  dead_if_only_wayback: true

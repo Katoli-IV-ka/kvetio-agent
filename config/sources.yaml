@@ -89,17 +89,42 @@ sources:
     default_limit: 50
 
   papers_with_code:
-    enabled: false
+    enabled: true
     tier: A
     rate_limit_rps: 1
+    cost: free
+    description: "Papers with Code — implementation-backed research по имени компании (продуктовая секция)"
+    script: scripts/enrichment.py
+    max_results: 5
 
   techcrunch_rss:
     enabled: false
     tier: B
 
   arxiv:
-    enabled: false
-    tier: C
+    enabled: true
+    tier: B
+    rate_limit_rps: 1
+    cost: free
+    description: "arXiv API — недавние публикации по имени компании (R&D/технологии продукта). Name-match слабый → confidence low"
+    script: scripts/enrichment.py
+    max_results: 5
+
+  wikidata:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 2
+    description: "Wikidata — дата основания, штаб-квартира, руководство, размер (секция «О компании»)"
+    script: scripts/enrichment.py
+
+  opencorporates:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 1
+    description: "OpenCorporates — юрлицо, юрисдикция, дата регистрации (секция «О компании»). Best-effort: анонимный доступ лимитирован"
+    script: scripts/enrichment.py
 
   wayback:
     enabled: true
@@ -109,22 +134,58 @@ sources:
     script: scripts/enrichment.py
 
   sec_edgar:
-    enabled: false
+    enabled: true
     tier: A
     cost: free
-    description: "SEC EDGAR — Form D (US private funding), CIK lookup (резолвер позже)"
+    rate_limit_rps: 1
+    description: "SEC EDGAR full-text search — Form D (US private funding). record_type=form_d"
+    script: scripts/enrichment.py
+    max_results: 5
 
   gdelt:
-    enabled: false
+    enabled: true
     tier: B
     cost: free
-    description: "GDELT — новостной граф, дедуп инфоповодов (резолвер позже)"
+    rate_limit_rps: 1
+    description: "GDELT DOC API — funding-related news по имени компании. record_type=funding_announcement, confidence low"
+    script: scripts/enrichment.py
+    max_results: 5
 
   gov_grants:
-    enabled: false
+    enabled: true
     tier: B
     cost: free
-    description: "NIH RePORTER + EU CORDIS — гранты (резолвер позже)"
+    rate_limit_rps: 1
+    description: "SBIR.gov awards — государственные гранты (US). record_type=grant"
+    script: scripts/enrichment.py
+    max_results: 5
+
+  # ── NewsAgent sources (free/public news) ────────────────────────────
+  google_news:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 1
+    description: "Google News RSS — запросы по сегментам (discovery) и по имени/домену (мониторинг). record_type=news"
+    script: scripts/news.py
+    max_results: 20
+
+  hn:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 1
+    description: "Hacker News (Algolia API) — Show HN / анонсы моделей и AI-продуктов. record_type=news"
+    script: scripts/news.py
+    max_results: 20
+
+  news_rss:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 1
+    description: "Курируемый RSS-набор (TechCrunch, VentureBeat, EU-Startups). Список в config/news_sources.yaml. record_type=news"
+    script: scripts/news.py
 
   # ── Стабы на будущее (платные, tier C) ──────────────────────────
   linkedin:

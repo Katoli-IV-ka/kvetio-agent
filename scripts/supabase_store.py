@@ -135,6 +135,37 @@ class SupabaseStore:
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("domain", domain).execute()
 
+    # ── Refresh flag (NewsAgent) ───────────────────────────────────────────────
+
+    def set_needs_refresh(self, domain: str) -> None:
+        """Flag a company for an incremental dossier rebuild (strong news signal).
+
+        Does NOT touch status — status only moves forward. The refresh branch of
+        AnalysisAgent/ConclusionAgent picks up the flag and clears it afterwards.
+        """
+        self._client.table("companies").update({
+            "needs_refresh": datetime.utcnow().isoformat(),
+        }).eq("domain", domain).execute()
+
+    def clear_needs_refresh(self, domain: str) -> None:
+        """Clear the refresh flag once the dossier has been rebuilt."""
+        self._client.table("companies").update({
+            "needs_refresh": None,
+        }).eq("domain", domain).execute()
+
+    def list_companies_needing_refresh(self, limit: int = 30) -> list[dict]:
+        """dossier_ready companies with a pending news-driven refresh, oldest flag first."""
+        res = (
+            self._client.table("companies")
+            .select("id, domain, name, icp_segment, status, needs_refresh")
+            .eq("status", "dossier_ready")
+            .not_.is_("needs_refresh", "null")
+            .order("needs_refresh", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+
     # ── Research records ─────────────────────────────────────────────────────
 
     def resolve_company_id(
@@ -171,11 +202,13 @@ class SupabaseStore:
         company_id: str | None = None,
         domain: str | None = None,
         run_id: str | None = None,
+        dedupe_key: str | None = None,
     ) -> bool:
         """Insert or ignore a research record. Returns True if the row is new.
 
         Pass either company_id (preferred) or domain (resolved via DB lookup).
-        Deduplication key: sha1(company_id:record_type:url).
+        Deduplication key defaults to sha1(company_id:record_type:url); callers
+        that dedup by event (e.g. NewsAgent) may pass an explicit `dedupe_key`.
         """
         cid = self.resolve_company_id(
             company_id=company_id,
@@ -186,7 +219,7 @@ class SupabaseStore:
                 f"upsert_research_record: cannot resolve company for "
                 f"domain={domain or entry.domain!r}"
             )
-        dedupe = self._dedupe_key(
+        dedupe = dedupe_key or self._dedupe_key(
             cid, entry.record_type, entry.url,
             fallback=entry.observed_at.isoformat(),
         )
@@ -278,6 +311,28 @@ class SupabaseStore:
             .execute()
         )
         return res.data or []
+
+    def set_record_verification(self, record_id: str, status: str) -> None:
+        """Stamp a research_record with its Verification result (verified/unverified/stale).
+
+        Stored in payload.verification so no schema change is needed; the Verification
+        stage and Conclusions read it to decide what becomes a dossier fact.
+        """
+        res = (
+            self._client.table("research_records")
+            .select("payload")
+            .eq("id", record_id)
+            .limit(1)
+            .execute()
+        )
+        payload = (res.data[0].get("payload") if res.data else None) or {}
+        payload["verification"] = status
+        (
+            self._client.table("research_records")
+            .update({"payload": payload})
+            .eq("id", record_id)
+            .execute()
+        )
 
     # ── Run logs ─────────────────────────────────────────────────────────────
 

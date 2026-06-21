@@ -65,6 +65,16 @@ def config_to_text(cfg: RunConfig) -> str:
         ]
         return "; ".join(parts)
 
+    if cfg.run_mode == "news_lead":
+        parts = [
+            "mode=news_lead",
+            f"domain={cfg.domain}",
+            f"stages={stages}",
+            f"dry_run={'true' if cfg.dry_run else 'false'}",
+            f"notion_sync={'true' if cfg.notion_sync else 'false'}",
+        ]
+        return "; ".join(parts)
+
     raise ValueError(f"unsupported run_mode: {cfg.run_mode}")
 
 

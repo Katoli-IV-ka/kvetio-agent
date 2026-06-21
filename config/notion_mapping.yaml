@@ -7,7 +7,7 @@ companies:
   notion_database_id_env: NOTION_COMPANIES_DB_ID
   db_table: companies
   db_key: domain
-  db_status_filter: [relevant, sources_gathered, analyzed, dossier_ready]
+  db_status_filter: [relevant, sources_gathered, analyzed, dossier_ready, data_partner]
   fields:
     - { db_column: name,         notion_property: "Company Name", notion_type: title,     direction: forward }
     - { db_column: website,      notion_property: "Website",      notion_type: url,       direction: forward }
@@ -40,4 +40,5 @@ dossiers:
     - { db_column: icp_fit,              notion_property: "ICP fit",             notion_type: select,    direction: forward }
     - { db_column: product_category,     notion_property: "Product category",    notion_type: rich_text, direction: forward }
     - { db_column: last_news_date,       notion_property: "Last news date",      notion_type: date,      direction: forward }
+    - { db_column: funding_date,         notion_property: "Last funding date",   notion_type: date,      direction: forward }
     - { db_column: summary_md,           notion_property: "Summary",             notion_type: rich_text, direction: forward }

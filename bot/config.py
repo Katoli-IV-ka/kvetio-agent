@@ -21,7 +21,8 @@ from typing import Any, Literal
 
 # Valid pipeline stages
 VALID_STAGES = frozenset(
-    ["discovery", "relevance", "scoring", "enrichment", "analysis", "conclusions"]
+    ["discovery", "relevance", "scoring", "enrichment", "contacts",
+     "analysis", "verification", "conclusions"]
 )
 ENRICH_DEFAULT_STAGES = [
     "relevance",
@@ -31,6 +32,10 @@ ENRICH_DEFAULT_STAGES = [
     "conclusions",
 ]
 ENRICH_VALID_STAGES = frozenset(ENRICH_DEFAULT_STAGES)
+# news_lead = enrich_existing scoped to one domain (discovery already done by
+# NewsAgent). Same downstream stages, immutable order from VALID_STAGES.
+NEWS_LEAD_DEFAULT_STAGES = list(ENRICH_DEFAULT_STAGES)
+NEWS_LEAD_VALID_STAGES = ENRICH_VALID_STAGES
 VALID_SEGMENTS = frozenset(
     [
         "medical-imaging",
@@ -46,7 +51,9 @@ DEFAULT_LIMIT_PER_SEGMENT = 5
 
 RunStatus = Literal["draft", "queued", "running", "succeeded", "failed", "cancelled"]
 TriggerType = Literal["manual", "scheduled", "api"]
-RunMode = Literal["icp_segment", "single_company", "startup_research", "enrich_existing"]
+RunMode = Literal[
+    "icp_segment", "single_company", "startup_research", "enrich_existing", "news_lead"
+]
 
 
 @dataclass
@@ -63,6 +70,7 @@ class RunConfig:
     company_url: str = ""
     startup_description: str = ""
     focus_areas: list[str] = field(default_factory=list)
+    domain: str = ""              # required for news_lead (single-company target)
 
     def validate(self) -> None:
         if self.run_mode == "icp_segment":
@@ -85,6 +93,9 @@ class RunConfig:
                 raise ValueError(f"unknown segments: {unknown}")
             if self.limit_per_segment < 1 or self.limit_per_segment > 200:
                 raise ValueError("limit_per_segment must be between 1 and 200")
+        elif self.run_mode == "news_lead":
+            if not self.domain:
+                raise ValueError("domain is required for news_lead mode")
         else:
             raise ValueError(f"invalid run_mode: {self.run_mode}")
 
@@ -98,6 +109,12 @@ class RunConfig:
             if not isinstance(self.stages, list) or not self.stages:
                 raise ValueError("stages must be a non-empty list")
             unknown_stages = set(self.stages) - ENRICH_VALID_STAGES
+            if unknown_stages:
+                raise ValueError(f"unknown stages: {unknown_stages}")
+        if self.run_mode == "news_lead":
+            if not isinstance(self.stages, list) or not self.stages:
+                raise ValueError("stages must be a non-empty list")
+            unknown_stages = set(self.stages) - NEWS_LEAD_VALID_STAGES
             if unknown_stages:
                 raise ValueError(f"unknown stages: {unknown_stages}")
         if self.trigger_type not in ("manual", "scheduled", "api"):
@@ -117,6 +134,7 @@ class RunConfig:
             "company_url": self.company_url,
             "startup_description": self.startup_description,
             "focus_areas": self.focus_areas,
+            "domain": self.domain,
         }
 
     @classmethod
@@ -134,4 +152,5 @@ class RunConfig:
             company_url=data.get("company_url", ""),
             startup_description=data.get("startup_description", ""),
             focus_areas=data.get("focus_areas", []),
+            domain=data.get("domain", ""),
         )

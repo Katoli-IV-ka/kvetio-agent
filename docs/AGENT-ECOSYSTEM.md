@@ -40,7 +40,10 @@ Status meanings:
 | `analyzed` | Structured interpretation exists |
 | `dossier_ready` | Final dossier exists and can be shown in Notion |
 
-Monitor is a research refresh loop, not a separate status machine.
+Monitor is a technical-signal research refresh loop, not a separate status
+machine. NewsAgent owns news/funding signals and can flag `companies.needs_refresh`
+(a non-status marker) to trigger an incremental dossier rebuild — status itself
+still only moves forward.
 
 ## Research Record Model
 
@@ -79,7 +82,8 @@ Latest evidence display is derived from `research_records`, usually by newest
 | AnalysisAgent | `agents/prompts/analysis_task.md` | Writes section analysis and provenance links |
 | ConclusionAgent | `agents/prompts/conclusions_task.md` | Writes dossiers and runs Notion sync |
 | DMEnrichAgent | `agents/prompts/dm_enrich_task.md` | Optional contact discovery |
-| MonitorAgent | `agents/prompts/monitor_task.md` | Optional refresh of known companies |
+| NewsAgent | `agents/prompts/news_task.md` | Scheduled news-driven discovery + monitoring; writes `news` research records, flags `needs_refresh` |
+| MonitorAgent | `agents/prompts/monitor_task.md` | Optional refresh of known companies — **technical** signals only (news/funding owned by NewsAgent) |
 
 ## Python Tools
 
@@ -88,6 +92,7 @@ Latest evidence display is derived from `research_records`, usually by newest
 | Source adapters | `github.py`, `huggingface.py`, `yc_browser.py`, `greenhouse.py`, `lever.py` |
 | Core storage | `supabase_store.py`, `models.py`, `normalize.py` |
 | Analysis and dossiers | `enrichment.py`, `dossier_store.py` |
+| News | `news.py` (GDELT / Google News RSS / HN / RSS; classify, dedup, write `news` records) |
 | Contacts | `contacts_store.py`, `contact_enricher.py`, `dm_*.py` |
 | Notion | `notion_sync.py` |
 | Telegram | `notify.py`, `telegram_routines.py`, `bot/*.py` |

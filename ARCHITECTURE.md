@@ -43,6 +43,7 @@
 - [AnalysisAgent](#analysisagent)
 - [ConclusionAgent](#conclusionagent)
 - [DMEnrichAgent](#dmenrichagent)
+- [NewsAgent](#newsagent)
 - [MonitorAgent](#monitoragent)
 
 </details>
@@ -155,8 +156,13 @@ flowchart LR
 | `single_company` | Полный pipeline для одной компании | `company_name` | `full` |
 | `startup_research` | Исследование по свободному описанию | `description` | `full` |
 | `enrich_existing` | Pipeline без discovery для компаний уже в БД | — | `relevance, source_expansion, enrichment, analysis, conclusions` |
+| `news_lead` | Точечный pipeline (без discovery) для одной компании, заведённой NewsAgent из новости | `domain` | `relevance, source_expansion, enrichment, analysis, conclusions` |
 
 Параметры и дефолты каждого режима — в [Параметрах запуска Routine](#параметры-запуска-routine).
+
+`news_lead` — это `enrich_existing`, суженный до одной компании по `domain`:
+discovery пропущена (NewsAgent уже сыграл её роль), RelevanceAgent остаётся
+финальным ICP-гейтом. Определён в `bot/scenarios.py` и `bot/config.py`.
 
 ### Деплой Railway
 
@@ -260,7 +266,8 @@ mode=icp_segment; segments=medical-imaging,robotics-ai; limit=5; stages=full; dr
 
 | Параметр | Значения | По умолчанию |
 |---|---|---|
-| `mode` | `icp_segment`, `single_company`, `startup_research`, `enrich_existing` | `icp_segment` |
+| `mode` | `icp_segment`, `single_company`, `startup_research`, `enrich_existing`, `news_lead` | `icp_segment` |
+| `domain` | один домен (только для `news_lead`) | — |
 | `segments` | CSV из валидных сегментов | все из `config/icp.yaml` |
 | `limit` / `limit_per_segment` | 1–200 | `5` (для `enrich_existing` — `30`) |
 | `stages` | `full` или CSV стадий | `full` |
@@ -292,10 +299,12 @@ stateDiagram-v2
     discovered --> relevant : RelevanceAgent
     discovered --> not_relevant : RelevanceAgent
     discovered --> manual_review : RelevanceAgent
+    discovered --> data_partner : RelevanceAgent (дата-провайдер)
 
     manual_review --> relevant : ручная переквалификация
 
     relevant --> sources_gathered : SourceExpansionAgent / EnrichmentAgent
+    data_partner --> sources_gathered : downstream-стадии (партнёрский трек)
     sources_gathered --> analyzed : AnalysisAgent
     analyzed --> dossier_ready : ConclusionAgent
 
@@ -306,6 +315,8 @@ stateDiagram-v2
 ```
 
 Статус только повышается в рамках пайплайна. Понижать нельзя. Добавлять новые статусы нельзя без изменения `CHECK` constraint в `sql/schema.sql`.
+
+`data_partner` — исход Relevance для компаний, которые сами продают датасеты/разметку (партнёрский трек вместо `not_relevant`). Downstream-стадии выбирают `relevant` И `data_partner`. Так как статус только повышается, партнёрская принадлежность дополнительно фиксируется durable-записью `research_records` с `record_type='data_partner_flag'` — по ней downstream-агенты и Аудит определяют трек, а не по текущему статусу.
 
 ### Пайплайн агентов
 
@@ -319,11 +330,13 @@ stateDiagram-v2
     DiscoveryAgent --> RelevanceAgent
     RelevanceAgent --> SourceExpansionAgent
     SourceExpansionAgent --> EnrichmentAgent
-    EnrichmentAgent --> AnalysisAgent
-    AnalysisAgent --> ConclusionAgent
+    EnrichmentAgent --> ContactsAgent
+    ContactsAgent --> AnalysisAgent
+    AnalysisAgent --> VerificationAgent
+    VerificationAgent --> ConclusionAgent
     ConclusionAgent --> [*]
 
-    DMEnrichAgent : DMEnrichAgent · опционально, вне основного потока
+    ContactsAgent : ContactsAgent · стадия contacts (бывший DMEnrich), между enrichment и analysis
     MonitorAgent : MonitorAgent · опционально, refresh loop
 ```
 
@@ -372,7 +385,9 @@ stateDiagram-v2
 
 **Промпт:** `agents/prompts/relevance_task.md`
 
-**Роль:** Квалифицирует компании: релевантные, нерелевантные, требующие ручной проверки.
+**Роль:** Квалифицирует компании: релевантные, нерелевантные, требующие ручной проверки, дата-партнёры.
+
+> **Phase 1:** добавлен исход `data_partner` — компании, которые сами продают датасеты/разметку, идут в партнёрский трек, а не в `not_relevant`. Relevance ставит статус `data_partner` И пишет durable-запись `research_records` с `record_type='data_partner_flag'`.
 
 **Как работает:**
 1. **Quick Filter** — открывает сайт компании через WebFetch. Вопрос: разрабатывает ли компания собственные AI/ML модели или tooling, а не просто использует чужой API? Признаки: обучение моделей, fine-tuning, ML вакансии, публичные модели, научные публикации.
@@ -414,6 +429,8 @@ stateDiagram-v2
 
 **Как работает:** запускает `enrichment.py --domain` — скрипт автоматически находит HuggingFace org, Wikidata, news feeds, social links. Добирает вручную через WebSearch то, чего не нашёл скрипт.
 
+**Резолверы (`scripts/enrichment.py`):** `GithubOrgResolver`, `WaybackResolver`, `ArxivResolver`, `PapersWithCodeResolver`, `WikidataResolver`, `OpenCorporatesResolver` (Phase 3) и финансовые резолверы Phase 1 — `SecEdgarResolver` (Form D → `form_d`), `SbirGrantsResolver` (SBIR.gov → `grant`), `GdeltFundingResolver` (GDELT funding-news → `funding_announcement`), `MarketDataResolver` (Stooq CSV → `market_quote`, только если известен тикер; Phase 3, опционально). Каждый резолвер возвращает link-dict; `run_enrichment` пишет `research_records` с `record_type` из `link['record_type']` (по умолчанию `source_link`). Активность резолвера определяется его атрибутом `enabled`; `config/sources.yaml` — документирующий реестр. Платные стабы (`linkedin`, `crunchbase`, `similarweb`) выключены.
+
 **Пишет в БД:**
 - `research_records`: `record_role='source'`, тип из словаря `record_types`.
 - `companies`: `status='sources_gathered'`.
@@ -452,6 +469,29 @@ stateDiagram-v2
 
 ---
 
+### VerificationAgent
+
+**Промпт:** `agents/prompts/verification_task.md`
+
+**Роль:** Гейт качества между Analysis и Conclusions (Phase 2). Отсекает несвежие и
+неподтверждённые данные, чтобы в досье как факт попадало только проверенное. Статус
+компании не меняет.
+
+**Как работает:** для компаний `analyzed` запускает `scripts/verification.py --domain`:
+- **свежесть** — пороги в `config/verification.yaml` (новость > 12 мес или финансовый
+  сигнал > 18 мес → `stale`);
+- **живость ссылки** — HEAD-запрос; 404 / только-Wayback → `unverified`.
+Каждый `research_record` получает `payload.verification = verified | unverified | stale`
+(через `SupabaseStore.set_record_verification`, без новой колонки). Мягкую проверку
+(claim↔fact, match по имени) делает агент по промпту.
+
+**Стадия:** `verification` в `VALID_STAGES` (`bot/config.py`), порядок —
+между `analysis` и `conclusions` (`pipeline_main_task.md`).
+
+**Скрипты:** `scripts/verification.py`.
+
+---
+
 ### ConclusionAgent
 
 **Промпт:** `agents/prompts/conclusions_task.md`
@@ -477,13 +517,15 @@ stateDiagram-v2
 
 ---
 
-### DMEnrichAgent
+### ContactsAgent (бывший DMEnrichAgent)
 
-**Промпт:** `agents/prompts/dm_enrich_task.md` — опциональный
+**Промпт:** `agents/prompts/dm_enrich_task.md`
 
-**Роль:** Находит decision makers и контакты для компаний.
+**Роль:** Находит ЛПР (decision makers) и контакты для компаний.
 
-**Как работает:** берёт компании со статусом `relevant` и выше, ищет людей и каналы через несколько источников. Каждый контакт — upsert с дедупликацией `(company_id, contact_type, name)`. Провенанс контакта фиксируется в `research_records` с `record_type='contact_found'`.
+> **Phase 1:** стадия `contacts` поднята в основной поток между enrichment и analysis (раздел «Сотрудничество» в анализе опирается на собранные контакты). Обрабатывает компании со статусом `relevant` И `data_partner`. Каждому человеку проставляется tier 1–3 + короткое обоснование «почему ЛПР по датасетам» текстом в `contacts.info` (отдельных колонок нет). Стадия добавлена в `VALID_STAGES` (`bot/config.py`) и в порядок стадий `pipeline_main_task.md`. Статус компании эта стадия не меняет.
+
+**Как работает:** берёт компании со статусом `relevant`/`data_partner` и выше, ищет людей и каналы через несколько источников. Каждый контакт — upsert с дедупликацией `(company_id, contact_type, name)`. Провенанс контакта фиксируется в `research_records` с `record_type='contact_found'`.
 
 **Источники данных:**
 - `scripts/dm_apollo.py` — Apollo API: email, должность.
@@ -503,13 +545,45 @@ stateDiagram-v2
 
 ---
 
+### NewsAgent
+
+**Промпт:** `agents/prompts/news_task.md` — отдельный планируемый агент (scheduled Routine).
+
+**Роль:** Систематически мониторит публичные новостные источники, находит сигналы покупательского намерения и (1) заводит новую релевантную компанию в пайплайн как альтернативный Discovery, (2) добавляет новостные сигналы и помечает на обновление компании, уже в базе. Не оркеструет пайплайн и не интерпретирует данные.
+
+**Границы:** владеет медиа/пресс/RSS/новостными агрегаторами (GDELT, Google News, HN, RSS) и funding-новостями. Технические сигналы и оркестрация — не его (см. MonitorAgent / PipelineAgent). Только бесплатные/публичные источники.
+
+**Таксономия (в `payload`):** сильные сигналы (`funding_round`, `model_launch`, `stealth_exit`, `data_need`, `hiring_surge`) → кандидат на автозапуск пайплайна при прохождении грубого ICP-гейта; мягкие (`partnership`, `product_update`, `pr_mention`, `leadership_change`, `negative`) → только `research_record`.
+
+**Как работает:**
+- *Discovery-поток:* сегментный скан (`scripts/news.py --segment`), entity resolution (имя→домен), грубый ICP-гейт; при прохождении — `upsert companies (status='discovered')` + первичный `research_record` + (этап rollout 4) `/fire` в режиме `news_lead`. Финальную квалификацию делает RelevanceAgent.
+- *Monitoring-поток:* per-company скан (`scripts/news.py --domain`); мягкий сигнал → `research_record` (`record_role='monitor'`); сильный сигнал на `dossier_ready`-компании → ещё и флаг `needs_refresh` (инкрементальное обновление досье).
+
+**Дедуп по инфоповоду:** `dedupe_key = sha1(domain|event_type|неделя)`; один инфоповод из многих изданий схлопывается в одну строку, остальные ссылки — в `payload.alt_urls`.
+
+**Пишет в БД:**
+- `research_records`: `record_type='news'`, `agent='news'`, `record_role` = `primary` (discovery) или `monitor` (monitoring); таксономия в `payload`.
+- `companies`: новые `status='discovered'` (discovery); `needs_refresh` (сильный сигнал известной `dossier_ready`-компании).
+
+**Читает из БД:** `companies` (для monitoring-выборки по имени/домену).
+
+**Скрипты:** `scripts/news.py` (резолверы GDELT/Google News RSS/HN/RSS, классификация, дедуп, запись). Конфиг — `config/news_sources.yaml` (правится человеком, как `icp.yaml`). Источники включены в `config/sources.yaml` (`google_news`, `hn`, `news_rss`, `gdelt`).
+
+**Расписание:** отдельный scheduled Routine (по аналогии с `notion-sync-cron`), по умолчанию раз в день, с ротацией сегментов. На сильный гейтнутый лид — карточка в Telegram через `notify.py`.
+
+**Поэтапный выкат:** (1) observe-only — только сигналы известным компаниям; (2) discovery без авто-fire; (3) refresh-ветка (`needs_refresh`); (4) авто-fire `news_lead` + ежедневное расписание. В `--dry-run` записи и автозапуск `news_lead` запрещены.
+
+---
+
 ### MonitorAgent
 
 **Промпт:** `agents/prompts/monitor_task.md` — опциональный
 
-**Роль:** Периодически проверяет уже известные компании на новые сигналы. Не отдельный статусный flow — только refresh loop.
+**Роль:** Периодически проверяет уже известные компании на новые **технические** сигналы. Не отдельный статусный flow — только refresh loop.
 
-**Как работает:** берёт давно не обновлявшиеся компании (`ORDER BY updated_at ASC`). Проверяет: новые модели на HuggingFace, ML-вакансии, новости о финансировании, изменения продукта. Каждый новый факт → `research_records` с `record_role='monitor'`. Статус не меняет, если сигнал только информационный.
+> **Сужен NewsAgent'ом.** Monitor владеет только техническими сигналами: новые модели HF, GitHub-активность, ML/data-вакансии, изменения сайта/продукта. Новости и funding-новости передаются NewsAgent — дублирования нет.
+
+**Как работает:** берёт давно не обновлявшиеся компании (`ORDER BY updated_at ASC`). Проверяет технические сигналы. Каждый новый факт → `research_records` с `record_role='monitor'`. Статус не меняет, если сигнал только информационный.
 
 **Пишет в БД:**
 - `research_records`: `record_role='monitor'`.
@@ -565,6 +639,7 @@ stateDiagram-v2
 | `status` | TEXT | Текущая стадия (см. status flow) |
 | `icp_segment` | TEXT | Сегмент ICP из `config/icp.yaml` |
 | `description` | TEXT | Краткое описание, заполняется на relevance |
+| `needs_refresh` | TIMESTAMPTZ | Флаг NewsAgent: у `dossier_ready`-компании появился сильный новостной сигнал → досье пересобрать инкрементально. НЕ статус (статус только повышается). Частичный индекс `idx_companies_needs_refresh`. Гасится ConclusionAgent после refresh |
 
 ### `research_records`
 
@@ -664,7 +739,9 @@ stateDiagram-v2
 
 **Категории:** `discovery`, `people`, `sources`, `monitoring`, `financials`, `crypto`.
 
-**Текущие типы:** `github_repo`, `hf_org`, `hf_model`, `job_posting`, `papers_with_code`, `funding_announcement`, `kaggle_sponsor`, `scale_customer`, `wandb_run`, `directory_listing`, `contact_found`, `source_link`, `news`, `product_update`, `foundation_model`, `proprietary_ai`, `proprietary_models`.
+**Текущие типы:** `github_repo`, `hf_org`, `hf_model`, `job_posting`, `papers_with_code`, `funding_announcement`, `kaggle_sponsor`, `scale_customer`, `wandb_run`, `directory_listing`, `contact_found`, `source_link`, `news`, `product_update`, `foundation_model`, `proprietary_ai`, `proprietary_models`, `form_d`, `grant`, `quote`, `job_count`, `market_quote`, `arxiv_paper`, `data_partner_flag`.
+
+> **Phase 1 (agent upgrade)** добавил: `form_d` (SEC EDGAR Form D), `grant` (SBIR/NIH/CORDIS гранты), `quote`/`job_count`/`market_quote` (финансовые сигналы, пока резолверами не пишутся), `arxiv_paper` (arXiv), `data_partner_flag` (durable-флаг партнёрского трека). Категории: `financials` для form_d/grant/quote/job_count/market_quote, `sources` для arxiv_paper, `discovery` для data_partner_flag.
 
 ### `run_logs`
 
@@ -700,9 +777,9 @@ flowchart LR
 
 | Сущность | Синхронизируемые поля | Фильтр |
 |---|---|---|
-| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment` | `status IN (relevant, sources_gathered, analyzed, dossier_ready)` |
+| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment` | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
 | `contacts` | `name`, `contact_type`, `info`, `email`, `phone`, `linkedin_url`, `facebook_url`, `instagram_url`, relation к компании | все |
-| `dossiers` | `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`, `summary_md` | все |
+| `dossiers` | `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`, `funding_date`, `summary_md` | все |
 
 `discovered` и `not_relevant` компании в Notion не попадают — только квалифицированные.
 

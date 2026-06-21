@@ -85,3 +85,36 @@ class HttpClient:
             return {}
         resp.raise_for_status()
         return resp.json()
+
+    def head_status(self, url: str) -> int:
+        """Issue a HEAD request and return the (final) status code.
+
+        Used by the Verification stage for link-liveness. Returns 0 on transport
+        error so callers can treat an unreachable URL as not-live. Follows redirects
+        (the client is configured with follow_redirects=True).
+        """
+        self._bucket.wait()
+        try:
+            resp = self._client.head(url)
+        except httpx.TransportError:
+            return 0
+        return resp.status_code
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+        reraise=True,
+    )
+    def get_text(self, url: str, *, params: dict | None = None) -> str:
+        """GET a non-JSON payload (e.g. Atom/XML, RSS) as raw text.
+
+        Returns an empty string on 404 so resolvers can treat "no data" uniformly.
+        """
+        self._bucket.wait()
+        logger.debug("GET(text) %s params=%s", url, params)
+        resp = self._client.get(url, params=params, headers={"Accept": "*/*"})
+        if resp.status_code == 404:
+            return ""
+        resp.raise_for_status()
+        return resp.text

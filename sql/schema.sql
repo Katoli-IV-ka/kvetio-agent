@@ -40,10 +40,14 @@ CREATE TABLE companies (
             'manual_review',
             'sources_gathered',
             'analyzed',
-            'dossier_ready'
+            'dossier_ready',
+            'data_partner'
         )),
     icp_segment TEXT,
     description TEXT,
+    -- NewsAgent: strong news signal on a dossier_ready company flags an
+    -- incremental dossier rebuild. Not a status — status still only moves forward.
+    needs_refresh TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -54,6 +58,9 @@ CREATE INDEX idx_companies_segment ON companies (icp_segment);
 CREATE INDEX idx_companies_manual_review
     ON companies (status)
     WHERE status = 'manual_review';
+CREATE INDEX idx_companies_needs_refresh
+    ON companies (needs_refresh)
+    WHERE needs_refresh IS NOT NULL;
 
 CREATE TRIGGER trg_companies_updated_at
 BEFORE UPDATE ON companies
@@ -101,7 +108,15 @@ INSERT INTO record_types (code, category, description) VALUES
   ('product_update',        'monitoring', 'Product/release update detected'),
   ('foundation_model',      'discovery',  'Company uses or develops a foundation model'),
   ('proprietary_ai',        'discovery',  'Company has proprietary AI capability'),
-  ('proprietary_models',    'discovery',  'Company has proprietary model(s)');
+  ('proprietary_models',    'discovery',  'Company has proprietary model(s)'),
+  -- Phase 1 (agent upgrade): financial signals, source links, partner flag.
+  ('form_d',                'financials', 'SEC EDGAR Form D private-placement filing'),
+  ('grant',                 'financials', 'Government research grant award (SBIR/NIH/CORDIS)'),
+  ('quote',                 'financials', 'Direct quote signalling fundraising intent'),
+  ('job_count',             'financials', 'Hiring-burst / open-roles count signal'),
+  ('market_quote',          'financials', 'Public-market price quote (Stooq/Yahoo)'),
+  ('arxiv_paper',           'sources',    'arXiv paper matching the company'),
+  ('data_partner_flag',     'discovery',  'Durable marker that the company is a data provider / partner-track lead');
 
 -- ─── research_records ──────────────────────────────────────────────────────
 
