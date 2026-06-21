@@ -17,6 +17,11 @@ def test_contacts_is_a_recognized_stage() -> None:
     assert "contacts" in VALID_STAGES
 
 
+def test_verification_is_a_recognized_stage() -> None:
+    """Phase 2 adds the Verification gate before Conclusions."""
+    assert "verification" in VALID_STAGES
+
+
 # ── config_to_text ────────────────────────────────────────────────────────────
 
 class TestConfigToText:

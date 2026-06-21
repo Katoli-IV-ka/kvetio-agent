@@ -104,6 +104,22 @@ def test_analysis_orchestrator_prompt():
         assert section in p
 
 
+def test_verification_prompt():
+    p = _read("verification_task.md")
+    assert "VerificationAgent" in p or "Verification" in p
+    assert "scripts/verification.py" in p
+    # Гейт перед досье: помечает факты verified/unverified/stale
+    assert "verified" in p
+    assert "stale" in p
+
+
+def test_pipeline_runs_verification_before_conclusions():
+    p = _read("pipeline_main_task.md")
+    assert "verification_task" in p
+    order = "discovery, relevance, source_expansion, enrichment, contacts, analysis, verification, conclusions"
+    assert order in p
+
+
 def test_conclusions_prompt():
     p = _read("conclusions_task.md")
     assert "ConclusionAgent" in p

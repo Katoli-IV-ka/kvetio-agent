@@ -52,14 +52,14 @@ segments=medical-imaging,robotics-ai; limit=5; stages=full; dry_run=false; notio
 | `segments` | все из `config/icp.yaml` | CSV список ICP-сегментов |
 | `limit` | `5` | максимум компаний на сегмент |
 | `limit_per_segment` | alias для `limit` | используется ботом как внутреннее имя |
-| `stages` | `full` | `full` или CSV из `discovery,relevance,source_expansion,enrichment,contacts,analysis,conclusions` |
+| `stages` | `full` | `full` или CSV из `discovery,relevance,source_expansion,enrichment,contacts,analysis,verification,conclusions` |
 | `dry_run` | `false` | read-only/simulation режим |
 | `notion_sync` | `true` | запускать Notion sync после conclusions, если не dry-run |
 
 Разрешенные stages в фиксированном порядке:
 
 ```text
-discovery, relevance, source_expansion, enrichment, contacts, analysis, conclusions
+discovery, relevance, source_expansion, enrichment, contacts, analysis, verification, conclusions
 ```
 
 Если `stages=full`, effective stages = весь список. Если указан subset, запускай
@@ -216,6 +216,28 @@ LIMIT <limit>;
 
 В `dry_run=false` sub-agents пишут `analysis_records`, затем компания переходит в
 `analyzed`.
+
+## Шаг 8.5 - Verification
+
+Выполняй, только если `verification` есть в effective stages. Гейт качества между
+analysis и conclusions: отсекает несвежие/неподтверждённые данные перед досье.
+
+```bash
+cat agents/prompts/verification_task.md
+```
+
+```sql
+SELECT domain, name, icp_segment
+FROM companies
+WHERE status = 'analyzed' AND icp_segment = '<segment>'
+ORDER BY updated_at DESC
+LIMIT <limit>;
+```
+
+Запусти `python scripts/verification.py --domain <domain>` для детерминированной
+проверки (свежесть + живость ссылок), затем мягкую проверку по
+`verification_task.md`. Каждый `research_record` получает
+`payload.verification = verified | unverified | stale`. Статус компании не меняется.
 
 ## Шаг 9 - Conclusions и Notion sync
 
