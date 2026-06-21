@@ -89,17 +89,42 @@ sources:
     default_limit: 50
 
   papers_with_code:
-    enabled: false
+    enabled: true
     tier: A
     rate_limit_rps: 1
+    cost: free
+    description: "Papers with Code — implementation-backed research по имени компании (продуктовая секция)"
+    script: scripts/enrichment.py
+    max_results: 5
 
   techcrunch_rss:
     enabled: false
     tier: B
 
   arxiv:
-    enabled: false
-    tier: C
+    enabled: true
+    tier: B
+    rate_limit_rps: 1
+    cost: free
+    description: "arXiv API — недавние публикации по имени компании (R&D/технологии продукта). Name-match слабый → confidence low"
+    script: scripts/enrichment.py
+    max_results: 5
+
+  wikidata:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 2
+    description: "Wikidata — дата основания, штаб-квартира, руководство, размер (секция «О компании»)"
+    script: scripts/enrichment.py
+
+  opencorporates:
+    enabled: true
+    tier: B
+    cost: free
+    rate_limit_rps: 1
+    description: "OpenCorporates — юрлицо, юрисдикция, дата регистрации (секция «О компании»). Best-effort: анонимный доступ лимитирован"
+    script: scripts/enrichment.py
 
   wayback:
     enabled: true

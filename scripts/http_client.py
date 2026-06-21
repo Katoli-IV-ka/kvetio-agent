@@ -85,3 +85,22 @@ class HttpClient:
             return {}
         resp.raise_for_status()
         return resp.json()
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+        reraise=True,
+    )
+    def get_text(self, url: str, *, params: dict | None = None) -> str:
+        """GET a non-JSON payload (e.g. Atom/XML, RSS) as raw text.
+
+        Returns an empty string on 404 so resolvers can treat "no data" uniformly.
+        """
+        self._bucket.wait()
+        logger.debug("GET(text) %s params=%s", url, params)
+        resp = self._client.get(url, params=params, headers={"Accept": "*/*"})
+        if resp.status_code == 404:
+            return ""
+        resp.raise_for_status()
+        return resp.text
