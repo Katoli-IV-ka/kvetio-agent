@@ -9,9 +9,12 @@ from httpx import Response
 
 from enrichment import (
     ArxivResolver,
+    GdeltFundingResolver,
     GithubOrgResolver,
     OpenCorporatesResolver,
     PapersWithCodeResolver,
+    SbirGrantsResolver,
+    SecEdgarResolver,
     WaybackResolver,
     WikidataResolver,
     _DisabledStub,
@@ -250,6 +253,87 @@ def test_opencorporates_resolver_none_when_no_match(respx_mock):
     )
     with HttpClient(rate_limit_rps=0) as client:
         assert OpenCorporatesResolver().resolve(_NAMED_COMPANY, MagicMock(), client) is None
+
+
+@pytest.mark.respx(base_url="https://efts.sec.gov")
+def test_sec_edgar_resolver_parses_form_d(respx_mock):
+    respx_mock.get("/LATEST/search-index").mock(return_value=Response(200, json={
+        "hits": {"hits": [
+            {"_id": "0001234567-24-000123:primary_doc.xml",
+             "_source": {"cik": ["1234567"], "file_date": "2024-03-01",
+                         "display_names": ["Rad AI, Inc."], "form": "D"}},
+        ]},
+    }))
+    with HttpClient(rate_limit_rps=0) as client:
+        links = SecEdgarResolver().resolve(_NAMED_COMPANY, MagicMock(), client)
+    assert len(links) == 1
+    link = links[0]
+    assert link["record_type"] == "form_d"
+    assert link["kind"] == "form_d"
+    assert link["url"] == (
+        "https://www.sec.gov/Archives/edgar/data/1234567/"
+        "000123456724000123/primary_doc.xml"
+    )
+    assert link["file_date"] == "2024-03-01"
+    assert link["cik"] == "1234567"
+    assert link["company_id"] == _NAMED_COMPANY["id"]
+
+
+@pytest.mark.respx(base_url="https://efts.sec.gov")
+def test_sec_edgar_resolver_empty(respx_mock):
+    respx_mock.get("/LATEST/search-index").mock(return_value=Response(200, json={"hits": {"hits": []}}))
+    with HttpClient(rate_limit_rps=0) as client:
+        assert SecEdgarResolver().resolve(_NAMED_COMPANY, MagicMock(), client) == []
+
+
+@pytest.mark.respx(base_url="https://api.www.sbir.gov")
+def test_sbir_grants_resolver_parses_awards(respx_mock):
+    respx_mock.get("/public/api/awards").mock(return_value=Response(200, json=[
+        {"firm": "Rad AI", "award_title": "AI for radiology", "agency": "HHS",
+         "amount": "150000", "award_year": 2023, "award_link": "https://www.sbir.gov/node/1"},
+        {"firm": "Rad AI", "award_title": "Phase II", "agency": "HHS",
+         "amount": "1000000", "award_year": 2024, "award_link": "https://www.sbir.gov/node/2"},
+    ]))
+    with HttpClient(rate_limit_rps=0) as client:
+        links = SbirGrantsResolver().resolve(_NAMED_COMPANY, MagicMock(), client)
+    assert [link["url"] for link in links] == [
+        "https://www.sbir.gov/node/1", "https://www.sbir.gov/node/2",
+    ]
+    assert all(link["record_type"] == "grant" for link in links)
+    assert links[0]["agency"] == "HHS"
+    assert links[0]["amount"] == "150000"
+
+
+@pytest.mark.respx(base_url="https://api.www.sbir.gov")
+def test_sbir_grants_resolver_empty(respx_mock):
+    respx_mock.get("/public/api/awards").mock(return_value=Response(200, json=[]))
+    with HttpClient(rate_limit_rps=0) as client:
+        assert SbirGrantsResolver().resolve(_NAMED_COMPANY, MagicMock(), client) == []
+
+
+@pytest.mark.respx(base_url="https://api.gdeltproject.org")
+def test_gdelt_funding_resolver_parses_articles(respx_mock):
+    respx_mock.get("/api/v2/doc/doc").mock(return_value=Response(200, json={
+        "articles": [
+            {"url": "https://techcrunch.com/rad-ai-raises", "title": "Rad AI raises $50M",
+             "seendate": "20240301T120000Z", "domain": "techcrunch.com"},
+        ],
+    }))
+    with HttpClient(rate_limit_rps=0) as client:
+        links = GdeltFundingResolver().resolve(_NAMED_COMPANY, MagicMock(), client)
+    assert len(links) == 1
+    link = links[0]
+    assert link["record_type"] == "funding_announcement"
+    assert link["url"] == "https://techcrunch.com/rad-ai-raises"
+    assert link["title"] == "Rad AI raises $50M"
+    assert link["seendate"] == "20240301T120000Z"
+
+
+@pytest.mark.respx(base_url="https://api.gdeltproject.org")
+def test_gdelt_funding_resolver_empty(respx_mock):
+    respx_mock.get("/api/v2/doc/doc").mock(return_value=Response(200, json={"articles": []}))
+    with HttpClient(rate_limit_rps=0) as client:
+        assert GdeltFundingResolver().resolve(_NAMED_COMPANY, MagicMock(), client) == []
 
 
 def test_run_enrichment_honours_per_link_record_type():

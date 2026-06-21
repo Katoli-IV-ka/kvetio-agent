@@ -315,6 +315,145 @@ class OpenCorporatesResolver:
         }
 
 
+SEC_EDGAR_FTS = "https://efts.sec.gov/LATEST/search-index"
+
+
+class SecEdgarResolver:
+    """SEC EDGAR full-text search for Form D filings — private-placement funding signal.
+
+    Form D is the notice US companies file for an exempt securities offering (a raise).
+    Name-search can mismatch, so the display name is kept in payload for the analyst.
+    """
+
+    kind = "form_d"
+    enabled = True
+    max_results = 5
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> list[dict]:
+        name = _company_query_name(company)
+        if not name:
+            return []
+        data = client.get_json(
+            SEC_EDGAR_FTS,
+            params={"q": f'"{name}"', "forms": "D"},
+        )
+        hits = (((data.get("hits") or {}).get("hits")) or []) if isinstance(data, dict) else []
+        links: list[dict] = []
+        for hit in hits[: self.max_results]:
+            doc_id = hit.get("_id") or ""
+            source = hit.get("_source") or {}
+            accession, _, filename = doc_id.partition(":")
+            cik_list = source.get("cik") or []
+            cik = str(cik_list[0]) if cik_list else None
+            if not accession or not cik:
+                continue
+            acc_nodash = accession.replace("-", "")
+            url = (
+                f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nodash}/"
+                f"{filename or 'primary_doc.xml'}"
+            )
+            names = source.get("display_names") or []
+            links.append({
+                "company_id": company["id"],
+                "kind": self.kind,
+                "record_type": "form_d",
+                "url": url,
+                "source": "sec_edgar_resolver",
+                "confidence": "medium",
+                "title": names[0] if names else f"Form D — {name}",
+                "file_date": source.get("file_date"),
+                "cik": cik,
+                "accession": accession,
+            })
+        return links
+
+
+SBIR_AWARDS_API = "https://api.www.sbir.gov/public/api/awards"
+
+
+class SbirGrantsResolver:
+    """SBIR.gov awards — US government research grants (funding signal for the financials section)."""
+
+    kind = "grant"
+    enabled = True
+    max_results = 5
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> list[dict]:
+        name = _company_query_name(company)
+        if not name:
+            return []
+        data = client.get_json(SBIR_AWARDS_API, params={"firm": name})
+        awards = data if isinstance(data, list) else (data.get("results") or []) \
+            if isinstance(data, dict) else []
+        links: list[dict] = []
+        for award in awards[: self.max_results]:
+            if not isinstance(award, dict):
+                continue
+            url = award.get("award_link")
+            if not url:
+                continue
+            links.append({
+                "company_id": company["id"],
+                "kind": self.kind,
+                "record_type": "grant",
+                "url": url,
+                "source": "sbir_resolver",
+                "confidence": "medium",
+                "title": award.get("award_title"),
+                "agency": award.get("agency"),
+                "amount": award.get("amount"),
+                "award_year": award.get("award_year"),
+            })
+        return links
+
+
+GDELT_DOC_API = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+
+class GdeltFundingResolver:
+    """GDELT DOC API — recent funding-related news matching the company name.
+
+    Name-match across global news is weak → low confidence; the analyst confirms the match.
+    """
+
+    kind = "gdelt_funding"
+    enabled = True
+    max_results = 5
+
+    def resolve(self, company: dict, store: SupabaseStore, client: HttpClient) -> list[dict]:
+        name = _company_query_name(company)
+        if not name:
+            return []
+        data = client.get_json(
+            GDELT_DOC_API,
+            params={
+                "query": f'"{name}" (funding OR raises OR investment)',
+                "mode": "artlist",
+                "format": "json",
+                "maxrecords": self.max_results,
+                "sort": "datedesc",
+            },
+        )
+        articles = (data.get("articles") or []) if isinstance(data, dict) else []
+        links: list[dict] = []
+        for art in articles[: self.max_results]:
+            url = art.get("url")
+            if not url:
+                continue
+            links.append({
+                "company_id": company["id"],
+                "kind": self.kind,
+                "record_type": "funding_announcement",
+                "url": url,
+                "source": "gdelt_resolver",
+                "confidence": "low",
+                "title": " ".join((art.get("title") or "").split()),
+                "seendate": art.get("seendate"),
+                "domain": art.get("domain"),
+            })
+        return links
+
+
 # Стабы платных источников (tier C). Зарегистрированы, но выключены.
 LINKEDIN_STUB = _DisabledStub("linkedin")
 CRUNCHBASE_STUB = _DisabledStub("crunchbase")
@@ -374,6 +513,9 @@ RESOLVERS: list[Resolver] = [
     PapersWithCodeResolver(),
     WikidataResolver(),
     OpenCorporatesResolver(),
+    SecEdgarResolver(),
+    SbirGrantsResolver(),
+    GdeltFundingResolver(),
     LINKEDIN_STUB,
     CRUNCHBASE_STUB,
     SIMILARWEB_STUB,

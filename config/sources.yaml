@@ -134,22 +134,31 @@ sources:
     script: scripts/enrichment.py
 
   sec_edgar:
-    enabled: false
+    enabled: true
     tier: A
     cost: free
-    description: "SEC EDGAR — Form D (US private funding), CIK lookup (резолвер позже)"
+    rate_limit_rps: 1
+    description: "SEC EDGAR full-text search — Form D (US private funding). record_type=form_d"
+    script: scripts/enrichment.py
+    max_results: 5
 
   gdelt:
-    enabled: false
+    enabled: true
     tier: B
     cost: free
-    description: "GDELT — новостной граф, дедуп инфоповодов (резолвер позже)"
+    rate_limit_rps: 1
+    description: "GDELT DOC API — funding-related news по имени компании. record_type=funding_announcement, confidence low"
+    script: scripts/enrichment.py
+    max_results: 5
 
   gov_grants:
-    enabled: false
+    enabled: true
     tier: B
     cost: free
-    description: "NIH RePORTER + EU CORDIS — гранты (резолвер позже)"
+    rate_limit_rps: 1
+    description: "SBIR.gov awards — государственные гранты (US). record_type=grant"
+    script: scripts/enrichment.py
+    max_results: 5
 
   # ── Стабы на будущее (платные, tier C) ──────────────────────────
   linkedin:
