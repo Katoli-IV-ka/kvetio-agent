@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 # Valid pipeline stages
 VALID_STAGES = frozenset(
-    ["discovery", "relevance", "scoring", "enrichment", "analysis", "conclusions"]
+    ["discovery", "relevance", "scoring", "enrichment", "contacts", "analysis", "conclusions"]
 )
 ENRICH_DEFAULT_STAGES = [
     "relevance",

@@ -52,14 +52,14 @@ segments=medical-imaging,robotics-ai; limit=5; stages=full; dry_run=false; notio
 | `segments` | все из `config/icp.yaml` | CSV список ICP-сегментов |
 | `limit` | `5` | максимум компаний на сегмент |
 | `limit_per_segment` | alias для `limit` | используется ботом как внутреннее имя |
-| `stages` | `full` | `full` или CSV из `discovery,relevance,source_expansion,enrichment,analysis,conclusions` |
+| `stages` | `full` | `full` или CSV из `discovery,relevance,source_expansion,enrichment,contacts,analysis,conclusions` |
 | `dry_run` | `false` | read-only/simulation режим |
 | `notion_sync` | `true` | запускать Notion sync после conclusions, если не dry-run |
 
 Разрешенные stages в фиксированном порядке:
 
 ```text
-discovery, relevance, source_expansion, enrichment, analysis, conclusions
+discovery, relevance, source_expansion, enrichment, contacts, analysis, conclusions
 ```
 
 Если `stages=full`, effective stages = весь список. Если указан subset, запускай
@@ -168,6 +168,31 @@ LIMIT <limit>;
 
 Если source expansion уже перевел компанию в `sources_gathered`, enrichment может
 пропустить ее или только добавить недостающие source `research_records`.
+
+## Шаг 7.5 - Contacts (ЛПР)
+
+Выполняй, только если `contacts` есть в effective stages. Обязательная стадия
+в `full`-потоке: идёт между enrichment и analysis, чтобы раздел «Сотрудничество»
+в анализе опирался на собранные контакты, а не оставлял пробел.
+
+```bash
+cat agents/prompts/dm_enrich_task.md
+```
+
+```sql
+SELECT id, domain, name, website, icp_segment
+FROM companies
+WHERE status IN ('relevant', 'data_partner') AND icp_segment = '<segment>'
+ORDER BY updated_at DESC
+LIMIT <limit>;
+```
+
+Для каждой компании ищи ЛПР по таксономии tier 1–3 (см. `dm_enrich_task.md`),
+тяни каналы из расширенного набора (GitHub-почты, HuggingFace, team-pages,
+Wellfound, arXiv), пиши `tier` + обоснование в `contacts.info`. Дедуп
+`(company_id, contact_type, name)`. В `dry_run=false` пиши `contacts` через
+`python scripts/contacts_store.py --upsert` и провенанс `research_records`
+с `record_type = 'contact_found'`. Статус компании эта стадия НЕ меняет.
 
 ## Шаг 8 - Analysis
 

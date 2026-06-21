@@ -4,7 +4,7 @@
 
 Ты выполняешь роль RelevanceAgent. Берешь компании со статусом `discovered`,
 проверяешь сайт и внешние источники, затем ставишь один из статусов:
-`relevant`, `not_relevant`, `manual_review`.
+`relevant`, `not_relevant`, `manual_review`, `data_partner`.
 
 **Следующий этап:** `source_expansion_task`.
 
@@ -44,9 +44,14 @@ workflow, а не просто использует чужой API как обы
 - продукт явно относится к AI/ML workflow;
 - HuggingFace/GitHub/paper evidence с компанией или командой.
 
-Отклоняется, если сайт мертв, компания не занимается AI/ML, это прямой
-конкурент data services или корпорация вне ICP. Не записывай отдельную причину
-в удаленные legacy поля; краткое объяснение можно оставить в `run_logs.notes`.
+Отклоняется, если сайт мертв, компания не занимается AI/ML или это чистый
+интегратор/обёртка вне ICP. Не записывай отдельную причину в удаленные legacy
+поля; краткое объяснение можно оставить в `run_logs.notes`.
+
+**Дата-провайдеры — НЕ отсев.** Если компания сама продаёт датасеты или разметку
+(«конкурент» по data services), это НЕ `not_relevant`. Таким компаниям самим
+периодически нужны большие датасеты → это отдельный партнёрский трек. Ставь им
+статус `data_partner` (см. Шаг 4) и фиксируй durable-флаг (см. Шаг 5).
 
 ## Шаг 3 - Глубокая верификация
 
@@ -67,6 +72,8 @@ workflow, а не просто использует чужой API как обы
 - `relevant`: Quick Filter прошел и есть конкретное подтверждение.
 - `not_relevant`: компания явно не подходит.
 - `manual_review`: признаки есть, но данных мало или они неоднозначны.
+- `data_partner`: компания сама является дата-провайдером (продаёт датасеты/разметку).
+  Партнёрский трек, не прямая продажа.
 
 ## Шаг 5 - Запись
 
@@ -93,6 +100,28 @@ WHERE domain = 'acme.ai';
 Manual review uses the same shape as relevant, with `status = 'manual_review'`
 and details in `run_logs.notes` if needed.
 
+Data partner — ставь статус и durable-флаг. Статус в пайплайне только повышается,
+поэтому партнёрскую принадлежность фиксируем отдельной устойчивой записью
+`research_records` с `record_type = 'data_partner_flag'`, на которую опираются
+downstream-агенты и Аудит:
+
+```sql
+UPDATE companies
+SET status = 'data_partner',
+    description = 'Sells datasets/labeling; partner track, not direct sale.',
+    updated_at = NOW()
+WHERE domain = 'acme.ai';
+```
+
+Затем запиши durable-флаг (через `scripts/supabase_store.py`, как остальные
+research records): `record_type = 'data_partner_flag'`,
+`record_role = 'verification'`, `url` на доказательство (страница датасетов/прайс),
+`company_id` компании.
+
+Downstream-стадии (source_expansion, enrichment, contacts, analysis, conclusions)
+выбирают компании со статусом `relevant` И `data_partner`. Партнёрский трек
+определяется по флаг-записи `data_partner_flag`, а не по текущему статусу.
+
 ## Шаг 6 - run_log + уведомление
 
 ```sql
@@ -107,5 +136,5 @@ python scripts/notify.py --run-summary '{"task":"relevance_task","relevant":<N>,
 ## Итоговая схема статусов
 
 ```text
-discovered -> Quick Filter -> relevant | not_relevant | manual_review
+discovered -> Quick Filter -> relevant | not_relevant | manual_review | data_partner
 ```
