@@ -12,6 +12,7 @@ def test_all_statuses_match_cleanup_design() -> None:
         "sources_gathered",
         "analyzed",
         "dossier_ready",
+        "data_partner",
     )
 
 

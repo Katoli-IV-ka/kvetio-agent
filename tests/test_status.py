@@ -14,6 +14,7 @@ def test_all_pipeline_statuses_match_cleanup_design():
         "sources_gathered",
         "analyzed",
         "dossier_ready",
+        "data_partner",
     )
 
 

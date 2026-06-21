@@ -93,6 +93,27 @@ def test_companies_has_no_legacy_columns() -> None:
         assert col not in body
 
 
+def test_companies_status_includes_data_partner() -> None:
+    """Phase 1: data-provider companies get a partner track instead of not_relevant."""
+    companies = _table_body(_schema(), "companies")
+    assert "'data_partner'" in companies
+
+
+def test_schema_has_phase1_record_types() -> None:
+    """Phase 1 adds financial-signal, source, and partner-flag record types."""
+    sql = _schema()
+    for code in (
+        "form_d",
+        "grant",
+        "quote",
+        "job_count",
+        "market_quote",
+        "arxiv_paper",
+        "data_partner_flag",
+    ):
+        assert f"('{code}'" in sql, f"record_types missing {code}"
+
+
 def test_contacts_uses_name_and_type() -> None:
     body = _table_body(_schema(), "contacts")
     assert "name TEXT NOT NULL" in body

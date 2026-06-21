@@ -32,6 +32,14 @@ SignalType = Literal[
     "foundation_model",
     "proprietary_ai",
     "proprietary_models",
+    # Phase 1 (agent upgrade): financial signals, source links, partner flag.
+    "form_d",
+    "grant",
+    "quote",
+    "job_count",
+    "market_quote",
+    "arxiv_paper",
+    "data_partner_flag",
 ]
 RecordType = SignalType
 RecordRole = Literal["primary", "verification", "source", "monitor", "evidence"]
@@ -55,11 +63,13 @@ Status = Literal[
     "sources_gathered",
     "analyzed",
     "dossier_ready",
+    "data_partner",
 ]
 
 # Canonical cleanup status model:
 # discovered -> relevant/not_relevant/manual_review ->
 # sources_gathered -> analyzed -> dossier_ready.
+# data_partner is a relevance outcome for data-provider companies (partner track).
 ALL_STATUSES: tuple[str, ...] = (
     "discovered",
     "relevant",
@@ -68,6 +78,7 @@ ALL_STATUSES: tuple[str, ...] = (
     "sources_gathered",
     "analyzed",
     "dossier_ready",
+    "data_partner",
 )
 
 

@@ -1,10 +1,36 @@
 """Tests for RawSignal and confidence_to_score (signals redesign)."""
 
 from datetime import date
+from typing import get_args
 
 import pytest
 
-from scripts.models import ContactRecord, RawSignal, ResearchRecord, confidence_to_score
+from scripts.models import (
+    ALL_STATUSES,
+    ContactRecord,
+    RawSignal,
+    ResearchRecord,
+    SignalType,
+    confidence_to_score,
+)
+
+
+def test_data_partner_is_a_valid_status():
+    assert "data_partner" in ALL_STATUSES
+
+
+def test_phase1_record_types_in_signal_type():
+    codes = set(get_args(SignalType))
+    for code in (
+        "form_d",
+        "grant",
+        "quote",
+        "job_count",
+        "market_quote",
+        "arxiv_paper",
+        "data_partner_flag",
+    ):
+        assert code in codes
 
 
 def test_confidence_to_score_maps_labels():
