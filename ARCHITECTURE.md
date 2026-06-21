@@ -43,6 +43,7 @@
 - [AnalysisAgent](#analysisagent)
 - [ConclusionAgent](#conclusionagent)
 - [DMEnrichAgent](#dmenrichagent)
+- [NewsAgent](#newsagent)
 - [MonitorAgent](#monitoragent)
 
 </details>
@@ -155,8 +156,13 @@ flowchart LR
 | `single_company` | Полный pipeline для одной компании | `company_name` | `full` |
 | `startup_research` | Исследование по свободному описанию | `description` | `full` |
 | `enrich_existing` | Pipeline без discovery для компаний уже в БД | — | `relevance, source_expansion, enrichment, analysis, conclusions` |
+| `news_lead` | Точечный pipeline (без discovery) для одной компании, заведённой NewsAgent из новости | `domain` | `relevance, source_expansion, enrichment, analysis, conclusions` |
 
 Параметры и дефолты каждого режима — в [Параметрах запуска Routine](#параметры-запуска-routine).
+
+`news_lead` — это `enrich_existing`, суженный до одной компании по `domain`:
+discovery пропущена (NewsAgent уже сыграл её роль), RelevanceAgent остаётся
+финальным ICP-гейтом. Определён в `bot/scenarios.py` и `bot/config.py`.
 
 ### Деплой Railway
 
@@ -260,7 +266,8 @@ mode=icp_segment; segments=medical-imaging,robotics-ai; limit=5; stages=full; dr
 
 | Параметр | Значения | По умолчанию |
 |---|---|---|
-| `mode` | `icp_segment`, `single_company`, `startup_research`, `enrich_existing` | `icp_segment` |
+| `mode` | `icp_segment`, `single_company`, `startup_research`, `enrich_existing`, `news_lead` | `icp_segment` |
+| `domain` | один домен (только для `news_lead`) | — |
 | `segments` | CSV из валидных сегментов | все из `config/icp.yaml` |
 | `limit` / `limit_per_segment` | 1–200 | `5` (для `enrich_existing` — `30`) |
 | `stages` | `full` или CSV стадий | `full` |
@@ -538,13 +545,45 @@ stateDiagram-v2
 
 ---
 
+### NewsAgent
+
+**Промпт:** `agents/prompts/news_task.md` — отдельный планируемый агент (scheduled Routine).
+
+**Роль:** Систематически мониторит публичные новостные источники, находит сигналы покупательского намерения и (1) заводит новую релевантную компанию в пайплайн как альтернативный Discovery, (2) добавляет новостные сигналы и помечает на обновление компании, уже в базе. Не оркеструет пайплайн и не интерпретирует данные.
+
+**Границы:** владеет медиа/пресс/RSS/новостными агрегаторами (GDELT, Google News, HN, RSS) и funding-новостями. Технические сигналы и оркестрация — не его (см. MonitorAgent / PipelineAgent). Только бесплатные/публичные источники.
+
+**Таксономия (в `payload`):** сильные сигналы (`funding_round`, `model_launch`, `stealth_exit`, `data_need`, `hiring_surge`) → кандидат на автозапуск пайплайна при прохождении грубого ICP-гейта; мягкие (`partnership`, `product_update`, `pr_mention`, `leadership_change`, `negative`) → только `research_record`.
+
+**Как работает:**
+- *Discovery-поток:* сегментный скан (`scripts/news.py --segment`), entity resolution (имя→домен), грубый ICP-гейт; при прохождении — `upsert companies (status='discovered')` + первичный `research_record` + (этап rollout 4) `/fire` в режиме `news_lead`. Финальную квалификацию делает RelevanceAgent.
+- *Monitoring-поток:* per-company скан (`scripts/news.py --domain`); мягкий сигнал → `research_record` (`record_role='monitor'`); сильный сигнал на `dossier_ready`-компании → ещё и флаг `needs_refresh` (инкрементальное обновление досье).
+
+**Дедуп по инфоповоду:** `dedupe_key = sha1(domain|event_type|неделя)`; один инфоповод из многих изданий схлопывается в одну строку, остальные ссылки — в `payload.alt_urls`.
+
+**Пишет в БД:**
+- `research_records`: `record_type='news'`, `agent='news'`, `record_role` = `primary` (discovery) или `monitor` (monitoring); таксономия в `payload`.
+- `companies`: новые `status='discovered'` (discovery); `needs_refresh` (сильный сигнал известной `dossier_ready`-компании).
+
+**Читает из БД:** `companies` (для monitoring-выборки по имени/домену).
+
+**Скрипты:** `scripts/news.py` (резолверы GDELT/Google News RSS/HN/RSS, классификация, дедуп, запись). Конфиг — `config/news_sources.yaml` (правится человеком, как `icp.yaml`). Источники включены в `config/sources.yaml` (`google_news`, `hn`, `news_rss`, `gdelt`).
+
+**Расписание:** отдельный scheduled Routine (по аналогии с `notion-sync-cron`), по умолчанию раз в день, с ротацией сегментов. На сильный гейтнутый лид — карточка в Telegram через `notify.py`.
+
+**Поэтапный выкат:** (1) observe-only — только сигналы известным компаниям; (2) discovery без авто-fire; (3) refresh-ветка (`needs_refresh`); (4) авто-fire `news_lead` + ежедневное расписание. В `--dry-run` записи и автозапуск `news_lead` запрещены.
+
+---
+
 ### MonitorAgent
 
 **Промпт:** `agents/prompts/monitor_task.md` — опциональный
 
-**Роль:** Периодически проверяет уже известные компании на новые сигналы. Не отдельный статусный flow — только refresh loop.
+**Роль:** Периодически проверяет уже известные компании на новые **технические** сигналы. Не отдельный статусный flow — только refresh loop.
 
-**Как работает:** берёт давно не обновлявшиеся компании (`ORDER BY updated_at ASC`). Проверяет: новые модели на HuggingFace, ML-вакансии, новости о финансировании, изменения продукта. Каждый новый факт → `research_records` с `record_role='monitor'`. Статус не меняет, если сигнал только информационный.
+> **Сужен NewsAgent'ом.** Monitor владеет только техническими сигналами: новые модели HF, GitHub-активность, ML/data-вакансии, изменения сайта/продукта. Новости и funding-новости передаются NewsAgent — дублирования нет.
+
+**Как работает:** берёт давно не обновлявшиеся компании (`ORDER BY updated_at ASC`). Проверяет технические сигналы. Каждый новый факт → `research_records` с `record_role='monitor'`. Статус не меняет, если сигнал только информационный.
 
 **Пишет в БД:**
 - `research_records`: `record_role='monitor'`.
@@ -600,6 +639,7 @@ stateDiagram-v2
 | `status` | TEXT | Текущая стадия (см. status flow) |
 | `icp_segment` | TEXT | Сегмент ICP из `config/icp.yaml` |
 | `description` | TEXT | Краткое описание, заполняется на relevance |
+| `needs_refresh` | TIMESTAMPTZ | Флаг NewsAgent: у `dossier_ready`-компании появился сильный новостной сигнал → досье пересобрать инкрементально. НЕ статус (статус только повышается). Частичный индекс `idx_companies_needs_refresh`. Гасится ConclusionAgent после refresh |
 
 ### `research_records`
 

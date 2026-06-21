@@ -45,6 +45,9 @@ CREATE TABLE companies (
         )),
     icp_segment TEXT,
     description TEXT,
+    -- NewsAgent: strong news signal on a dossier_ready company flags an
+    -- incremental dossier rebuild. Not a status — status still only moves forward.
+    needs_refresh TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -55,6 +58,9 @@ CREATE INDEX idx_companies_segment ON companies (icp_segment);
 CREATE INDEX idx_companies_manual_review
     ON companies (status)
     WHERE status = 'manual_review';
+CREATE INDEX idx_companies_needs_refresh
+    ON companies (needs_refresh)
+    WHERE needs_refresh IS NOT NULL;
 
 CREATE TRIGGER trg_companies_updated_at
 BEFORE UPDATE ON companies

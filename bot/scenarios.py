@@ -92,4 +92,24 @@ SCENARIOS: dict[str, ScenarioSpec] = {
             "notion_sync": True,
         },
     ),
+    "news_lead": ScenarioSpec(
+        name="Новостной лид",
+        description=(
+            "Точечный pipeline (без discovery) для одной компании, заведённой "
+            "NewsAgent из новости. RelevanceAgent остаётся ICP-гейтом."
+        ),
+        required_params=["domain"],
+        optional_params=["stages", "dry_run", "notion_sync"],
+        param_descriptions={
+            "domain": "домен компании-лида (NewsAgent уже завёл её как discovered)",
+            "stages": "relevance, scoring, enrichment, analysis, conclusions",
+            "dry_run": "true/false, по умолчанию false",
+            "notion_sync": "true/false, по умолчанию true",
+        },
+        defaults={
+            "stages": ["relevance", "scoring", "enrichment", "analysis", "conclusions"],
+            "dry_run": False,
+            "notion_sync": True,
+        },
+    ),
 }

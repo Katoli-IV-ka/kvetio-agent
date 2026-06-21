@@ -1,0 +1,53 @@
+# NewsAgent sources. Human-edited, versioned in git (like icp.yaml).
+# Free/public news only. Consumed by scripts/news.py and agents/prompts/news_task.md.
+
+# Signal terms appended to per-segment keyword queries during the discovery scan.
+# scripts/news.py classify_event() owns the term -> event_type mapping; these are
+# the search expansions that surface candidate info-events.
+signal_terms:
+  - raises
+  - "Series A"
+  - "Series B"
+  - "seed round"
+  - launches
+  - "out of stealth"
+  - "building dataset"
+  - "hiring ML"
+  - "new model"
+  - partners with
+
+# Per-segment discovery config. `keywords` are crossed with signal_terms to build
+# Google News / GDELT queries. Override with an explicit `queries` list to pin exact
+# search strings. Keep keywords aligned with config/icp.yaml keywords_strong.
+segments:
+  medical-imaging:
+    keywords: ["medical imaging AI", "radiology AI", "pathology AI"]
+  autonomous-vehicles:
+    keywords: ["autonomous driving", "perception AI", "ADAS startup"]
+  speech-and-audio:
+    keywords: ["speech recognition AI", "text-to-speech startup", "voice AI"]
+  generative-ai:
+    keywords: ["foundation model startup", "LLM startup", "generative AI"]
+  agriculture-ai:
+    keywords: ["precision agriculture AI", "crop AI", "agtech AI"]
+  robotics-ai:
+    keywords: ["robot learning startup", "robotics AI", "sim-to-real"]
+  video-photo-ai:
+    keywords: ["text-to-video startup", "video generation AI", "image generation AI"]
+
+# Curated RSS/Atom feeds scanned for industry news (discovery). Free, no key.
+rss_feeds:
+  - name: techcrunch-ai
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    segments: [generative-ai, video-photo-ai, speech-and-audio]
+  - name: venturebeat-ai
+    url: https://venturebeat.com/category/ai/feed/
+    segments: [generative-ai, robotics-ai, autonomous-vehicles]
+  - name: eu-startups
+    url: https://www.eu-startups.com/feed/
+    segments: [generative-ai, medical-imaging, agriculture-ai]
+
+# Hacker News (Algolia) is queried per segment keyword for Show HN / model launches.
+hacker_news:
+  enabled: true
+  tags: story
