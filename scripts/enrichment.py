@@ -345,12 +345,12 @@ def run_enrichment(
                 continue
             payload = {
                 k: v for k, v in link.items()
-                if k not in {"company_id", "source", "url", "confidence"}
+                if k not in {"company_id", "source", "url", "confidence", "record_type"}
             }
             payload.setdefault("fetched_at", datetime.utcnow().isoformat())
             entry = ResearchRecord(
                 source=link.get("source", "unknown"),
-                record_type="source_link",
+                record_type=link.get("record_type", "source_link"),
                 company_name=company.get("name") or company["domain"],
                 domain=company.get("domain"),
                 linkedin_url=company.get("linkedin_url"),

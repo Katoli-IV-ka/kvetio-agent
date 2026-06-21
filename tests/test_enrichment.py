@@ -252,6 +252,42 @@ def test_opencorporates_resolver_none_when_no_match(respx_mock):
         assert OpenCorporatesResolver().resolve(_NAMED_COMPANY, MagicMock(), client) is None
 
 
+def test_run_enrichment_honours_per_link_record_type():
+    store = MagicMock()
+    client = MagicMock()
+    company = {"domain": "radai.com", "id": "00000000-0000-0000-0000-000000000001"}
+
+    class _TypedResolver:
+        kind = "edgar"
+        enabled = True
+
+        def resolve(self, company, store, client):
+            return {
+                "company_id": company["id"],
+                "kind": "edgar",
+                "url": "https://sec.gov/x",
+                "record_type": "form_d",
+                "form": "D",
+            }
+
+    run_enrichment(company, store, client, resolvers=[_TypedResolver()])
+    entry = store.upsert_research_record.call_args[0][0]
+    assert entry.record_type == "form_d"
+    # record_type drives the column, it is not duplicated into payload
+    assert "record_type" not in entry.payload
+    assert entry.payload["form"] == "D"
+
+
+def test_run_enrichment_defaults_record_type_to_source_link():
+    store = MagicMock()
+    client = MagicMock()
+    company = {"domain": "radai.com", "id": "00000000-0000-0000-0000-000000000001"}
+    resolvers = [_FakeResolver("a", True, _link(company["id"], "a"))]
+    run_enrichment(company, store, client, resolvers=resolvers)
+    entry = store.upsert_research_record.call_args[0][0]
+    assert entry.record_type == "source_link"
+
+
 def test_run_enrichment_writes_each_link_from_list():
     store = MagicMock()
     client = MagicMock()
