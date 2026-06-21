@@ -325,7 +325,8 @@ stateDiagram-v2
     SourceExpansionAgent --> EnrichmentAgent
     EnrichmentAgent --> ContactsAgent
     ContactsAgent --> AnalysisAgent
-    AnalysisAgent --> ConclusionAgent
+    AnalysisAgent --> VerificationAgent
+    VerificationAgent --> ConclusionAgent
     ConclusionAgent --> [*]
 
     ContactsAgent : ContactsAgent · стадия contacts (бывший DMEnrich), между enrichment и analysis
@@ -421,7 +422,7 @@ stateDiagram-v2
 
 **Как работает:** запускает `enrichment.py --domain` — скрипт автоматически находит HuggingFace org, Wikidata, news feeds, social links. Добирает вручную через WebSearch то, чего не нашёл скрипт.
 
-**Резолверы (`scripts/enrichment.py`):** `GithubOrgResolver`, `WaybackResolver`, `ArxivResolver`, `PapersWithCodeResolver`, `WikidataResolver`, `OpenCorporatesResolver` (Phase 3) и финансовые резолверы Phase 1 — `SecEdgarResolver` (Form D → `form_d`), `SbirGrantsResolver` (SBIR.gov → `grant`), `GdeltFundingResolver` (GDELT funding-news → `funding_announcement`). Каждый резолвер возвращает link-dict; `run_enrichment` пишет `research_records` с `record_type` из `link['record_type']` (по умолчанию `source_link`). Активность — в `config/sources.yaml`. Платные стабы (`linkedin`, `crunchbase`, `similarweb`) выключены.
+**Резолверы (`scripts/enrichment.py`):** `GithubOrgResolver`, `WaybackResolver`, `ArxivResolver`, `PapersWithCodeResolver`, `WikidataResolver`, `OpenCorporatesResolver` (Phase 3) и финансовые резолверы Phase 1 — `SecEdgarResolver` (Form D → `form_d`), `SbirGrantsResolver` (SBIR.gov → `grant`), `GdeltFundingResolver` (GDELT funding-news → `funding_announcement`), `MarketDataResolver` (Stooq CSV → `market_quote`, только если известен тикер; Phase 3, опционально). Каждый резолвер возвращает link-dict; `run_enrichment` пишет `research_records` с `record_type` из `link['record_type']` (по умолчанию `source_link`). Активность резолвера определяется его атрибутом `enabled`; `config/sources.yaml` — документирующий реестр. Платные стабы (`linkedin`, `crunchbase`, `similarweb`) выключены.
 
 **Пишет в БД:**
 - `research_records`: `record_role='source'`, тип из словаря `record_types`.
@@ -458,6 +459,29 @@ stateDiagram-v2
 **Читает из БД:** `research_records` компании (все роли).
 
 **Скрипты:** `scripts/dossier_store.py --upsert-analysis-record`.
+
+---
+
+### VerificationAgent
+
+**Промпт:** `agents/prompts/verification_task.md`
+
+**Роль:** Гейт качества между Analysis и Conclusions (Phase 2). Отсекает несвежие и
+неподтверждённые данные, чтобы в досье как факт попадало только проверенное. Статус
+компании не меняет.
+
+**Как работает:** для компаний `analyzed` запускает `scripts/verification.py --domain`:
+- **свежесть** — пороги в `config/verification.yaml` (новость > 12 мес или финансовый
+  сигнал > 18 мес → `stale`);
+- **живость ссылки** — HEAD-запрос; 404 / только-Wayback → `unverified`.
+Каждый `research_record` получает `payload.verification = verified | unverified | stale`
+(через `SupabaseStore.set_record_verification`, без новой колонки). Мягкую проверку
+(claim↔fact, match по имени) делает агент по промпту.
+
+**Стадия:** `verification` в `VALID_STAGES` (`bot/config.py`), порядок —
+между `analysis` и `conclusions` (`pipeline_main_task.md`).
+
+**Скрипты:** `scripts/verification.py`.
 
 ---
 
@@ -713,9 +737,9 @@ flowchart LR
 
 | Сущность | Синхронизируемые поля | Фильтр |
 |---|---|---|
-| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment` | `status IN (relevant, sources_gathered, analyzed, dossier_ready)` |
+| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment` | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
 | `contacts` | `name`, `contact_type`, `info`, `email`, `phone`, `linkedin_url`, `facebook_url`, `instagram_url`, relation к компании | все |
-| `dossiers` | `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`, `summary_md` | все |
+| `dossiers` | `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`, `funding_date`, `summary_md` | все |
 
 `discovered` и `not_relevant` компании в Notion не попадают — только квалифицированные.
 
