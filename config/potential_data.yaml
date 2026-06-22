@@ -1,0 +1,56 @@
+# config/potential_data.yaml
+# Maps icp_segment → list of Potential Data multi_select values.
+# status_overrides adds values based on pipeline status.
+# All 15 values: Medical Data, Images, Annotation, Video, Synthetic Data,
+# Audio, Voice Data, Transcription, Camera Data, Sensor Data, Geospatial Data,
+# Text, LLM Data, Human Feedback, Data Supplier
+
+segments:
+  medical-imaging:
+    - Medical Data
+    - Images
+    - Annotation
+
+  autonomous-vehicles:
+    - Images
+    - Annotation
+    - Video
+    - Camera Data
+    - Sensor Data
+    - Geospatial Data
+    - Synthetic Data
+
+  speech-and-audio:
+    - Audio
+    - Voice Data
+    - Transcription
+
+  generative-ai:
+    - Text
+    - LLM Data
+    - Human Feedback
+    - Synthetic Data
+
+  agriculture-ai:
+    - Images
+    - Annotation
+    - Geospatial Data
+    - Camera Data
+
+  robotics-ai:
+    - Images
+    - Annotation
+    - Video
+    - Synthetic Data
+    - Camera Data
+    - Sensor Data
+
+  video-photo-ai:
+    - Video
+    - Images
+    - Annotation
+    - Synthetic Data
+
+status_overrides:
+  data_partner:
+    - Data Supplier
