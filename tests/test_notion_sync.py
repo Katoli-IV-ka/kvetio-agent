@@ -451,8 +451,8 @@ def test_validate_mapping_rejects_computed_reverse():
             ],
         }
     }
-    with pytest.raises(ValueError, match="computed.*reverse"):
-        ns.validate_mapping(mapping)
+    errors = ns.validate_mapping(mapping)
+    assert any("computed" in e and "reverse" in e for e in errors)
 
 
 def test_enrich_contact_rows_uses_company_id_relation():

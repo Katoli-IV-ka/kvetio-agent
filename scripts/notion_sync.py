@@ -76,9 +76,7 @@ def validate_mapping(mapping: dict) -> list[str]:
                 errors.append(f"{entity}.{col}: недопустимый direction '{direction}'")
             source = f.get("source")
             if source == "computed" and direction == "reverse":
-                raise ValueError(
-                    f"field '{col}': source=computed cannot be used with direction=reverse"
-                )
+                errors.append(f"{entity}.{col}: source=computed cannot be used with direction=reverse")
     return errors
 
 
