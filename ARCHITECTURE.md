@@ -800,6 +800,37 @@ python -m scripts.notion_sync --entity contacts --all
 python -m scripts.notion_sync --entity dossiers --all
 ```
 
+5. **Флаг `--refresh-body`** → пересобирает тело (blocks) всех страниц компаний с `notion_page_id`. Запускается вручную: `python -m scripts.notion_sync --refresh-body [--dry-run]`.
+
+### Тело страницы (blocks)
+
+При первом создании страницы компании `notion_sync.py` автоматически вызывает `notion_render.py`,
+которая заполняет тело из данных Supabase. Структура тела:
+
+```
+heading_1 "Dossier"
+quote      метаданные (дата, статус)
+divider
+callout 🏢  О компании (название, год, HQ, офисы, руководство, описание)
+callout 📦  Продукт [основной] (категория, рынок, проблема, технологии, функционал)
+callout 📦  Продукт [второстепенный] — если есть
+divider
+callout 🤝  Сотрудничество (партнёры, команда, ЛПР)
+divider
+callout 💰  Финансы (раунды, оценка, метрики)
+divider
+callout 📰  Новости (с дочерними bullets: summary + link)
+divider
+callout 🔍  Комплексный анализ и оценка
+callout 🎯  Вывод для нас
+heading_4  disclaimer (аналитический характер)
+```
+
+Повторные `sync_forward` обновляют только properties страницы, тело не трогают.
+Принудительный re-render: `--refresh-body` (удаляет старые блоки, записывает новые).
+
+Источник данных для тела: таблицы `companies`, `dossiers`, `analysis_records`, `contacts`, `research_records` (record_type=news).
+
 ### Конфигурация
 
 Маппинг полей: `config/notion_mapping.yaml`. Три секции: `companies`, `contacts`, `dossiers`. Каждая секция содержит:
