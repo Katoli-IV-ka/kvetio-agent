@@ -321,3 +321,23 @@ def test_collaboration_section_no_contacts():
 def test_collaboration_section_returns_none_when_all_empty():
     block = nr.build_collaboration_section([], {})
     assert block is None
+
+
+def test_financials_section_is_callout():
+    block = nr.build_financials_section(_DOSSIER, _ANALYSIS)
+    assert block is not None
+    assert block["type"] == "callout"
+    assert block["callout"]["icon"]["emoji"] == "💰"
+
+
+def test_financials_section_has_rounds_table():
+    block = nr.build_financials_section(_DOSSIER, _ANALYSIS)
+    children = block["callout"]["children"]
+    tables = [b for b in children if b["type"] == "table"]
+    assert len(tables) == 1
+    assert tables[0]["table"]["table_width"] == 4
+
+
+def test_financials_section_no_dossier_returns_none():
+    block = nr.build_financials_section(None, {})
+    assert block is None

@@ -371,3 +371,53 @@ def build_collaboration_section(
 
     children = [heading_2_block("Сотрудничество"), divider_block(), *fields]
     return callout_block("🤝", children)
+
+
+def build_financials_section(
+    dossier: dict | None,
+    analysis: dict[str, dict],
+) -> dict | None:
+    """Build Финансы callout. Returns None if all content is empty."""
+    if not dossier:
+        return None
+
+    facts = (analysis.get("financials") or {}).get("facts") or {}
+    d = dossier
+    fields: list[dict] = []
+
+    if b := field_block("Источники финансирования:", d.get("funding_stage")):
+        fields.append(b)
+
+    rounds = facts.get("rounds") or []
+    if rounds:
+        rows = [
+            [
+                r.get("year", ""),
+                r.get("round", ""),
+                r.get("amount", ""),
+                r.get("investors", ""),
+            ]
+            for r in rounds
+        ]
+        fields.append(field_block("История раундов:", "↓") or empty_block())
+        fields.append(_table_block(["Год", "Раунд", "Сумма", "Инвесторы"], rows))
+
+    if b := field_block("Оценка компании:", facts.get("valuation")):
+        fields.append(b)
+    if b := field_block("Акции / Биржа:", facts.get("public_status")):
+        fields.append(b)
+
+    metrics = facts.get("metrics") or []
+    if metrics:
+        items = metrics if isinstance(metrics, list) else [metrics]
+        fields.append(field_block("Финансовые показатели:", "↓") or empty_block())
+        fields.extend(_bulleted_text_block([str(i) for i in items]))
+
+    if b := field_block("Анализ динамики:", facts.get("dynamics")):
+        fields.append(b)
+
+    if not fields:
+        return None
+
+    children = [heading_2_block("Финансы"), divider_block(), *fields]
+    return callout_block("💰", children)
