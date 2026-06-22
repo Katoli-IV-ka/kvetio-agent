@@ -571,3 +571,60 @@ def build_conclusion_section(
     # Spec: heading_3 for Вывод (not heading_2)
     children = [heading_3_block("Вывод для нас"), divider_block(), *fields]
     return callout_block("🎯", children)
+
+
+# ---------------------------------------------------------------------------
+# Top-level assembler
+# ---------------------------------------------------------------------------
+
+def build_page_blocks(
+    company: dict,
+    dossier: dict | None,
+    analysis: dict[str, dict],
+    contacts: list[dict],
+    news: list[dict],
+) -> list[dict]:
+    """Return list of Notion block payloads for the company page body."""
+    today = date.today().isoformat()
+    status = company.get("status", "unknown")
+
+    blocks: list[dict] = [
+        heading_1_block("Dossier"),
+        quote_block(f"Составлено: {today} | Система: kvetio-agent | Статус: {status}"),
+        divider_block(),
+    ]
+
+    if section := build_company_section(company, dossier, analysis, contacts):
+        blocks.append(section)
+
+    for section in build_product_sections(dossier, analysis):
+        blocks.append(section)
+
+    blocks.append(divider_block())
+
+    if section := build_collaboration_section(contacts, analysis):
+        blocks.append(section)
+
+    blocks.append(divider_block())
+
+    if section := build_financials_section(dossier, analysis):
+        blocks.append(section)
+
+    blocks.append(empty_block())
+    blocks.append(divider_block())
+
+    if section := build_news_section(news):
+        blocks.append(section)
+
+    blocks.append(divider_block())
+
+    if section := build_audit_section(dossier, analysis):
+        blocks.append(section)
+
+    if section := build_conclusion_section(dossier, analysis):
+        blocks.append(section)
+
+    blocks.append(disclaimer_block())
+    blocks.append(empty_block())
+
+    return blocks

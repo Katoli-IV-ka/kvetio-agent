@@ -411,3 +411,60 @@ def test_disclaimer_block_is_heading4():
     rt = b["heading_4"]["rich_text"]
     assert rt[0]["annotations"]["italic"] is True
     assert rt[0]["annotations"]["color"] == "gray"
+
+
+# ---- build_page_blocks ----------------------------------------------------
+
+def test_build_page_blocks_full():
+    blocks = nr.build_page_blocks(_COMPANY, _DOSSIER, _ANALYSIS, _CONTACTS, _NEWS)
+    block_types = [b["type"] for b in blocks]
+    assert "heading_1" in block_types
+    assert "divider" in block_types
+    callouts = [b for b in blocks if b["type"] == "callout"]
+    assert len(callouts) >= 7  # О компании, Продукт x1+, Сотрудничество, Финансы, Новости, Анализ, Вывод
+
+
+def test_build_page_blocks_first_block_is_heading1():
+    blocks = nr.build_page_blocks(_COMPANY, _DOSSIER, _ANALYSIS, _CONTACTS, _NEWS)
+    assert blocks[0]["type"] == "heading_1"
+    assert blocks[0]["heading_1"]["rich_text"][0]["text"]["content"] == "Dossier"
+
+
+def test_build_page_blocks_no_dossier():
+    blocks = nr.build_page_blocks(_COMPANY, None, {}, [], [])
+    callouts = [b for b in blocks if b["type"] == "callout"]
+    emojis = [b["callout"]["icon"]["emoji"] for b in callouts]
+    assert "🏢" in emojis          # О компании present
+    assert "📦" not in emojis      # no product
+    assert "💰" not in emojis      # no financials
+    assert "🔍" not in emojis      # no audit
+    assert "🎯" not in emojis      # no conclusion
+
+
+def test_build_page_blocks_no_contacts():
+    blocks = nr.build_page_blocks(_COMPANY, _DOSSIER, _ANALYSIS, [], _NEWS)
+    # All callouts still render (contacts optional inside them)
+    assert len(blocks) > 0
+    # No mentions in any block (no contacts with notion_page_id)
+    def _has_mention(block):
+        for rt in (block.get("paragraph") or {}).get("rich_text", []):
+            if rt.get("type") == "mention":
+                return True
+        return False
+    paragraphs = [b for b in blocks if b["type"] == "paragraph"]
+    assert not any(_has_mention(p) for p in paragraphs)
+
+
+def test_build_page_blocks_no_news():
+    blocks = nr.build_page_blocks(_COMPANY, _DOSSIER, _ANALYSIS, _CONTACTS, [])
+    callouts = [b for b in blocks if b["type"] == "callout"]
+    emojis = [b["callout"]["icon"]["emoji"] for b in callouts]
+    assert "📰" not in emojis
+
+
+def test_build_page_blocks_has_disclaimer():
+    blocks = nr.build_page_blocks(_COMPANY, _DOSSIER, _ANALYSIS, _CONTACTS, _NEWS)
+    h4_blocks = [b for b in blocks if b["type"] == "heading_4"]
+    assert len(h4_blocks) == 1
+    rt = h4_blocks[0]["heading_4"]["rich_text"]
+    assert "аналитический" in rt[0]["text"]["content"]
