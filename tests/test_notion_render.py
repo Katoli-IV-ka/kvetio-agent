@@ -341,3 +341,27 @@ def test_financials_section_has_rounds_table():
 def test_financials_section_no_dossier_returns_none():
     block = nr.build_financials_section(None, {})
     assert block is None
+
+
+def test_news_section_is_callout():
+    block = nr.build_news_section(_NEWS)
+    assert block is not None
+    assert block["type"] == "callout"
+    assert block["callout"]["icon"]["emoji"] == "📰"
+
+
+def test_news_bullet_has_children():
+    """Each news bullet must have child paragraphs for summary and link."""
+    block = nr.build_news_section(_NEWS)
+    children = block["callout"]["children"]
+    bullets = [b for b in children if b["type"] == "bulleted_list_item"]
+    assert len(bullets) == 1
+    bullet_children = bullets[0]["bulleted_list_item"]["children"]
+    assert len(bullet_children) >= 2  # summary + link
+
+
+def test_news_section_no_news_returns_none():
+    block = nr.build_news_section([])
+    assert block is None
+    block2 = nr.build_news_section(None)
+    assert block2 is None

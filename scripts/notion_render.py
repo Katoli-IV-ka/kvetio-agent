@@ -421,3 +421,60 @@ def build_financials_section(
 
     children = [heading_2_block("Финансы"), divider_block(), *fields]
     return callout_block("💰", children)
+
+
+def _paragraph_block(text: str, link: str | None = None) -> dict:
+    if link:
+        rt = [
+            {"type": "text", "text": {"content": "🔗 "}},
+            {"type": "text", "text": {"content": text, "link": {"url": link}}},
+        ]
+    else:
+        rt = [{"type": "text", "text": {"content": text}}]
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt}}
+
+
+def build_news_section(news: list[dict] | None) -> dict | None:
+    """Build Новости callout. Returns None if no news items."""
+    if not news:
+        return None
+
+    items: list[dict] = []
+    for item in news:
+        observed = item.get("observed_at") or ""
+        try:
+            d = date.fromisoformat(str(observed))
+            month_year = d.strftime("%B %Y")
+        except (ValueError, TypeError):
+            month_year = str(observed)
+
+        title = item.get("title") or ""
+        summary = item.get("summary") or ""
+        url = item.get("url") or ""
+
+        bullet_text = f"[{month_year}] {title}"
+        children: list[dict] = []
+        if summary:
+            children.append(_paragraph_block(summary))
+        if url:
+            from urllib.parse import urlparse  # noqa: PLC0415
+            domain = urlparse(url).netloc or url
+            children.append(_paragraph_block(domain, link=url))
+
+        items.append({
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": bullet_text},
+                     "annotations": {"bold": True}}
+                ],
+                "children": children,
+            },
+        })
+
+    if not items:
+        return None
+
+    children_blocks = [heading_2_block("Новости"), divider_block(), *items]
+    return callout_block("📰", children_blocks)
