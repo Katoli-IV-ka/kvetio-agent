@@ -115,3 +115,95 @@ def test_last_info_update_ignores_none():
 def test_last_info_update_returns_none_when_all_none():
     result = np_mod._compute_last_info_update({}, None, {})
     assert result is None
+
+
+# ---------------------------------------------------------------------------
+# build_company_notion_profile
+# ---------------------------------------------------------------------------
+
+_COMPANY = {
+    "id": "co-uuid",
+    "domain": "acme.ai",
+    "name": "Acme AI",
+    "website": "https://acme.ai",
+    "linkedin_url": "https://linkedin.com/company/acme",
+    "icp_segment": "medical-imaging",
+    "status": "relevant",
+    "description": "AI-powered radiology platform.",
+    "hq_country": "US",
+    "notion_page_id": "np-123",
+    "notion_synced_at": "2026-06-01T00:00:00",
+    "updated_at": "2026-06-01T00:00:00",
+}
+
+_DOSSIER = {
+    "company_id": "co-uuid",
+    "team_size_estimate": "11-50",
+    "funding_stage": "Series A",
+    "funding_amount_usd": 12_000_000,
+    "updated_at": "2026-06-10T00:00:00",
+}
+
+_AGGREGATES = {
+    "last_research_created_at": "2026-06-15",
+    "last_contact_updated_at": None,
+}
+
+
+def test_profile_contains_expected_fields():
+    profile = np_mod.build_company_notion_profile(
+        _COMPANY, _DOSSIER, _AGGREGATES, _POTENTIAL_CFG
+    )
+    assert profile["name"] == "Acme AI"
+    assert profile["website"] == "https://acme.ai"
+    assert profile["linkedin_url"] == "https://linkedin.com/company/acme"
+    assert profile["icp_segment"] == "medical-imaging"
+    assert profile["status"] == "relevant"
+    assert profile["description"] == "AI-powered radiology platform."
+    assert profile["hq_country"] == "US"
+    assert profile["team_size_estimate"] == "11-50"
+    assert profile["funding_info"] == "Series A · $12M"
+    assert profile["potential_data"] == ["Medical Data", "Images", "Annotation"]
+    assert profile["last_info_update"] == "2026-06-15"
+
+
+def test_profile_preserves_service_keys():
+    profile = np_mod.build_company_notion_profile(
+        _COMPANY, _DOSSIER, _AGGREGATES, _POTENTIAL_CFG
+    )
+    assert profile["id"] == "co-uuid"
+    assert profile["domain"] == "acme.ai"
+    assert profile["notion_page_id"] == "np-123"
+    assert profile["notion_synced_at"] == "2026-06-01T00:00:00"
+
+
+def test_profile_none_dossier():
+    profile = np_mod.build_company_notion_profile(
+        _COMPANY, None, {}, _POTENTIAL_CFG
+    )
+    assert profile["team_size_estimate"] is None
+    assert profile["funding_info"] is None
+
+
+def test_profile_translator_translates_description():
+    class StubTranslator:
+        def translate(self, text: str) -> str:
+            return f"RU:{text}"
+
+    profile = np_mod.build_company_notion_profile(
+        _COMPANY, None, {}, _POTENTIAL_CFG, translator=StubTranslator()
+    )
+    assert profile["description"] == "RU:AI-powered radiology platform."
+
+
+def test_profile_translator_does_not_translate_select_fields():
+    class StubTranslator:
+        def translate(self, text: str) -> str:
+            return f"RU:{text}"
+
+    profile = np_mod.build_company_notion_profile(
+        _COMPANY, None, {}, _POTENTIAL_CFG, translator=StubTranslator()
+    )
+    assert profile["icp_segment"] == "medical-imaging"
+    assert profile["status"] == "relevant"
+    assert profile["hq_country"] == "US"
