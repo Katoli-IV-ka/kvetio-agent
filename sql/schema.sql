@@ -45,6 +45,8 @@ CREATE TABLE companies (
         )),
     icp_segment TEXT,
     description TEXT,
+    hq_country TEXT,
+    hq_location TEXT,
     -- NewsAgent: strong news signal on a dossier_ready company flags an
     -- incremental dossier rebuild. Not a status — status still only moves forward.
     needs_refresh TIMESTAMPTZ,
@@ -174,6 +176,10 @@ CREATE TABLE contacts (
     discovered_from_research_record_id UUID REFERENCES research_records(id) ON DELETE SET NULL,
     notion_page_id TEXT,
     notion_synced_at TIMESTAMPTZ,
+    source TEXT,
+    outreach_status TEXT NOT NULL DEFAULT 'new'
+        CONSTRAINT contacts_outreach_check
+        CHECK (outreach_status IN ('new','queued','contacted','replied','bounced','skip')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -269,3 +275,15 @@ CREATE TABLE dossier_links (
 );
 
 CREATE INDEX idx_dl_analysis_record ON dossier_links (analysis_record_id);
+
+-- ─── translations ────────────────────────────────────────────────────────────
+
+CREATE TABLE translations (
+  source_hash     text NOT NULL,
+  target_lang     text NOT NULL DEFAULT 'ru',
+  source_text     text NOT NULL,
+  translated_text text NOT NULL,
+  model           text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (source_hash, target_lang)
+);
