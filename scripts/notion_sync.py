@@ -338,10 +338,17 @@ class NotionSync:
                     updated += 1
                 else:
                     page = self.notion.create_page(db_id, props)
+                    page_id = page["id"]
                     self.db.update(cfg["db_table"], cfg["db_key"],
                                    row[cfg["db_key"]],
-                                   {"notion_page_id": page["id"],
+                                   {"notion_page_id": page_id,
                                     "notion_synced_at": datetime.utcnow().isoformat()})
+                    if entity == "companies" and row.get("id"):
+                        try:
+                            from notion_render import render_and_write_body  # noqa: PLC0415
+                            render_and_write_body(self, row["id"], page_id, refresh=False)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.error("render body %s: %s", row.get("id"), exc)
                     created += 1
             except Exception as exc:  # noqa: BLE001
                 logger.error("forward %s %s: %s", entity, row.get(cfg["db_key"]), exc)
@@ -554,6 +561,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="(зарезервировано) удалять свойства Notion вне конфига")
     p.add_argument("--list-fields", dest="list_fields", action="store_true")
     p.add_argument("--dry-run", dest="dry_run", action="store_true")
+    p.add_argument("--refresh-body", dest="refresh_body", action="store_true",
+                   help="Re-render body for all companies with existing notion_page_id")
     return p
 
 
@@ -576,6 +585,28 @@ def main(argv=None) -> int:
         return 0
 
     sync = NotionSync(notion=_make_notion(), db=_make_db(), mapping=mapping)
+
+    if args.refresh_body:
+        from notion_render import render_and_write_body  # noqa: PLC0415
+        companies = sync.db.fetch("companies")
+        refreshed = errors = 0
+        for company in companies:
+            page_id = company.get("notion_page_id")
+            company_id = company.get("id")
+            if not page_id or not company_id:
+                continue
+            if args.dry_run:
+                refreshed += 1
+                continue
+            try:
+                render_and_write_body(sync, company_id, page_id, refresh=True)
+                refreshed += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.error("refresh body %s: %s", company.get("domain"), exc)
+                errors += 1
+        print(json.dumps({"entity": "companies", "refreshed": refreshed, "errors": errors},
+                         ensure_ascii=False))
+        return 0
 
     if args.entity == "dossiers":
         result = sync.sync_dossiers(dry_run=args.dry_run)

@@ -505,3 +505,95 @@ def test_notion_gateway_delete_block():
     gw = ns.NotionGateway(fake)
     gw.delete_block("blk-99")
     assert "blk-99" in fake.deleted
+
+
+# ---- render_and_write_body ------------------------------------------------
+
+class _FakeDbForRender:
+    """Fake DB for render_and_write_body tests."""
+    def __init__(self, company, dossier, analysis_records, contacts, news):
+        self._company = company
+        self._dossier = dossier
+        self._analysis = analysis_records  # list of dicts
+        self._contacts = contacts
+        self._news = news
+
+    def fetch_one_by_id(self, table, id_value):
+        if table == "companies":
+            return self._company if self._company and self._company.get("id") == id_value else None
+        return None
+
+    def fetch_for_company(self, table, company_id):
+        if table == "dossiers":
+            return [self._dossier] if self._dossier else []
+        if table == "analysis_records":
+            return self._analysis
+        if table == "contacts":
+            return self._contacts
+        return []
+
+    def fetch_news_for_company(self, company_id, limit=10):
+        return self._news[:limit]
+
+
+class _FakeNotionForRender:
+    def __init__(self, existing_blocks=None):
+        self.appended = {}  # page_id -> list of blocks
+        self._existing = existing_blocks or {}
+        self.deleted = []
+
+    def list_block_children(self, page_id):
+        return self._existing.get(page_id, [])
+
+    def delete_block(self, block_id):
+        self.deleted.append(block_id)
+
+    def append_children(self, page_id, children):
+        self.appended.setdefault(page_id, []).extend(children)
+
+
+class _FakeSync:
+    def __init__(self, db, notion):
+        self.db = db
+        self.notion = notion
+
+
+def test_render_and_write_body_appends_blocks():
+    db = _FakeDbForRender(
+        _COMPANY, _DOSSIER,
+        list(_ANALYSIS.values()),
+        _CONTACTS, _NEWS,
+    )
+    notion = _FakeNotionForRender()
+    sync = _FakeSync(db, notion)
+    nr.render_and_write_body(sync, _COMPANY["id"], "page-99", refresh=False)
+    assert "page-99" in notion.appended
+    assert len(notion.appended["page-99"]) > 0
+
+
+def test_refresh_deletes_existing_blocks():
+    existing = [{"id": "old-blk-1"}, {"id": "old-blk-2"}]
+    db = _FakeDbForRender(
+        _COMPANY, _DOSSIER,
+        list(_ANALYSIS.values()),
+        _CONTACTS, _NEWS,
+    )
+    notion = _FakeNotionForRender(existing_blocks={"page-99": existing})
+    sync = _FakeSync(db, notion)
+    nr.render_and_write_body(sync, _COMPANY["id"], "page-99", refresh=True)
+    assert "old-blk-1" in notion.deleted
+    assert "old-blk-2" in notion.deleted
+    assert "page-99" in notion.appended  # new blocks written after deletion
+
+
+def test_render_and_write_body_no_refresh_does_not_delete():
+    existing = [{"id": "keep-blk"}]
+    db = _FakeDbForRender(
+        _COMPANY, _DOSSIER,
+        list(_ANALYSIS.values()),
+        _CONTACTS, _NEWS,
+    )
+    notion = _FakeNotionForRender(existing_blocks={"page-99": existing})
+    sync = _FakeSync(db, notion)
+    nr.render_and_write_body(sync, _COMPANY["id"], "page-99", refresh=False)
+    assert "keep-blk" not in notion.deleted
