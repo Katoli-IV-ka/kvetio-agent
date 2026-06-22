@@ -55,3 +55,51 @@ def quote_block(text: str) -> dict:
         "type": "quote",
         "quote": {"rich_text": [{"type": "text", "text": {"content": text}}]},
     }
+
+
+# ---------------------------------------------------------------------------
+# Rich-text segments
+# ---------------------------------------------------------------------------
+
+def label_segment(text: str) -> dict:
+    return {
+        "type": "text",
+        "text": {"content": text},
+        "annotations": {"bold": True, "code": True, "color": "yellow"},
+    }
+
+
+def _value_segment(text: str) -> dict:
+    return {"type": "text", "text": {"content": text}, "annotations": {}}
+
+
+def field_block(label: str, value) -> dict | None:
+    """Paragraph with bold+code+yellow label + plain value. Returns None if value is empty."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return {
+        "object": "block",
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [
+                label_segment(label),
+                _value_segment(f" {text}"),
+            ]
+        },
+    }
+
+
+def callout_block(emoji: str, children: list[dict]) -> dict:
+    return {
+        "object": "block",
+        "type": "callout",
+        "callout": {
+            "rich_text": [],
+            "icon": {"type": "emoji", "emoji": emoji},
+            "color": "default",
+            "children": children,
+        },
+    }
