@@ -215,6 +215,24 @@ class NotionGateway:
     def append_children(self, page_id, children):
         return self._c.blocks.children.append(block_id=page_id, children=children)
 
+    def list_block_children(self, block_id: str) -> list[dict]:
+        """Return all child blocks with pagination."""
+        results, cursor = [], None
+        while True:
+            resp = (
+                self._c.blocks.children.list(block_id=block_id, start_cursor=cursor)
+                if cursor
+                else self._c.blocks.children.list(block_id=block_id)
+            )
+            results.extend(resp["results"])
+            if not resp.get("has_more"):
+                break
+            cursor = resp["next_cursor"]
+        return results
+
+    def delete_block(self, block_id: str) -> None:
+        self._c.blocks.delete(block_id=block_id)
+
     def retrieve_database(self, db_id):
         return self._c.databases.retrieve(database_id=db_id)
 
@@ -238,6 +256,41 @@ class DbGateway:
 
     def insert(self, table, fields):
         self._c.table(table).insert(fields).execute()
+
+    def fetch_for_company(self, table: str, company_id: str) -> list[dict]:
+        """Fetch all rows for a company_id from any table."""
+        return (
+            self._c.table(table)
+            .select("*")
+            .eq("company_id", company_id)
+            .execute()
+            .data or []
+        )
+
+    def fetch_news_for_company(self, company_id: str, limit: int = 10) -> list[dict]:
+        """Fetch latest news research_records for a company."""
+        return (
+            self._c.table("research_records")
+            .select("*")
+            .eq("company_id", company_id)
+            .eq("record_type", "news")
+            .order("observed_at", desc=True)
+            .limit(limit)
+            .execute()
+            .data or []
+        )
+
+    def fetch_one_by_id(self, table: str, id_value: str) -> dict | None:
+        """Fetch single row by primary key 'id'."""
+        rows = (
+            self._c.table(table)
+            .select("*")
+            .eq("id", id_value)
+            .limit(1)
+            .execute()
+            .data or []
+        )
+        return rows[0] if rows else None
 
 
 class NotionSync:

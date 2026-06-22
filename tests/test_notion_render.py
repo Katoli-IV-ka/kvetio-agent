@@ -468,3 +468,40 @@ def test_build_page_blocks_has_disclaimer():
     assert len(h4_blocks) == 1
     rt = h4_blocks[0]["heading_4"]["rich_text"]
     assert "аналитический" in rt[0]["text"]["content"]
+
+
+# ---- Gateway extensions ---------------------------------------------------
+
+import notion_sync as ns
+
+
+def _make_fake_inner(blocks_data):
+    inner = type("_Inner", (), {})()
+    inner.deleted = []
+
+    class _Blocks:
+        class children:
+            @staticmethod
+            def list(block_id, start_cursor=None):
+                return {"results": blocks_data.get(block_id, []), "has_more": False}
+
+        @staticmethod
+        def delete(block_id):
+            inner.deleted.append(block_id)
+
+    inner.blocks = _Blocks
+    return inner
+
+
+def test_notion_gateway_list_block_children():
+    fake = _make_fake_inner({"pg-1": [{"id": "blk-1"}, {"id": "blk-2"}]})
+    gw = ns.NotionGateway(fake)
+    result = gw.list_block_children("pg-1")
+    assert result == [{"id": "blk-1"}, {"id": "blk-2"}]
+
+
+def test_notion_gateway_delete_block():
+    fake = _make_fake_inner({})
+    gw = ns.NotionGateway(fake)
+    gw.delete_block("blk-99")
+    assert "blk-99" in fake.deleted
