@@ -24,6 +24,7 @@ def test_contacts_mapping_has_company_relation_and_name():
     by_column = {field["db_column"]: field for field in fields}
 
     assert by_column["company_page_ids"]["notion_type"] == "relation"
+    assert by_column["company_page_ids"]["notion_property"] == "Company"
     assert by_column["name"]["notion_property"] == "Name"
     assert by_column["contact_type"]["notion_type"] == "select"
     assert "contact" + "_result" not in by_column
@@ -343,14 +344,16 @@ def test_contacts_mapping_matches_compact_schema():
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
     assert contacts_fields == {
         "Name",
-        "Type",
-        "Информация о контакте",
+        "Contact Type",
+        "Contact Info",
         "Email",
         "Phone",
         "LinkedIn",
         "Facebook",
         "Instagram",
-        "Компании",
+        "Company",
+        "Outreach Status",
+        "Source",
     }
 
 
@@ -358,32 +361,22 @@ def test_companies_mapping_matches_release_schema():
     mapping = ns.load_mapping()
     fields = {f["db_column"]: f for f in mapping["companies"]["fields"]}
 
-    assert fields == {
-        "name": {
-            "db_column": "name",
-            "notion_property": "Company Name",
-            "notion_type": "title",
-            "direction": "forward",
-        },
-        "website": {
-            "db_column": "website",
-            "notion_property": "Website",
-            "notion_type": "url",
-            "direction": "forward",
-        },
-        "linkedin_url": {
-            "db_column": "linkedin_url",
-            "notion_property": "LinkedIn",
-            "notion_type": "url",
-            "direction": "forward",
-        },
-        "description": {
-            "db_column": "description",
-            "notion_property": "Sammary",
-            "notion_type": "rich_text",
-            "direction": "forward",
-        },
+    expected_columns = {
+        "name", "website", "linkedin_url", "icp_segment", "status",
+        "description", "funding_info", "team_size_estimate", "potential_data",
+        "hq_country", "last_info_update",
     }
+    assert set(fields.keys()) == expected_columns
+    assert fields["name"]["notion_property"] == "Company Name"
+    assert fields["name"]["notion_type"] == "title"
+    assert fields["description"]["notion_property"] == "AI Summary"
+    assert fields["funding_info"]["source"] == "computed"
+    assert fields["team_size_estimate"]["source"] == "dossier"
+    assert fields["potential_data"]["notion_type"] == "multi_select"
+    assert fields["last_info_update"]["notion_type"] == "date"
+    assert mapping["companies"].get("profile_builder") is True
+    for f in mapping["companies"]["fields"]:
+        assert f["direction"] == "forward"
 
 
 def test_to_notion_property_phone_number():
@@ -579,3 +572,8 @@ def test_sync_dossiers_reads_typed_fields():
 
     assert result["entity"] == "dossiers"
     assert result["updated"] == 1
+
+
+def test_no_dossiers_entity_in_mapping():
+    mapping = ns.load_mapping()
+    assert "dossiers" not in mapping

@@ -1,5 +1,6 @@
 # Декларативный маппинг БД → Notion. Единственный рычаг настройки полей.
 # direction: forward = БД авторитетна (БД→Notion); reverse = Notion авторитетен (Notion→БД).
+# source: db_column | dossier | computed — откуда берётся значение (для build_company_profiles).
 # Чтобы добавить поле: дописать строку + `notion_sync.py --ensure-schema`.
 # Чтобы убрать: удалить строку (свойство в Notion остаётся, если не --prune).
 
@@ -8,37 +9,33 @@ companies:
   db_table: companies
   db_key: domain
   db_status_filter: [relevant, sources_gathered, analyzed, dossier_ready, data_partner]
+  profile_builder: true
   fields:
-    - { db_column: name,         notion_property: "Company Name", notion_type: title,     direction: forward }
-    - { db_column: website,      notion_property: "Website",      notion_type: url,       direction: forward }
-    - { db_column: linkedin_url, notion_property: "LinkedIn",     notion_type: url,       direction: forward }
-    - { db_column: description,  notion_property: "Sammary",      notion_type: rich_text, direction: forward }
+    - { db_column: name,               notion_property: "Company Name",    notion_type: title,        direction: forward, source: db_column }
+    - { db_column: website,            notion_property: "Website",         notion_type: url,          direction: forward, source: db_column }
+    - { db_column: linkedin_url,       notion_property: "LinkedIn",        notion_type: url,          direction: forward, source: db_column }
+    - { db_column: icp_segment,        notion_property: "ICP Segment",     notion_type: select,       direction: forward, source: db_column }
+    - { db_column: status,             notion_property: "Pipeline Status", notion_type: select,       direction: forward, source: db_column }
+    - { db_column: description,        notion_property: "AI Summary",      notion_type: rich_text,    direction: forward, source: db_column }
+    - { db_column: funding_info,       notion_property: "Funding Info",    notion_type: rich_text,    direction: forward, source: computed }
+    - { db_column: team_size_estimate, notion_property: "Team Size",       notion_type: select,       direction: forward, source: dossier }
+    - { db_column: potential_data,     notion_property: "Potential Data",  notion_type: multi_select, direction: forward, source: computed }
+    - { db_column: hq_country,         notion_property: "Country",         notion_type: select,       direction: forward, source: db_column }
+    - { db_column: last_info_update,   notion_property: "Last Info Update",notion_type: date,         direction: forward, source: computed }
 
 contacts:
   notion_database_id_env: NOTION_CONTACTS_DB_ID
   db_table: contacts
   db_key: id
   fields:
-    - { db_column: name,                notion_property: "Name",                  notion_type: title,        direction: forward }
-    - { db_column: contact_type,        notion_property: "Type",                  notion_type: select,       direction: forward }
-    - { db_column: info,                notion_property: "Информация о контакте", notion_type: rich_text,    direction: forward }
-    - { db_column: email,               notion_property: "Email",                 notion_type: email,        direction: forward }
-    - { db_column: phone,               notion_property: "Phone",                 notion_type: phone_number, direction: forward }
-    - { db_column: linkedin_url,        notion_property: "LinkedIn",              notion_type: url,          direction: forward }
-    - { db_column: facebook_url,        notion_property: "Facebook",              notion_type: url,          direction: forward }
-    - { db_column: instagram_url,       notion_property: "Instagram",             notion_type: url,          direction: forward }
-    - { db_column: company_page_ids,    notion_property: "Компании",              notion_type: relation,     direction: forward }
-
-dossiers:
-  notion_database_id_env: NOTION_DOSSIERS_DB_ID
-  db_table: dossiers
-  db_key: company_id
-  fields:
-    - { db_column: company_id,           notion_property: "Company ID",          notion_type: title,     direction: forward }
-    - { db_column: funding_stage,        notion_property: "Funding stage",       notion_type: select,    direction: forward }
-    - { db_column: team_size_estimate,   notion_property: "Team size",           notion_type: select,    direction: forward }
-    - { db_column: icp_fit,              notion_property: "ICP fit",             notion_type: select,    direction: forward }
-    - { db_column: product_category,     notion_property: "Product category",    notion_type: rich_text, direction: forward }
-    - { db_column: last_news_date,       notion_property: "Last news date",      notion_type: date,      direction: forward }
-    - { db_column: funding_date,         notion_property: "Last funding date",   notion_type: date,      direction: forward }
-    - { db_column: summary_md,           notion_property: "Summary",             notion_type: rich_text, direction: forward }
+    - { db_column: name,             notion_property: "Name",           notion_type: title,        direction: forward }
+    - { db_column: contact_type,     notion_property: "Contact Type",   notion_type: select,       direction: forward }
+    - { db_column: info,             notion_property: "Contact Info",   notion_type: rich_text,    direction: forward }
+    - { db_column: email,            notion_property: "Email",          notion_type: email,        direction: forward }
+    - { db_column: phone,            notion_property: "Phone",          notion_type: phone_number, direction: forward }
+    - { db_column: linkedin_url,     notion_property: "LinkedIn",       notion_type: url,          direction: forward }
+    - { db_column: facebook_url,     notion_property: "Facebook",       notion_type: url,          direction: forward }
+    - { db_column: instagram_url,    notion_property: "Instagram",      notion_type: url,          direction: forward }
+    - { db_column: company_page_ids, notion_property: "Company",        notion_type: relation,     direction: forward }
+    - { db_column: outreach_status,  notion_property: "Outreach Status",notion_type: select,       direction: forward }
+    - { db_column: source,           notion_property: "Source",         notion_type: select,       direction: forward }
