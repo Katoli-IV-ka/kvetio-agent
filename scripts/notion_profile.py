@@ -40,3 +40,38 @@ def _compute_funding_info(stage: str | None, amount_usd: float | None) -> str | 
     if amount_str:
         return amount_str
     return None
+
+
+def _compute_potential_data(
+    icp_segment: str | None,
+    status: str | None,
+    potential_cfg: dict,
+) -> list[str]:
+    segments = potential_cfg.get("segments", {})
+    status_overrides = potential_cfg.get("status_overrides", {})
+    base = list(segments.get(icp_segment or "", []))
+    overrides = list(status_overrides.get(status or "", []))
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in base + overrides:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return result
+
+
+def _compute_last_info_update(
+    company: dict,
+    dossier: dict | None,
+    aggregates: dict,
+) -> str | None:
+    candidates: list[str] = []
+    if company.get("updated_at"):
+        candidates.append(str(company["updated_at"])[:10])
+    if dossier and dossier.get("updated_at"):
+        candidates.append(str(dossier["updated_at"])[:10])
+    if aggregates.get("last_research_created_at"):
+        candidates.append(str(aggregates["last_research_created_at"])[:10])
+    if aggregates.get("last_contact_updated_at"):
+        candidates.append(str(aggregates["last_contact_updated_at"])[:10])
+    return max(candidates) if candidates else None
