@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
+from notion_profile import build_company_profiles, load_potential_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -297,11 +298,12 @@ class DbGateway:
 
 
 class NotionSync:
-    def __init__(self, notion, db, mapping=None, env=None):
+    def __init__(self, notion, db, mapping=None, env=None, translator=None):
         self.notion = notion
         self.db = db
         self.mapping = mapping if mapping is not None else load_mapping()
         self.env = env if env is not None else os.environ
+        self.translator = translator
 
     def _cfg(self, entity):
         return self.mapping[entity]
@@ -321,6 +323,8 @@ class NotionSync:
         db_id = self._db_id(entity)
         fields = self._fields(entity, "forward")
         rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
+        if cfg.get("profile_builder"):
+            rows = build_company_profiles(rows, self.db, load_potential_cfg(), translator=self.translator)
         if entity == "contacts":
             rows = enrich_contact_rows(rows, self.db)
         created = updated = errors = 0

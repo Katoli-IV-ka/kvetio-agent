@@ -618,3 +618,51 @@ def test_sync_dossiers_reads_typed_fields():
 def test_no_dossiers_entity_in_mapping():
     mapping = ns.load_mapping()
     assert "dossiers" not in mapping
+
+
+def test_sync_forward_uses_profile_builder_when_flag_set():
+    """When mapping has profile_builder:true, sync_forward uses build_company_profiles."""
+    from unittest.mock import patch, MagicMock
+
+    profile_mapping = {
+        "companies": {
+            "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+            "db_table": "companies",
+            "db_key": "domain",
+            "db_status_filter": ["relevant"],
+            "profile_builder": True,
+            "fields": [
+                {"db_column": "name", "notion_property": "Company Name",
+                 "notion_type": "title", "direction": "forward", "source": "db_column"},
+                {"db_column": "funding_info", "notion_property": "Funding Info",
+                 "notion_type": "rich_text", "direction": "forward", "source": "computed"},
+            ],
+        }
+    }
+
+    rows = [{"domain": "acme.com", "name": "Acme", "status": "relevant",
+             "notion_page_id": None, "notion_synced_at": None}]
+    notion = FakeNotion()
+    notion.databases["DBID"] = {"properties": {
+        "Company Name": {"type": "title"},
+        "Funding Info": {"type": "rich_text"},
+    }}
+    db = FakeDb(rows)
+
+    built_profiles = [
+        {"domain": "acme.com", "name": "Acme", "funding_info": "$5M Seed",
+         "notion_page_id": None, "notion_synced_at": None,
+         "id": 1, "linkedin_url": None}
+    ]
+
+    with patch("notion_sync.build_company_profiles", return_value=built_profiles) as mock_build, \
+         patch("notion_sync.load_potential_cfg", return_value={}) as mock_cfg:
+        sync = ns.NotionSync(notion=notion, db=db, mapping=profile_mapping,
+                             env={"NOTION_COMPANIES_DB_ID": "DBID"})
+        result = sync.sync_forward("companies")
+
+    mock_build.assert_called_once()
+    call_args = mock_build.call_args
+    passed_rows = call_args[0][0]  # first positional arg is company_rows
+    assert [r["domain"] for r in passed_rows] == [r["domain"] for r in rows]
+    assert result["created"] == 1
