@@ -301,3 +301,73 @@ def build_product_sections(
             sections.append(callout_block("📦", sec_children))
 
     return sections
+
+
+def build_collaboration_section(
+    contacts: list[dict],
+    analysis: dict[str, dict],
+) -> dict | None:
+    """Build Сотрудничество callout. Returns None if all content is empty."""
+    facts = (analysis.get("collaboration") or {}).get("facts") or {}
+    fields: list[dict] = []
+
+    # Partners table
+    partners = facts.get("partners") or []
+    if partners:
+        rows = [
+            [p.get("type", ""), p.get("company", ""), p.get("role", "")]
+            for p in partners
+        ]
+        fields.append(field_block("Партнёры и поставщики данных:", "↓") or empty_block())
+        fields.append(_table_block(["Тип", "Компания", "Роль"], rows))
+
+    # Team table from contacts (persons only)
+    persons = [c for c in contacts if c.get("contact_type") == "person"]
+    if persons:
+        rows = []
+        for c in persons:
+            contact_cell = (
+                {"_mention_page_id": c["notion_page_id"]}
+                if c.get("notion_page_id")
+                else c.get("name", "")
+            )
+            rows.append([
+                c.get("name", ""),
+                c.get("info", ""),
+                c.get("linkedin_url", ""),
+                contact_cell,
+            ])
+        fields.append(field_block("Команда:", "↓") or empty_block())
+        fields.append(_table_block(["Имя", "Должность", "LinkedIn / Источник", "Контакт"], rows))
+
+    # ЛПР paragraph (tier-1 contacts)
+    ldm_contacts = [
+        c for c in contacts
+        if c.get("contact_type") == "person"
+        and any(kw.lower() in (c.get("info") or "").lower() for kw in _LEADER_KEYWORDS)
+    ]
+    if ldm_contacts:
+        rt = [label_segment("ЛПР:")]
+        for c in ldm_contacts:
+            name = c.get("name") or ""
+            info = c.get("info") or ""
+            rt += [
+                {"type": "text", "text": {"content": "\n- "}, "annotations": {}},
+                {"type": "text", "text": {"content": f"{name} ({info})" if info else name},
+                 "annotations": {"bold": True}},
+            ]
+        fields.append({
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {"rich_text": rt},
+        })
+
+    if note := facts.get("note"):
+        if b := field_block("Примечание:", note):
+            fields.append(b)
+
+    if not fields:
+        return None
+
+    children = [heading_2_block("Сотрудничество"), divider_block(), *fields]
+    return callout_block("🤝", children)

@@ -282,3 +282,42 @@ def test_product_section_includes_features_as_bullets():
 def test_product_section_no_dossier_returns_empty():
     sections = nr.build_product_sections(None, {})
     assert sections == []
+
+
+def test_collaboration_section_is_callout():
+    block = nr.build_collaboration_section(_CONTACTS, _ANALYSIS)
+    assert block is not None
+    assert block["type"] == "callout"
+    assert block["callout"]["icon"]["emoji"] == "🤝"
+
+
+def test_collaboration_section_has_team_table():
+    block = nr.build_collaboration_section(_CONTACTS, _ANALYSIS)
+    children = block["callout"]["children"]
+    table_blocks = [b for b in children if b["type"] == "table"]
+    assert len(table_blocks) >= 1  # at least team table
+
+
+def test_contacts_table_mention():
+    """Contact cell contains mention when notion_page_id is present."""
+    block = nr.build_collaboration_section(_CONTACTS, _ANALYSIS)
+    children = block["callout"]["children"]
+    tables = [b for b in children if b["type"] == "table"]
+    # Find the team table (4 columns: Имя | Должность | LinkedIn | Контакт)
+    team_table = next((t for t in tables if t["table"]["table_width"] == 4), None)
+    assert team_table is not None
+    # First data row corresponds to c1 which has notion_page_id
+    data_row = team_table["table"]["children"][1]  # index 0 = header
+    contact_cell = data_row["table_row"]["cells"][3]  # last column = Контакт
+    types = [seg["type"] for seg in contact_cell]
+    assert "mention" in types
+
+
+def test_collaboration_section_no_contacts():
+    block = nr.build_collaboration_section([], _ANALYSIS)
+    assert block is not None  # section still renders with partners from analysis
+
+
+def test_collaboration_section_returns_none_when_all_empty():
+    block = nr.build_collaboration_section([], {})
+    assert block is None
