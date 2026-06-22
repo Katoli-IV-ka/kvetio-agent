@@ -116,3 +116,55 @@ def build_company_notion_profile(
         "notion_page_id": company.get("notion_page_id"),
         "notion_synced_at": company.get("notion_synced_at"),
     }
+
+
+def build_company_profiles(
+    company_rows: list[dict],
+    db,
+    potential_cfg: dict,
+    translator=None,
+) -> list[dict]:
+    """Prefetch all data in 3 constant-count queries, then build profiles in memory."""
+    dossiers = db.fetch("dossiers")
+    research_rows = db.fetch("research_records")
+    contacts_rows = db.fetch("contacts")
+
+    dossier_by_cid: dict[str, dict] = {
+        d["company_id"]: d for d in dossiers if d.get("company_id")
+    }
+
+    max_research: dict[str, str] = {}
+    for r in research_rows:
+        cid = r.get("company_id")
+        val = r.get("created_at")
+        if cid and val:
+            s = str(val)[:10]
+            if s > max_research.get(cid, ""):
+                max_research[cid] = s
+
+    max_contact: dict[str, str] = {}
+    for c in contacts_rows:
+        cid = c.get("company_id")
+        val = c.get("updated_at")
+        if cid and val:
+            s = str(val)[:10]
+            if s > max_contact.get(cid, ""):
+                max_contact[cid] = s
+
+    profiles = []
+    for company in company_rows:
+        cid = company.get("id")
+        aggregates = {
+            "last_research_created_at": max_research.get(cid),
+            "last_contact_updated_at": max_contact.get(cid),
+        }
+        profiles.append(
+            build_company_notion_profile(
+                company,
+                dossier_by_cid.get(cid),
+                aggregates,
+                potential_cfg,
+                translator=translator,
+            )
+        )
+    return profiles

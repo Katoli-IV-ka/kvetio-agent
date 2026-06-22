@@ -207,3 +207,87 @@ def test_profile_translator_does_not_translate_select_fields():
     assert profile["icp_segment"] == "medical-imaging"
     assert profile["status"] == "relevant"
     assert profile["hq_country"] == "US"
+
+
+# ---------------------------------------------------------------------------
+# build_company_profiles
+# ---------------------------------------------------------------------------
+
+class _CountingFakeDb:
+    """Fake DB that counts fetch calls per table."""
+    def __init__(self):
+        self.fetch_calls: list[str] = []
+        self.tables: dict[str, list[dict]] = {
+            "dossiers": [
+                {
+                    "company_id": "co1",
+                    "team_size_estimate": "11-50",
+                    "funding_stage": "Series A",
+                    "funding_amount_usd": 12_000_000,
+                    "updated_at": "2026-06-10T00:00:00",
+                }
+            ],
+            "research_records": [
+                {"company_id": "co1", "created_at": "2026-06-15T00:00:00"},
+                {"company_id": "co2", "created_at": "2026-06-01T00:00:00"},
+            ],
+            "contacts": [
+                {"company_id": "co1", "updated_at": "2026-06-20T00:00:00"},
+            ],
+        }
+
+    def fetch(self, table, status_filter=None):
+        self.fetch_calls.append(table)
+        return list(self.tables.get(table, []))
+
+
+_COMPANIES_TWO = [
+    {
+        "id": "co1", "domain": "acme.ai", "name": "Acme", "website": "https://acme.ai",
+        "linkedin_url": None, "icp_segment": "medical-imaging", "status": "relevant",
+        "description": "Radiology AI.", "hq_country": "US",
+        "notion_page_id": None, "notion_synced_at": None,
+        "updated_at": "2026-06-01T00:00:00",
+    },
+    {
+        "id": "co2", "domain": "beta.io", "name": "Beta", "website": "https://beta.io",
+        "linkedin_url": None, "icp_segment": "generative-ai", "status": "analyzed",
+        "description": "LLM platform.", "hq_country": None,
+        "notion_page_id": None, "notion_synced_at": None,
+        "updated_at": "2026-06-02T00:00:00",
+    },
+]
+
+
+def test_build_company_profiles_constant_fetch_count():
+    db = _CountingFakeDb()
+    profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
+    assert len(profiles) == 2
+    assert db.fetch_calls.count("dossiers") == 1
+    assert db.fetch_calls.count("research_records") == 1
+    assert db.fetch_calls.count("contacts") == 1
+    assert len(db.fetch_calls) == 3
+
+
+def test_build_company_profiles_correct_dossier_lookup():
+    db = _CountingFakeDb()
+    profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
+    co1 = next(p for p in profiles if p["domain"] == "acme.ai")
+    assert co1["team_size_estimate"] == "11-50"
+    assert co1["funding_info"] == "Series A · $12M"
+
+
+def test_build_company_profiles_aggregates_max_dates():
+    db = _CountingFakeDb()
+    profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
+    co1 = next(p for p in profiles if p["domain"] == "acme.ai")
+    # research 2026-06-15 < contact 2026-06-20 → last_info_update = 2026-06-20
+    assert co1["last_info_update"] == "2026-06-20"
+
+
+def test_build_company_profiles_no_dossier_for_company():
+    db = _CountingFakeDb()
+    profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
+    co2 = next(p for p in profiles if p["domain"] == "beta.io")
+    assert co2["team_size_estimate"] is None
+    assert co2["funding_info"] is None
