@@ -413,6 +413,48 @@ def test_validate_mapping_accepts_phone_number_and_relation():
     assert errors == []
 
 
+def test_validate_mapping_accepts_source_field():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "ENV",
+            "db_table": "companies",
+            "db_key": "domain",
+            "fields": [
+                {
+                    "db_column": "funding_info",
+                    "notion_property": "Funding Info",
+                    "notion_type": "rich_text",
+                    "direction": "forward",
+                    "source": "computed",
+                }
+            ],
+        }
+    }
+    # Should not raise
+    ns.validate_mapping(mapping)
+
+
+def test_validate_mapping_rejects_computed_reverse():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "ENV",
+            "db_table": "companies",
+            "db_key": "domain",
+            "fields": [
+                {
+                    "db_column": "funding_info",
+                    "notion_property": "Funding Info",
+                    "notion_type": "rich_text",
+                    "direction": "reverse",
+                    "source": "computed",
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="computed.*reverse"):
+        ns.validate_mapping(mapping)
+
+
 def test_enrich_contact_rows_uses_company_id_relation():
     rows = [
         {"id": "c1", "name": "Alice", "company_id": "co1"},
