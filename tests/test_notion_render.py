@@ -365,3 +365,49 @@ def test_news_section_no_news_returns_none():
     assert block is None
     block2 = nr.build_news_section(None)
     assert block2 is None
+
+
+def test_audit_section_is_callout():
+    block = nr.build_audit_section(_DOSSIER, _ANALYSIS)
+    assert block is not None
+    assert block["type"] == "callout"
+    assert block["callout"]["icon"]["emoji"] == "🔍"
+
+
+def test_audit_section_has_claims_table():
+    block = nr.build_audit_section(_DOSSIER, _ANALYSIS)
+    children = block["callout"]["children"]
+    tables = [b for b in children if b["type"] == "table"]
+    assert len(tables) == 1
+    assert tables[0]["table"]["table_width"] == 2  # Заявление | Реальная оценка
+
+
+def test_audit_section_no_analysis_falls_back_to_audit_md():
+    block = nr.build_audit_section(
+        {**_DOSSIER, "audit_md": "Some plain text.\n\nAnother paragraph."},
+        {},
+    )
+    assert block is not None
+    children = block["callout"]["children"]
+    paragraphs = [b for b in children if b["type"] == "paragraph"]
+    assert len(paragraphs) >= 2
+
+
+def test_conclusion_section_uses_heading3():
+    block = nr.build_conclusion_section(_DOSSIER, _ANALYSIS)
+    assert block is not None
+    children = block["callout"]["children"]
+    assert children[0]["type"] == "heading_3"
+
+
+def test_conclusion_section_icon():
+    block = nr.build_conclusion_section(_DOSSIER, _ANALYSIS)
+    assert block["callout"]["icon"]["emoji"] == "🎯"
+
+
+def test_disclaimer_block_is_heading4():
+    b = nr.disclaimer_block()
+    assert b["type"] == "heading_4"
+    rt = b["heading_4"]["rich_text"]
+    assert rt[0]["annotations"]["italic"] is True
+    assert rt[0]["annotations"]["color"] == "gray"

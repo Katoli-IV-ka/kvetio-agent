@@ -478,3 +478,96 @@ def build_news_section(news: list[dict] | None) -> dict | None:
 
     children_blocks = [heading_2_block("Новости"), divider_block(), *items]
     return callout_block("📰", children_blocks)
+
+
+def disclaimer_block() -> dict:
+    return {
+        "object": "block",
+        "type": "heading_4",
+        "heading_4": {
+            "rich_text": [{
+                "type": "text",
+                "text": {"content": "Документ носит аналитический характер и составлен на основе открытых источников."},
+                "annotations": {"italic": True, "color": "gray"},
+            }],
+            "is_toggleable": False,
+        },
+    }
+
+
+def build_audit_section(
+    dossier: dict | None,
+    analysis: dict[str, dict],
+) -> dict | None:
+    """Build Комплексный анализ callout."""
+    facts = (analysis.get("audit") or {}).get("facts") or {}
+    d = dossier or {}
+    fields: list[dict] = []
+
+    if facts:
+        if b := field_block("Общая картина:", facts.get("overview")):
+            fields.append(b)
+
+        claims = facts.get("claims_vs_reality") or []
+        if claims:
+            rows = [[c.get("claim", ""), c.get("reality", "")] for c in claims]
+            fields.append(field_block("Заявление → Реальная оценка:", "↓") or empty_block())
+            fields.append(_table_block(["Заявление", "Реальная оценка"], rows))
+
+        risks = facts.get("risks") or []
+        if risks:
+            items = risks if isinstance(risks, list) else [risks]
+            fields.append(field_block("Риски:", "↓") or empty_block())
+            fields.extend(_bulleted_text_block([str(r) for r in items]))
+
+        if b := field_block("Прогноз:", facts.get("forecast")):
+            fields.append(b)
+
+    elif d.get("audit_md"):
+        for para in (d["audit_md"] or "").split("\n\n"):
+            para = para.strip()
+            if para:
+                fields.append(_paragraph_block(para))
+
+    if not fields:
+        return None
+
+    children = [heading_2_block("Комплексный анализ и оценка"), divider_block(), *fields]
+    return callout_block("🔍", children)
+
+
+def build_conclusion_section(
+    dossier: dict | None,
+    analysis: dict[str, dict],
+) -> dict | None:
+    """Build Вывод для нас callout. Uses heading_3 (not heading_2) per spec."""
+    facts = (analysis.get("audit") or {}).get("facts") or {}
+    d = dossier or {}
+    fields: list[dict] = []
+
+    if facts:
+        interesting = facts.get("why_interesting") or []
+        if interesting:
+            items = interesting if isinstance(interesting, list) else [interesting]
+            fields.append(field_block("Почему интересны:", "↓") or empty_block())
+            fields.extend(_bulleted_text_block([str(i) for i in items]))
+
+        if b := field_block("Точка входа:", facts.get("entry_point")):
+            fields.append(b)
+        if b := field_block("Угол для питча:", facts.get("pitch_angle")):
+            fields.append(b)
+        if b := field_block("Рекомендуемый следующий шаг:", facts.get("next_step")):
+            fields.append(b)
+
+    elif d.get("summary_md"):
+        for para in (d["summary_md"] or "").split("\n\n"):
+            para = para.strip()
+            if para:
+                fields.append(_paragraph_block(para))
+
+    if not fields:
+        return None
+
+    # Spec: heading_3 for Вывод (not heading_2)
+    children = [heading_3_block("Вывод для нас"), divider_block(), *fields]
+    return callout_block("🎯", children)
