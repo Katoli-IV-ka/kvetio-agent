@@ -620,6 +620,39 @@ def test_no_dossiers_entity_in_mapping():
     assert "dossiers" not in mapping
 
 
+def test_sync_dossiers_translates_prose_fields():
+    """translator.translate() is called on summary_md, section_summaries values, and audit_md."""
+    from unittest.mock import MagicMock
+
+    translations = {
+        "English summary": "Русский summary",
+        "English audit": "Русский audit",
+        "Intro section": "Вступительный раздел",
+    }
+    translator = MagicMock()
+    translator.translate.side_effect = lambda t: translations.get(t, t)
+
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb([])
+    db.tables["companies"] = [{"id": "cid", "domain": "acme.com", "notion_page_id": "page-1"}]
+    db.tables["dossiers"] = [{
+        "company_id": "cid",
+        "summary_md": "English summary",
+        "audit_md": "English audit",
+        "section_summaries": {"intro": "Intro section"},
+        "team_size_estimate": "11-50",
+    }]
+
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"}, translator=translator)
+    sync.sync_dossiers()
+
+    translator.translate.assert_any_call("English summary")
+    translator.translate.assert_any_call("English audit")
+    translator.translate.assert_any_call("Intro section")
+
+
 def test_sync_forward_uses_profile_builder_when_flag_set():
     """When mapping has profile_builder:true, sync_forward uses build_company_profiles."""
     from unittest.mock import patch, MagicMock

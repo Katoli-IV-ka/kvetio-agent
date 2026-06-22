@@ -513,6 +513,15 @@ class NotionSync:
             if not company:
                 continue
             try:
+                if self.translator is not None:
+                    d = dict(d)
+                    d["summary_md"] = self.translator.translate(d.get("summary_md"))
+                    d["audit_md"] = self.translator.translate(d.get("audit_md"))
+                    if isinstance(d.get("section_summaries"), dict):
+                        d["section_summaries"] = {
+                            k: self.translator.translate(v)
+                            for k, v in d["section_summaries"].items()
+                        }
                 blocks = []
                 if d.get("summary_md"):
                     blocks += md_to_blocks("Досье — саммари", d["summary_md"])
