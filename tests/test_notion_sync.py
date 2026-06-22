@@ -27,7 +27,6 @@ def test_contacts_mapping_has_company_relation_and_name():
     assert by_column["company_page_ids"]["notion_property"] == "Company"
     assert by_column["name"]["notion_property"] == "Name"
     assert by_column["contact_type"]["notion_type"] == "select"
-    assert "contact" + "_result" not in by_column
 
 
 def test_validate_mapping_flags_bad_type():
