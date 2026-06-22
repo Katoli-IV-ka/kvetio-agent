@@ -239,3 +239,65 @@ def build_company_section(
 
     children = [heading_2_block("О компании"), divider_block(), *fields]
     return callout_block("🏢", children)
+
+
+def build_product_sections(
+    dossier: dict | None,
+    analysis: dict[str, dict],
+) -> list[dict]:
+    """Return list of 1 or 2 callout blocks for Продукт (основной + второстепенный)."""
+    if not dossier:
+        return []
+
+    facts = (analysis.get("product") or {}).get("facts") or {}
+    d = dossier
+
+    def _product_children(title: str, what: str | None, f: dict) -> list[dict] | None:
+        fields: list[dict] = []
+        if b := field_block("Что это:", what):
+            fields.append(b)
+        if b := field_block("Целевой рынок:", f.get("target_market")):
+            fields.append(b)
+        if b := field_block("Проблема, которую решает:", f.get("problem_solved")):
+            fields.append(b)
+        if b := field_block("Технологии:", f.get("technologies")):
+            fields.append(b)
+        features = f.get("features")
+        if features:
+            items = features if isinstance(features, list) else [features]
+            if bullets := _bulleted_text_block([str(i) for i in items]):
+                fields.append(field_block("Функционал:", "↓") or empty_block())
+                fields.extend(bullets)
+        if b := field_block("Данные, необходимые продукту:", f.get("data_needs")):
+            fields.append(b)
+        if b := field_block("Трудности в разработке:", f.get("challenges")):
+            fields.append(b)
+        if not fields:
+            return None
+        return [heading_2_block(title), divider_block(), *fields]
+
+    what_primary = None
+    parts = []
+    if d.get("product_category"):
+        parts.append(d["product_category"])
+    if d.get("ai_use_case"):
+        parts.append(d["ai_use_case"])
+    what_primary = " / ".join(parts) if parts else None
+
+    sections: list[dict] = []
+
+    primary_children = _product_children("Продукт [основной]", what_primary, facts)
+    if primary_children:
+        sections.append(callout_block("📦", primary_children))
+
+    secondary_facts = facts.get("secondary_product") or {}
+    if secondary_facts:
+        sec_children = _product_children(
+            "Продукт [второстепенный]",
+            secondary_facts.get("what"),
+            secondary_facts,
+        )
+        if sec_children:
+            sections.append(callout_block("📦", sec_children))
+
+    return sections

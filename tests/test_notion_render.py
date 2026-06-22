@@ -256,3 +256,29 @@ def test_company_section_returns_none_when_all_empty():
         [],
     )
     assert block is None
+
+
+def test_product_section_is_callout():
+    sections = nr.build_product_sections(_DOSSIER, _ANALYSIS)
+    assert len(sections) >= 1
+    assert sections[0]["type"] == "callout"
+    assert sections[0]["callout"]["icon"]["emoji"] == "📦"
+
+
+def test_product_section_starts_with_heading2_divider():
+    sections = nr.build_product_sections(_DOSSIER, _ANALYSIS)
+    children = sections[0]["callout"]["children"]
+    assert children[0]["type"] == "heading_2"
+    assert children[1]["type"] == "divider"
+
+
+def test_product_section_includes_features_as_bullets():
+    sections = nr.build_product_sections(_DOSSIER, _ANALYSIS)
+    children = sections[0]["callout"]["children"]
+    bullet_types = [b["type"] for b in children]
+    assert "bulleted_list_item" in bullet_types
+
+
+def test_product_section_no_dossier_returns_empty():
+    sections = nr.build_product_sections(None, {})
+    assert sections == []
