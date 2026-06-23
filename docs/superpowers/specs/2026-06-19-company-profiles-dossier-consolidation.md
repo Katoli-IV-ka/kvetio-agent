@@ -112,7 +112,7 @@ CREATE TABLE company_profiles (
                                     --  'series_c_plus' | 'bootstrapped' | 'unknown'
     funding_amount_usd  BIGINT,     -- latest round size in USD
     funding_date        DATE,       -- latest round close date
-    team_size_estimate  TEXT,       -- '1-10' | '10-50' | '50-200' | '200-500' | '500+'
+    company_size  TEXT,       -- '1-10' | '10-50' | '50-200' | '200-500' | '500+'
     product_category    TEXT,       -- e.g. 'MLOps', 'Data Infrastructure', 'AI Application'
     ai_use_case         TEXT,       -- what the company does with AI (short phrase)
     icp_fit             TEXT        -- 'strong' | 'moderate' | 'weak' | 'unknown'
@@ -172,7 +172,7 @@ CREATE TABLE profile_analysis_links (
     company_id          UUID NOT NULL REFERENCES company_profiles(company_id) ON DELETE CASCADE,
     analysis_entry_id   UUID NOT NULL REFERENCES analysis_entries(id) ON DELETE CASCADE,
     -- Which field or section this entry contributed to.
-    -- Examples: 'funding_stage', 'team_size_estimate', 'financials', 'product'
+    -- Examples: 'funding_stage', 'company_size', 'financials', 'product'
     contributed_to      TEXT,
     PRIMARY KEY (company_id, analysis_entry_id)
 );
@@ -198,7 +198,7 @@ Migration from the current `dossiers` table to `company_profiles`:
 | `generated_at` | `derived_at` | renamed |
 | *(absent)* | `funding_stage` | extracted from `table_fields` or analysis |
 | *(absent)* | `funding_amount_usd` | extracted from `table_fields` or analysis |
-| *(absent)* | `team_size_estimate` | extracted from `table_fields` or analysis |
+| *(absent)* | `company_size` | extracted from `table_fields` or analysis |
 | *(absent)* | `icp_fit` | extracted from `table_fields` or analysis |
 | *(absent)* | `section_summaries` | was `sections` |
 | *(absent)* | `profile_analysis_links` | no provenance existed before; populated on next run |
@@ -255,7 +255,7 @@ page body and Telegram summary.
 
    b. Extract structured facts from analysis_entries.facts JSONB:
       - funding_stage, funding_amount_usd, funding_date  ← from section 'financials'
-      - team_size_estimate                                ← from section 'company'
+      - company_size                                ← from section 'company'
       - product_category, ai_use_case                    ← from section 'product'
       - icp_fit                                           ← from section 'collaboration'
       - last_news_date                                    ← from section 'news'
@@ -327,7 +327,7 @@ full narrative. `summary_md` regeneration becomes an explicit step, not implicit
 - Read `company_profiles.section_summaries` for section blocks.
 - Project typed columns to Notion properties:
   - `funding_stage` → Notion select
-  - `team_size_estimate` → Notion select or text
+  - `company_size` → Notion select or text
   - `icp_fit` → Notion select
   - `product_category` → Notion text
   - `last_news_date` → Notion date
@@ -400,7 +400,7 @@ WHERE table_schema = 'public'
 SELECT column_name FROM information_schema.columns
 WHERE table_name = 'company_profiles'
   AND column_name IN (
-    'funding_stage', 'funding_amount_usd', 'team_size_estimate',
+    'funding_stage', 'funding_amount_usd', 'company_size',
     'icp_fit', 'product_category', 'section_summaries', 'summary_md'
   );
 -- Expected: all 7 rows
@@ -409,14 +409,14 @@ WHERE table_name = 'company_profiles'
 SELECT
     cp.funding_stage,
     cp.icp_fit,
-    cp.team_size_estimate,
+    cp.company_size,
     cp.section_summaries->>'financials' AS financials_summary,
     length(cp.summary_md) AS narrative_length,
     count(pal.analysis_entry_id) AS provenance_links
 FROM company_profiles cp
 LEFT JOIN profile_analysis_links pal ON pal.company_id = cp.company_id
 GROUP BY cp.company_id, cp.funding_stage, cp.icp_fit,
-         cp.team_size_estimate, cp.section_summaries, cp.summary_md
+         cp.company_size, cp.section_summaries, cp.summary_md
 LIMIT 5;
 ```
 

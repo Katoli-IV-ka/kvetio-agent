@@ -18,11 +18,9 @@ companies:
     - { db_column: status,             notion_property: "Pipeline Status", notion_type: select,       direction: forward, source: db_column }
     - { db_column: description,        notion_property: "AI Summary",      notion_type: rich_text,    direction: forward, source: db_column }
     - { db_column: country,            notion_property: "Country",         notion_type: select,       direction: forward, source: db_column }
-    - { db_column: hq_country,         notion_property: "HQ Country",      notion_type: select,       direction: forward, source: db_column }
     - { db_column: founded_year,       notion_property: "Founded",         notion_type: number,       direction: forward, source: db_column }
     - { db_column: company_size,       notion_property: "Company Size",    notion_type: select,       direction: forward, source: db_column }
     - { db_column: funding_info,       notion_property: "Funding Info",    notion_type: rich_text,    direction: forward, source: computed }
-    - { db_column: team_size_estimate, notion_property: "Team Size",       notion_type: select,       direction: forward, source: dossier }
     - { db_column: potential_data,     notion_property: "Potential Data",  notion_type: multi_select, direction: forward, source: computed }
     - { db_column: last_info_update,   notion_property: "Last Info Update",notion_type: date,         direction: forward, source: computed }
 

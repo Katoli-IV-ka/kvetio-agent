@@ -501,7 +501,7 @@ stateDiagram-v2
 **Как работает:**
 1. Берёт компании `analyzed`, читает все `analysis_records`.
 2. Собирает 6 секций досье: О компании, Продукт, Сотрудничество, Финансы, Новости, Аудит.
-3. Записывает типизированные поля (`funding_stage`, `icp_fit`, `team_size_estimate` и др.) + `summary_md` + `audit_md`.
+3. Записывает типизированные поля (`funding_stage`, `icp_fit`, `product_category` и др.) + `summary_md` + `audit_md`. Размер компании берётся из `companies.company_size`.
 4. Записывает `dossier_links` — провенанс каждого поля.
 5. Переводит компанию в `dossier_ready`.
 6. Если `notion_sync=true` — запускает синхронизацию companies + dossiers.
@@ -635,7 +635,6 @@ stateDiagram-v2
 | `name` | TEXT | Отображаемое название |
 | `website` | TEXT | URL сайта |
 | `linkedin_url` | TEXT | LinkedIn URL |
-| `hq_country` | TEXT | Страна головного офиса (добавлено migration 029) |
 | `hq_location` | TEXT | Город/локация головного офиса (добавлено migration 029) |
 | `notion_page_id` | TEXT | ID страницы в Notion (после sync) |
 | `notion_synced_at` | TIMESTAMPTZ | Время последней синхронизации |
@@ -715,7 +714,6 @@ stateDiagram-v2
 | `funding_stage` | TEXT | Стадия финансирования |
 | `funding_amount_usd` | BIGINT | Сумма раунда в USD |
 | `funding_date` | DATE | Дата раунда |
-| `team_size_estimate` | TEXT | Оценка размера команды |
 | `product_category` | TEXT | Категория продукта |
 | `ai_use_case` | TEXT | Конкретный AI use case |
 | `icp_fit` | TEXT | `strong` / `moderate` / `weak` / `unknown` |
@@ -796,7 +794,7 @@ flowchart LR
 
 | Сущность | Синхронизируемые поля | Фильтр |
 |---|---|---|
-| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment`, `hq_country`, `hq_location`, `funding_stage`, `funding_amount_usd`, `funding_date`, `icp_fit`, `potential_data` (computed), `last_info_update` (computed) + 11 полей итого | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
+| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment`, `country`, `hq_location`, `founded_year`, `company_size`, `funding_info` (computed), `potential_data` (computed), `last_info_update` (computed) | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
 | `contacts` | `name`, `contact_type`, `info`, `email`, `phone`, `linkedin_url`, `facebook_url`, `instagram_url`, `outreach_status`, `source`, relation к компании (Contact Type, Contact Info, Company, Outreach Status, Source) | все |
 | `dossiers` | синхронизация досье выполняется через тело страницы компании (render) и свойства; отдельная сущность `dossiers` в `notion_mapping.yaml` удалена | — |
 
@@ -918,4 +916,3 @@ heading_4  disclaimer (аналитический характер)
 #### `scripts/notion_render.py` — обновлено
 
 - `render_and_write_body` переводит `summary_md` и `audit_md` через `getattr(sync, 'translator', None)` перед рендером.
-

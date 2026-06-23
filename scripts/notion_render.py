@@ -204,7 +204,6 @@ def build_company_section(
 ) -> dict | None:
     """Build О компании callout. Returns None if all fields are empty."""
     facts = (analysis.get("company") or {}).get("facts") or {}
-    d = dossier or {}
 
     fields: list[dict] = []
 
@@ -221,7 +220,7 @@ def build_company_section(
         if b := field_block("Дополнительные офисы:", office_text):
             fields.append(b)
 
-    if f := field_block("Размер компании:", d.get("team_size_estimate")):
+    if f := field_block("Размер компании:", company.get("company_size")):
         fields.append(f)
 
     if leaders_block := _leaders_paragraph(contacts):

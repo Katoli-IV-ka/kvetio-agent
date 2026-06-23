@@ -175,7 +175,7 @@ for contact in leaders:
 | Год основания | `dossiers.facts['founded_year']` (из `analysis_records` section='company') |
 | Штаб-квартира | `analysis_records['company'].facts['hq']` |
 | Дополнительные офисы | `analysis_records['company'].facts['offices']` |
-| Размер компании | `dossiers.team_size_estimate` |
+| Размер компании | `companies.company_size` |
 | Руководство | `contacts` отфильтрованные по tier=1 или содержащие CEO/CTO/VP/Head в `info`; paragraph с inline mentions |
 | Основное направление | `companies.description` |
 | Второстепенные направления | `analysis_records['company'].facts['secondary_activities']` |

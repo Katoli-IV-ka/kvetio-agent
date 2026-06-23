@@ -93,6 +93,7 @@ _COMPANY = {
     "id": "company-uuid-1",
     "name": "Acme AI",
     "description": "Builds vision models",
+    "company_size": "50-100",
     "notion_page_id": "page-1",
 }
 
@@ -101,7 +102,6 @@ _DOSSIER = {
     "product_category": "Computer Vision",
     "ai_use_case": "Object detection",
     "funding_stage": "Series B",
-    "team_size_estimate": "50-100",
     "summary_md": "Great company.",
     "audit_md": None,
 }
@@ -620,7 +620,6 @@ def test_render_and_write_body_translates_via_sync_translator():
         "product_category": "Computer Vision",
         "ai_use_case": "Object detection",
         "funding_stage": "Series B",
-        "team_size_estimate": "50-100",
         "summary_md": "English summary prose",
         "audit_md": "English audit prose",
     }

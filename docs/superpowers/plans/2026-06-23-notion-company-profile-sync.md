@@ -14,7 +14,7 @@
 
 | Action | Path | What it does |
 |--------|------|-------------|
-| Create | `sql/migrations/029_notion_profile_fields.sql` | Migration: hq_country, hq_location on companies; source, outreach_status on contacts; translations table |
+| Create | `sql/migrations/029_notion_profile_fields.sql` | Migration: country, hq_location on companies; source, outreach_status on contacts; translations table |
 | Modify | `sql/schema.sql` | Add same columns/table to clean-install schema |
 | Create | `config/potential_data.yaml` | Segment→data-type mapping for Potential Data field |
 | Create | `scripts/notion_profile.py` | `_format_amount`, `_compute_funding_info`, `_compute_potential_data`, `_compute_last_info_update`, `build_company_notion_profile`, `build_company_profiles`, `load_potential_cfg` |
@@ -39,7 +39,7 @@
 ```sql
 -- sql/migrations/029_notion_profile_fields.sql
 ALTER TABLE companies
-  ADD COLUMN IF NOT EXISTS hq_country  text,
+  ADD COLUMN IF NOT EXISTS country  text,
   ADD COLUMN IF NOT EXISTS hq_location text;
 
 ALTER TABLE contacts
@@ -59,12 +59,12 @@ CREATE TABLE IF NOT EXISTS translations (
 );
 ```
 
-- [ ] **Step 1.2: Add hq_country/hq_location to companies table in schema.sql**
+- [ ] **Step 1.2: Add country/hq_location to companies table in schema.sql**
 
 In `sql/schema.sql`, after the `description TEXT,` line in the companies table, add:
 
 ```sql
-    hq_country TEXT,
+    country TEXT,
     hq_location TEXT,
 ```
 
@@ -101,7 +101,7 @@ CREATE TABLE translations (
 
 ```bash
 git add sql/migrations/029_notion_profile_fields.sql sql/schema.sql
-git commit -m "feat: add hq_country/hq_location, contacts.source/outreach_status, translations table"
+git commit -m "feat: add country/hq_location, contacts.source/outreach_status, translations table"
 ```
 
 ---
@@ -484,7 +484,7 @@ _COMPANY = {
     "icp_segment": "medical-imaging",
     "status": "relevant",
     "description": "AI-powered radiology platform.",
-    "hq_country": "US",
+    "country": "US",
     "notion_page_id": "np-123",
     "notion_synced_at": "2026-06-01T00:00:00",
     "updated_at": "2026-06-01T00:00:00",
@@ -492,7 +492,7 @@ _COMPANY = {
 
 _DOSSIER = {
     "company_id": "co-uuid",
-    "team_size_estimate": "11-50",
+    "company_size": "11-50",
     "funding_stage": "Series A",
     "funding_amount_usd": 12_000_000,
     "updated_at": "2026-06-10T00:00:00",
@@ -514,8 +514,8 @@ def test_profile_contains_expected_fields():
     assert profile["icp_segment"] == "medical-imaging"
     assert profile["status"] == "relevant"
     assert profile["description"] == "AI-powered radiology platform."
-    assert profile["hq_country"] == "US"
-    assert profile["team_size_estimate"] == "11-50"
+    assert profile["country"] == "US"
+    assert profile["company_size"] == "11-50"
     assert profile["funding_info"] == "Series A · $12M"
     assert profile["potential_data"] == ["Medical Data", "Images", "Annotation"]
     assert profile["last_info_update"] == "2026-06-15"
@@ -535,7 +535,7 @@ def test_profile_none_dossier():
     profile = np_mod.build_company_notion_profile(
         _COMPANY, None, {}, _POTENTIAL_CFG
     )
-    assert profile["team_size_estimate"] is None
+    assert profile["company_size"] is None
     assert profile["funding_info"] is None
 
 
@@ -560,7 +560,7 @@ def test_profile_translator_does_not_translate_select_fields():
     )
     assert profile["icp_segment"] == "medical-imaging"
     assert profile["status"] == "relevant"
-    assert profile["hq_country"] == "US"
+    assert profile["country"] == "US"
 ```
 
 - [ ] **Step 5.2: Run to confirm failures**
@@ -602,8 +602,8 @@ def build_company_notion_profile(
         "icp_segment": company.get("icp_segment"),
         "status": company.get("status"),
         "description": description,
-        "hq_country": company.get("hq_country"),
-        "team_size_estimate": d.get("team_size_estimate"),
+        "country": company.get("country"),
+        "company_size": d.get("company_size"),
         "funding_info": _compute_funding_info(d.get("funding_stage"), d.get("funding_amount_usd")),
         "potential_data": _compute_potential_data(
             company.get("icp_segment"), company.get("status"), potential_cfg
@@ -657,7 +657,7 @@ class _CountingFakeDb:
             "dossiers": [
                 {
                     "company_id": "co1",
-                    "team_size_estimate": "11-50",
+                    "company_size": "11-50",
                     "funding_stage": "Series A",
                     "funding_amount_usd": 12_000_000,
                     "updated_at": "2026-06-10T00:00:00",
@@ -681,14 +681,14 @@ _COMPANIES_TWO = [
     {
         "id": "co1", "domain": "acme.ai", "name": "Acme", "website": "https://acme.ai",
         "linkedin_url": None, "icp_segment": "medical-imaging", "status": "relevant",
-        "description": "Radiology AI.", "hq_country": "US",
+        "description": "Radiology AI.", "country": "US",
         "notion_page_id": None, "notion_synced_at": None,
         "updated_at": "2026-06-01T00:00:00",
     },
     {
         "id": "co2", "domain": "beta.io", "name": "Beta", "website": "https://beta.io",
         "linkedin_url": None, "icp_segment": "generative-ai", "status": "analyzed",
-        "description": "LLM platform.", "hq_country": None,
+        "description": "LLM platform.", "country": None,
         "notion_page_id": None, "notion_synced_at": None,
         "updated_at": "2026-06-02T00:00:00",
     },
@@ -709,7 +709,7 @@ def test_build_company_profiles_correct_dossier_lookup():
     db = _CountingFakeDb()
     profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
     co1 = next(p for p in profiles if p["domain"] == "acme.ai")
-    assert co1["team_size_estimate"] == "11-50"
+    assert co1["company_size"] == "11-50"
     assert co1["funding_info"] == "Series A · $12M"
 
 
@@ -725,7 +725,7 @@ def test_build_company_profiles_no_dossier_for_company():
     db = _CountingFakeDb()
     profiles = np_mod.build_company_profiles(_COMPANIES_TWO, db, _POTENTIAL_CFG)
     co2 = next(p for p in profiles if p["domain"] == "beta.io")
-    assert co2["team_size_estimate"] is None
+    assert co2["company_size"] is None
     assert co2["funding_info"] is None
 ```
 
@@ -1011,9 +1011,9 @@ companies:
     - { db_column: status,             notion_property: "Pipeline Status", notion_type: select,       direction: forward, source: db_column }
     - { db_column: description,        notion_property: "AI Summary",      notion_type: rich_text,    direction: forward, source: db_column }
     - { db_column: funding_info,       notion_property: "Funding Info",    notion_type: rich_text,    direction: forward, source: computed }
-    - { db_column: team_size_estimate, notion_property: "Team Size",       notion_type: select,       direction: forward, source: dossier }
+    - { db_column: company_size, notion_property: "Company Size",       notion_type: select,       direction: forward, source: db_column }
     - { db_column: potential_data,     notion_property: "Potential Data",  notion_type: multi_select, direction: forward, source: computed }
-    - { db_column: hq_country,         notion_property: "Country",         notion_type: select,       direction: forward, source: db_column }
+    - { db_column: country,         notion_property: "Country",         notion_type: select,       direction: forward, source: db_column }
     - { db_column: last_info_update,   notion_property: "Last Info Update",notion_type: date,         direction: forward, source: computed }
 
 contacts:
@@ -1045,15 +1045,15 @@ def test_companies_mapping_matches_release_schema():
 
     expected_columns = {
         "name", "website", "linkedin_url", "icp_segment", "status",
-        "description", "funding_info", "team_size_estimate", "potential_data",
-        "hq_country", "last_info_update",
+        "description", "funding_info", "company_size", "potential_data",
+        "country", "last_info_update",
     }
     assert set(fields.keys()) == expected_columns
     assert fields["name"]["notion_property"] == "Company Name"
     assert fields["name"]["notion_type"] == "title"
     assert fields["description"]["notion_property"] == "AI Summary"
     assert fields["funding_info"]["source"] == "computed"
-    assert fields["team_size_estimate"]["source"] == "dossier"
+    assert fields["company_size"]["source"] == "dossier"
     assert fields["potential_data"]["notion_type"] == "multi_select"
     assert fields["last_info_update"]["notion_type"] == "date"
     assert mapping["companies"].get("profile_builder") is True
@@ -1263,7 +1263,7 @@ def test_forward_with_profile_builder_creates_page_with_computed_fields():
             super().__init__(rows)
             self.tables.setdefault("dossiers", [
                 {"company_id": "co-uuid", "funding_stage": "Series A",
-                 "funding_amount_usd": 12_000_000, "team_size_estimate": "11-50",
+                 "funding_amount_usd": 12_000_000, "company_size": "11-50",
                  "updated_at": "2026-06-10T00:00:00"}
             ])
             self.tables.setdefault("research_records", [])
@@ -1277,7 +1277,7 @@ def test_forward_with_profile_builder_creates_page_with_computed_fields():
 
     rows = [{"id": "co-uuid", "domain": "acme.ai", "name": "Acme", "website": "https://acme.ai",
              "linkedin_url": None, "icp_segment": "medical-imaging", "status": "relevant",
-             "description": "Radiology AI", "hq_country": "US",
+             "description": "Radiology AI", "country": "US",
              "notion_page_id": None, "notion_synced_at": None,
              "updated_at": "2026-06-01T00:00:00"}]
 
@@ -1643,7 +1643,7 @@ Common failure patterns:
 Add the following to the relevant sections of `ARCHITECTURE.md`:
 
 Under "Схема базы данных":
-- `companies`: добавлены `hq_country text`, `hq_location text`
+- `companies`: добавлены `country text`, `hq_location text`
 - `contacts`: добавлены `source text`, `outreach_status text NOT NULL DEFAULT 'new'`
 - Новая таблица `translations(source_hash, target_lang, source_text, translated_text, model, created_at)`
 
@@ -1670,7 +1670,7 @@ git commit -m "docs: update ARCHITECTURE.md for profile builder, translator, new
 ## Self-review checklist
 
 - [x] **Spec coverage:**
-  - ✅ `hq_country/hq_location`, `contacts.source/outreach_status`, `translations` table — Task 1
+  - ✅ `country/hq_location`, `contacts.source/outreach_status`, `translations` table — Task 1
   - ✅ `potential_data.yaml` — Task 2
   - ✅ `_format_amount` with $K/$M/$B format — Task 3
   - ✅ `funding_info` 4 branches — Task 3
