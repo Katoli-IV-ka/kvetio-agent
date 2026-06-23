@@ -1,0 +1,132 @@
+{
+  "segment": "generative-ai",
+  "stage": "source_expansion",
+  "timestamp": "2026-06-21",
+  "companies_processed": 2,
+  "results": [
+    {
+      "domain": "minimax.io",
+      "name": "MiniMax",
+      "country": "China",
+      "founded": "2022",
+      "sources_found": 7,
+      "sources": [
+        {
+          "url": "https://platform.minimax.io/docs/guides/models-intro",
+          "type": "official_docs",
+          "confidence": "high",
+          "description": "Official API documentation and models guide"
+        },
+        {
+          "url": "https://github.com/MiniMax-AI",
+          "type": "github_org",
+          "confidence": "high",
+          "description": "MiniMax GitHub organization with 25+ repositories including M1, M2, M2.1, M2.7, M3 model implementations"
+        },
+        {
+          "url": "https://huggingface.co/MiniMaxAI",
+          "type": "huggingface_org",
+          "confidence": "high",
+          "description": "HuggingFace organization with model weights for M2, M2.1, M2.5, M2.7, M3"
+        },
+        {
+          "url": "https://www.minimax.io/news",
+          "type": "news_press",
+          "confidence": "high",
+          "description": "Official news and press releases (2025-2026: M2.5 release, M3 launch, financial results)"
+        },
+        {
+          "url": "https://arxiv.org/abs/2501.08313",
+          "type": "research_paper",
+          "confidence": "high",
+          "description": "MiniMax-01: Scaling Foundation Models with Lightning Attention (January 2025)"
+        },
+        {
+          "url": "https://arxiv.org/abs/2506.13585",
+          "type": "research_paper",
+          "confidence": "high",
+          "description": "MiniMax-M1: Scaling Test-Time Compute Efficiently with Lightning Attention (June 2025)"
+        },
+        {
+          "url": "https://www.minimax.io/blog",
+          "type": "blog",
+          "confidence": "high",
+          "description": "Company blog with product updates and technical articles"
+        }
+      ],
+      "key_findings": {
+        "latest_model": "MiniMax-M3 (June 2026)",
+        "model_capabilities": "Multimodal (text, image, video), 1M token context, coding and agentic tasks",
+        "open_source_models": "M2.1, M2.7, M3 available on GitHub and HuggingFace",
+        "recent_funding": "2025 revenue $79M (158.9% YoY growth), targeting Shanghai IPO",
+        "user_reach": "236M+ users across 200+ countries, 214K enterprise customers"
+      }
+    },
+    {
+      "domain": "moonshot.cn",
+      "name": "Moonshot AI",
+      "country": "China",
+      "founded": "2023",
+      "sources_found": 7,
+      "sources": [
+        {
+          "url": "https://www.moonshot.ai/",
+          "type": "official_website",
+          "confidence": "high",
+          "description": "Official Moonshot AI website with product information"
+        },
+        {
+          "url": "https://platform.kimi.ai",
+          "type": "official_docs",
+          "confidence": "high",
+          "description": "Kimi open platform with API documentation and developer resources"
+        },
+        {
+          "url": "https://github.com/moonshotai",
+          "type": "github_org",
+          "confidence": "high",
+          "description": "Moonshot AI GitHub organization with 38+ repositories including Kimi K2, K2.5, K2.6, Kimi-Dev"
+        },
+        {
+          "url": "https://huggingface.co/moonshotai",
+          "type": "huggingface_org",
+          "confidence": "high",
+          "description": "HuggingFace organization with Kimi K2, K2.5, K2.6, Kimi-Dev model weights and documentation"
+        },
+        {
+          "url": "https://www.kimi.com/blog/",
+          "type": "blog",
+          "confidence": "high",
+          "description": "Kimi research blog with technical articles and model releases (K2.5, K2.6, Agent Swarm)"
+        },
+        {
+          "url": "https://github.com/MoonshotAI/Kimi-K2",
+          "type": "research_paper",
+          "confidence": "high",
+          "description": "Kimi K2 repository with technical documentation (1T parameters, 32B activated, multimodal agentic model)"
+        },
+        {
+          "url": "https://www.kimi.com/code",
+          "type": "product_tool",
+          "confidence": "high",
+          "description": "Kimi Code - AI-powered coding agent"
+        }
+      ],
+      "key_findings": {
+        "latest_model": "Kimi K2.6 (April 2026)",
+        "model_capabilities": "Multimodal (text, image, video), 1T parameters, agentic AI, code generation, agent swarms (300 sub-agents)",
+        "open_source_models": "Kimi K2, K2.5, K2.6, Kimi-Dev available on GitHub and HuggingFace",
+        "recent_funding": "$4.3B valuation (Dec 2025), seeking $30B (June 2026), raised $700M+ (Feb 2026)",
+        "strategic_direction": "Desktop application (Kimi Work), IPO consideration on Hong Kong Stock Exchange (March 2026)",
+        "market_reach": "Strong backing from Alibaba, Tencent, Meituan, HongShan"
+      }
+    }
+  ],
+  "metadata": {
+    "search_strategy": "WebSearch + WebFetch for official docs, GitHub, HuggingFace, news, research papers, blogs",
+    "verification_method": "Multi-source validation of URLs and content",
+    "confidence_assessment": "All sources are publicly accessible and verified through direct fetch or search"
+  },
+  "status": "ready_for_enrichment",
+  "ready_for_next_stage": true
+}
