@@ -2,7 +2,6 @@ from pathlib import Path
 
 
 ACTIVE_DOCS = [
-    Path("docs/AGENT-ECOSYSTEM.md"),
     Path("README.md"),
 ]
 LEGACY = ["source_links", "analysis_notes", "analysis_note_signals", "signal_types"]
