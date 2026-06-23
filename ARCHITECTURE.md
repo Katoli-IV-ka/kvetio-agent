@@ -39,6 +39,7 @@
 - [DiscoveryAgent](#discoveryagent)
 - [RelevanceAgent](#relevanceagent)
 - [SiteResearchAgent](#siteresearchagent)
+- [SiteResearchAgent (Relevant Track)](#siteresearchagent-relevant-track)
 - [SourceExpansionAgent](#sourceexpansionagent)
 - [EnrichmentAgent](#enrichmentagent)
 - [AnalysisAgent](#analysisagent)
@@ -454,6 +455,32 @@ stateDiagram-v2
 
 **Граница:** это параллельный pipeline. Он не пишет в `research_records` и не
 переводит компании в `sources_gathered`/`analyzed`/`dossier_ready`.
+
+### SiteResearchAgent (Relevant Track)
+
+**Промпт:** `agents/prompts/site_research_for_relevant_task.md`.
+
+**Роль:** Обогащение уже квалифицированных `relevant` компаний через скрейпинг их сайтов. Собирает контакты, информацию о продукте, год основания и страну.
+
+**Как работает:**
+1. Берёт `companies WHERE status='relevant'` (макс 20).
+2. Запускает `python scripts/site_fetch.py --domain <domain> --max-pages 5`.
+3. Парсит результат: ищет контакты (люди, email, социальные ссылки), описание продукта, год основания, страну.
+4. Записывает контакты через `contacts_store.upsert_contact`.
+5. Записывает product notes через `research_notes_store.upsert_note`.
+6. Обновляет `founded_year` и `country` в таблице `companies`.
+
+**Пишет в БД:**
+- `companies`: `founded_year`, `country` (статус НЕ меняется).
+- `contacts`: люди и каналы связи.
+- `research_notes`: product информация (`note_type="product"`).
+- `run_logs`: итоговая статистика.
+
+**Читает из БД:** `companies WHERE status='relevant'`.
+
+**Скрипты:** `scripts/site_fetch.py`, `scripts/research_notes_store.py`, `scripts/contacts_store.py`.
+
+**Отличие от основной SiteResearchAgent:** не проверяет релевантность (компании уже квалифицированы), не меняет статус, не работает с `category_options`. Идемпотентна.
 
 ---
 
