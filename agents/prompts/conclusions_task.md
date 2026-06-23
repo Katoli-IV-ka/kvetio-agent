@@ -6,6 +6,14 @@
 читаешь `analysis_records`, собираешь итоговое dossier и переводишь компанию в
 `dossier_ready`.
 
+## Language contract
+
+Все презентационные поля досье (`section_summaries`, `summary_md`, `audit_md`,
+`pain_summary`, `pitch_angle`, `why_interesting`, `outreach_hook`) пиши на
+естественном русском языке. Имена компаний, людей, продуктов, моделей,
+датасетов, URL, метрики, даты, суммы, funding stages и evidence references
+сохраняй в исходном виде.
+
 ## Select companies
 
 ```sql

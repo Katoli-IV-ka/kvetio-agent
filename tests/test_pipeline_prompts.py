@@ -154,6 +154,19 @@ def test_conclusions_uses_notion_sync_script_not_mcp():
     assert "через Notion MCP создай" not in p
 
 
+def test_notion_facing_prompts_require_russian_presentation_output():
+    for name in (
+        "analysis_task.md",
+        "analysis_section_task.md",
+        "analysis_audit_task.md",
+        "conclusions_task.md",
+    ):
+        p = _read(name).lower()
+        assert "language contract" in p
+        assert "рус" in p
+        assert "url" in p
+
+
 def test_pipeline_calls_notion_sync_stage():
     p = _read("pipeline_main_task.md")
     assert "scripts/notion_sync.py" in p

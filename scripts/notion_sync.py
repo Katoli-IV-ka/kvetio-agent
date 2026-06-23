@@ -29,6 +29,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 from notion_profile import build_company_profiles, load_potential_cfg
+from translate import build_notion_localizer_from_env
 
 logger = logging.getLogger(__name__)
 
@@ -376,13 +377,25 @@ class NotionSync:
     def _fields(self, entity, direction):
         return [f for f in self._cfg(entity)["fields"] if f["direction"] == direction]
 
+    def _localize_forward_value(self, entity: str, field: dict, value):
+        if self.translator is None:
+            return value
+        if field.get("notion_type") != "rich_text":
+            return value
+        field_name = f"{entity}.{field.get('db_column', '')}"
+        if callable(getattr(type(self.translator), "localize_text", None)):
+            return self.translator.localize_text(value, field=field_name)
+        if callable(getattr(self.translator, "translate", None)):
+            return self.translator.translate(value)
+        return value
+
     def sync_forward(self, entity, dry_run=False) -> dict:
         cfg = self._cfg(entity)
         db_id = self._db_id(entity)
         fields = self._fields(entity, "forward")
         rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
         if cfg.get("profile_builder"):
-            rows = build_company_profiles(rows, self.db, load_potential_cfg(), translator=self.translator)
+            rows = build_company_profiles(rows, self.db, load_potential_cfg())
         if entity == "contacts":
             rows = enrich_contact_rows(rows, self.db)
         elif entity == "companies" and not cfg.get("profile_builder"):
@@ -390,16 +403,22 @@ class NotionSync:
         created = updated = errors = 0
         for row in rows:
             try:
-                props = {
-                    f["notion_property"]: to_notion_property(f["notion_type"],
-                                                             row.get(f["db_column"]))
-                    for f in fields
-                }
                 page_id = row.get("notion_page_id")
                 if dry_run:
                     updated += 1 if page_id else 0
                     created += 0 if page_id else 1
                     continue
+                props = {
+                    f["notion_property"]: to_notion_property(
+                        f["notion_type"],
+                        self._localize_forward_value(
+                            entity,
+                            f,
+                            row.get(f["db_column"]),
+                        ),
+                    )
+                    for f in fields
+                }
                 if page_id:
                     self.notion.update_page(page_id, props)
                     updated += 1
@@ -575,13 +594,27 @@ class NotionSync:
             try:
                 if self.translator is not None:
                     d = dict(d)
-                    d["summary_md"] = self.translator.translate(d.get("summary_md"))
-                    d["audit_md"] = self.translator.translate(d.get("audit_md"))
+                    if callable(getattr(type(self.translator), "localize_text", None)):
+                        d["summary_md"] = self.translator.localize_text(
+                            d.get("summary_md"), field="dossiers.summary_md"
+                        )
+                        d["audit_md"] = self.translator.localize_text(
+                            d.get("audit_md"), field="dossiers.audit_md"
+                        )
+                    else:
+                        d["summary_md"] = self.translator.translate(d.get("summary_md"))
+                        d["audit_md"] = self.translator.translate(d.get("audit_md"))
                     if isinstance(d.get("section_summaries"), dict):
-                        d["section_summaries"] = {
-                            k: self.translator.translate(v)
-                            for k, v in d["section_summaries"].items()
-                        }
+                        if callable(getattr(type(self.translator), "localize_mapping", None)):
+                            d["section_summaries"] = self.translator.localize_mapping(
+                                d["section_summaries"],
+                                field_prefix="dossiers.section_summaries",
+                            )
+                        else:
+                            d["section_summaries"] = {
+                                k: self.translator.translate(v)
+                                for k, v in d["section_summaries"].items()
+                            }
                 blocks = []
                 if d.get("summary_md"):
                     blocks += md_to_blocks("Досье — саммари", d["summary_md"])
@@ -660,7 +693,12 @@ def main(argv=None) -> int:
         print(sync.list_fields(args.entity))
         return 0
 
-    sync = NotionSync(notion=_make_notion(), db=_make_db(), mapping=mapping)
+    sync = NotionSync(
+        notion=_make_notion(),
+        db=_make_db(),
+        mapping=mapping,
+        translator=build_notion_localizer_from_env(os.environ),
+    )
 
     if args.refresh_body:
         from notion_render import render_and_write_body  # noqa: PLC0415

@@ -6,6 +6,7 @@ are pure builders that return Notion block dicts.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 
 
@@ -633,6 +634,116 @@ def build_page_blocks(
 # Data orchestrator
 # ---------------------------------------------------------------------------
 
+def _localizer_from_sync(sync):
+    return getattr(sync, "translator", None)
+
+
+def _localize_text(localizer, text: str | None, *, field: str) -> str | None:
+    if localizer is None:
+        return text
+    if callable(getattr(type(localizer), "localize_text", None)):
+        return localizer.localize_text(text, field=field)
+    if callable(getattr(localizer, "translate", None)):
+        return localizer.translate(text)
+    return text
+
+
+def _localize_mapping(localizer, value: Mapping | None, *, field_prefix: str) -> dict | None:
+    if value is None or localizer is None:
+        return dict(value) if isinstance(value, Mapping) else value
+    if callable(getattr(type(localizer), "localize_mapping", None)):
+        return localizer.localize_mapping(value, field_prefix=field_prefix)
+    result = {}
+    for key, item in value.items():
+        field = f"{field_prefix}.{key}"
+        if isinstance(item, str):
+            result[key] = _localize_text(localizer, item, field=field)
+        elif isinstance(item, Mapping):
+            result[key] = _localize_mapping(localizer, item, field_prefix=field)
+        elif isinstance(item, list):
+            result[key] = [
+                _localize_text(localizer, x, field=field) if isinstance(x, str) else x
+                for x in item
+            ]
+        else:
+            result[key] = item
+    return result
+
+
+def _localized_body_inputs(
+    localizer,
+    company: dict,
+    dossier: dict | None,
+    analysis: dict[str, dict],
+    contacts: list[dict],
+    news: list[dict],
+) -> tuple[dict, dict | None, dict[str, dict], list[dict], list[dict]]:
+    if localizer is None:
+        return company, dossier, analysis, contacts, news
+
+    company = dict(company)
+    company["description"] = _localize_text(
+        localizer,
+        company.get("description"),
+        field="companies.description",
+    )
+
+    if dossier is not None:
+        dossier = dict(dossier)
+        for key in (
+            "summary_md",
+            "audit_md",
+            "pain_summary",
+            "pitch_angle",
+            "why_interesting",
+            "outreach_hook",
+        ):
+            dossier[key] = _localize_text(
+                localizer,
+                dossier.get(key),
+                field=f"dossiers.{key}",
+            )
+        if isinstance(dossier.get("section_summaries"), Mapping):
+            dossier["section_summaries"] = _localize_mapping(
+                localizer,
+                dossier["section_summaries"],
+                field_prefix="dossiers.section_summaries",
+            )
+
+    localized_analysis: dict[str, dict] = {}
+    for section, row in analysis.items():
+        copied = dict(row)
+        if isinstance(copied.get("facts"), Mapping):
+            copied["facts"] = _localize_mapping(
+                localizer,
+                copied["facts"],
+                field_prefix=f"analysis.{section}.facts",
+            )
+        localized_analysis[section] = copied
+
+    localized_contacts = []
+    for contact in contacts:
+        copied = dict(contact)
+        copied["info"] = _localize_text(
+            localizer,
+            copied.get("info"),
+            field="contacts.info",
+        )
+        localized_contacts.append(copied)
+
+    localized_news = []
+    for item in news:
+        copied = dict(item)
+        copied["summary"] = _localize_text(
+            localizer,
+            copied.get("summary"),
+            field="research_records.summary",
+        )
+        localized_news.append(copied)
+
+    return company, dossier, localized_analysis, localized_contacts, localized_news
+
+
 def render_and_write_body(
     sync,          # NotionSync instance with .db and .notion attributes
     company_id: str,
@@ -647,19 +758,19 @@ def render_and_write_body(
     dossier_rows = sync.db.fetch_for_company("dossiers", company_id)
     dossier = dossier_rows[0] if dossier_rows else None
 
-    translator = getattr(sync, 'translator', None)
-    if translator is not None and dossier is not None:
-        dossier = dict(dossier)  # shallow copy — avoid mutating original
-        if dossier.get("summary_md"):
-            dossier["summary_md"] = translator.translate(dossier["summary_md"])
-        if dossier.get("audit_md"):
-            dossier["audit_md"] = translator.translate(dossier["audit_md"])
-
     analysis_rows = sync.db.fetch_for_company("analysis_records", company_id)
     analysis: dict[str, dict] = {row["section"]: row for row in analysis_rows}
 
     contacts = sync.db.fetch_for_company("contacts", company_id)
     news = sync.db.fetch_news_for_company(company_id)
+    company, dossier, analysis, contacts, news = _localized_body_inputs(
+        _localizer_from_sync(sync),
+        company,
+        dossier,
+        analysis,
+        contacts,
+        news,
+    )
 
     blocks = build_page_blocks(company, dossier, analysis, contacts, news)
     if not blocks:

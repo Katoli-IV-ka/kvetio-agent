@@ -202,6 +202,116 @@ def test_forward_is_idempotent():
     assert len(notion.pages) == 1  # без дублей
 
 
+def test_forward_localizes_rich_text_before_notion_write():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+            "db_table": "companies",
+            "db_key": "domain",
+            "db_status_filter": ["relevant"],
+            "fields": [
+                {"db_column": "name", "notion_property": "Company name",
+                 "notion_type": "title", "direction": "forward"},
+                {"db_column": "description", "notion_property": "AI Summary",
+                 "notion_type": "rich_text", "direction": "forward"},
+            ],
+        }
+    }
+    rows = [{"domain": "acme.com", "name": "Acme",
+             "description": "Company builds a radiology AI platform.",
+             "status": "relevant", "notion_page_id": None}]
+    notion = FakeNotion()
+    db = FakeDb(rows)
+    localizer = ns.build_notion_localizer_from_env({
+        "KVETIO_NOTION_LOCALIZATION": "hybrid",
+        "KVETIO_TRANSLATION_PROVIDER": "gemini",
+        "GEMINI_API_KEY": "key",
+    })
+    localizer.backend = lambda text: "Компания строит radiology AI platform."
+    sync = ns.NotionSync(notion=notion, db=db, mapping=mapping,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"}, translator=localizer)
+
+    result = sync.sync_forward("companies")
+
+    assert result["created"] == 1
+    page_id = db.tables["companies"][0]["notion_page_id"]
+    assert notion.pages[page_id]["properties"]["AI Summary"] == {
+        "rich_text": [{"text": {"content": "Компания строит radiology AI platform."}}],
+    }
+
+
+def test_forward_fail_sync_prevents_notion_write_on_translation_failure():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+            "db_table": "companies",
+            "db_key": "domain",
+            "db_status_filter": ["relevant"],
+            "fields": [
+                {"db_column": "name", "notion_property": "Company name",
+                 "notion_type": "title", "direction": "forward"},
+                {"db_column": "description", "notion_property": "AI Summary",
+                 "notion_type": "rich_text", "direction": "forward"},
+            ],
+        }
+    }
+    rows = [{"domain": "acme.com", "name": "Acme",
+             "description": "Company builds a radiology AI platform.",
+             "status": "relevant", "notion_page_id": None}]
+    notion = FakeNotion()
+    db = FakeDb(rows)
+    localizer = ns.build_notion_localizer_from_env({
+        "KVETIO_NOTION_LOCALIZATION": "hybrid",
+        "KVETIO_TRANSLATION_PROVIDER": "gemini",
+        "GEMINI_API_KEY": "key",
+        "KVETIO_TRANSLATION_ON_FAILURE": "fail_sync",
+    })
+    localizer.backend = lambda _: (_ for _ in ()).throw(RuntimeError("translation down"))
+    sync = ns.NotionSync(notion=notion, db=db, mapping=mapping,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"}, translator=localizer)
+
+    result = sync.sync_forward("companies")
+
+    assert result["errors"] == 1
+    assert result["created"] == 0
+    assert notion.pages == {}
+
+
+def test_forward_dry_run_does_not_localize_or_write():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+            "db_table": "companies",
+            "db_key": "domain",
+            "db_status_filter": ["relevant"],
+            "fields": [
+                {"db_column": "name", "notion_property": "Company name",
+                 "notion_type": "title", "direction": "forward"},
+                {"db_column": "description", "notion_property": "AI Summary",
+                 "notion_type": "rich_text", "direction": "forward"},
+            ],
+        }
+    }
+    rows = [{"domain": "acme.com", "name": "Acme",
+             "description": "Company builds a radiology AI platform.",
+             "status": "relevant", "notion_page_id": None}]
+    notion = FakeNotion()
+    db = FakeDb(rows)
+
+    class FailingLocalizer:
+        def localize_text(self, text, *, field):
+            raise AssertionError("dry-run should not localize")
+
+    sync = ns.NotionSync(notion=notion, db=db, mapping=mapping,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"},
+                         translator=FailingLocalizer())
+
+    result = sync.sync_forward("companies", dry_run=True)
+
+    assert result == {"entity": "companies", "created": 1, "updated": 0, "errors": 0}
+    assert notion.pages == {}
+
+
 def test_reverse_pulls_whitelist_into_db():
     rows = [{"domain": "acme.com", "name": "Acme",
              "status": "relevant", "notion_page_id": "page-1",
@@ -386,9 +496,12 @@ def test_companies_mapping_matches_release_schema():
     assert set(fields.keys()) == expected_columns
     assert fields["name"]["notion_property"] == "Company Name"
     assert fields["name"]["notion_type"] == "title"
+    assert fields["icp_segment"]["notion_property"] == "ICP Segment"
     assert fields["description"]["notion_property"] == "AI Summary"
+    assert fields["founded_year"]["notion_property"] == "Founded"
     assert fields["funding_info"]["source"] == "computed"
     assert fields["potential_data"]["notion_type"] == "multi_select"
+    assert fields["last_info_update"]["notion_property"] == "Last Info Update"
     assert fields["last_info_update"]["notion_type"] == "date"
     assert mapping["companies"].get("profile_builder") is True
     for f in mapping["companies"]["fields"]:
@@ -718,7 +831,7 @@ def test_sync_dossiers_translates_prose_fields():
 
 def test_sync_forward_uses_profile_builder_when_flag_set():
     """When mapping has profile_builder:true, sync_forward uses build_company_profiles."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     profile_mapping = {
         "companies": {
@@ -752,7 +865,7 @@ def test_sync_forward_uses_profile_builder_when_flag_set():
     ]
 
     with patch("notion_sync.build_company_profiles", return_value=built_profiles) as mock_build, \
-         patch("notion_sync.load_potential_cfg", return_value={}) as mock_cfg:
+         patch("notion_sync.load_potential_cfg", return_value={}):
         sync = ns.NotionSync(notion=notion, db=db, mapping=profile_mapping,
                              env={"NOTION_COMPANIES_DB_ID": "DBID"})
         result = sync.sync_forward("companies")
