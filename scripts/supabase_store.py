@@ -135,6 +135,13 @@ class SupabaseStore:
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("domain", domain).execute()
 
+    def patch_company(self, domain: str, fields: dict) -> None:
+        """Update specific columns on a company row without overwriting others."""
+        if not fields:
+            return
+        self._client.table("companies").update(fields).eq("domain", domain).execute()
+        logger.debug("patch_company: %s %s", domain, sorted(fields.keys()))
+
     # ── Refresh flag (NewsAgent) ───────────────────────────────────────────────
 
     def set_needs_refresh(self, domain: str) -> None:

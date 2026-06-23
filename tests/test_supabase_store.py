@@ -73,3 +73,17 @@ def test_upsert_research_record_writes_research_records_table():
     assert row["record_type"] == "news"
     assert row["observed_at"] == "2026-06-19"
     assert row["record_role"] == "monitor"
+
+
+def test_patch_company_updates_only_specified_fields():
+    """patch_company sends only the given fields to Supabase."""
+    store = SupabaseStore.__new__(SupabaseStore)
+    store._client = MagicMock()
+
+    store.patch_company("acme.com", {"country": "US", "founded_year": 2018})
+
+    store._client.table.assert_called_with("companies")
+    store._client.table().update.assert_called_once_with(
+        {"country": "US", "founded_year": 2018}
+    )
+    store._client.table().update().eq.assert_called_once_with("domain", "acme.com")
