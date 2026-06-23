@@ -61,3 +61,93 @@ def test_find_team_page_returns_none_on_all_404(respx_mock):
         respx_mock.get(path).mock(return_value=Response(404))
     result = find_team_page("https://nodomain.com")
     assert result is None
+
+
+def test_parse_contacts_with_gemini_returns_contacts(mocker):
+    from scripts.dm_team_page import parse_contacts_with_gemini
+
+    response = mocker.MagicMock()
+    response.json.return_value = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": '[{"name":"Alice Chen","contact_type":"person","info":"CTO","email":null,"phone":null,"linkedin_url":"https://linkedin.com/in/alice","x_url":null,"facebook_url":null,"instagram_url":null,"other_channels":[]}]'
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    post = mocker.patch("scripts.dm_team_page._post_with_retries", return_value=response)
+
+    contacts = parse_contacts_with_gemini(
+        "Alice Chen - CTO",
+        api_key="key",
+        source_url="https://acme.ai/team",
+    )
+
+    assert contacts == [
+        {
+            "name": "Alice Chen",
+            "contact_type": "person",
+            "info": "CTO",
+            "email": None,
+            "phone": None,
+            "linkedin_url": "https://linkedin.com/in/alice",
+            "x_url": None,
+            "facebook_url": None,
+            "instagram_url": None,
+            "other_channels": [{"type": "team_page", "url": "https://acme.ai/team"}],
+        }
+    ]
+    assert post.call_args.kwargs["attempts"] == 3
+
+
+def test_parse_contacts_with_gemini_invalid_json_returns_empty(mocker, caplog):
+    from scripts.dm_team_page import parse_contacts_with_gemini
+
+    response = mocker.MagicMock()
+    response.json.return_value = {
+        "candidates": [{"content": {"parts": [{"text": "not json"}]}}]
+    }
+    mocker.patch("scripts.dm_team_page._post_with_retries", return_value=response)
+
+    assert parse_contacts_with_gemini("Team text", api_key="key", source_url="https://x/team") == []
+    assert "Gemini team-page parsing returned invalid JSON" in caplog.text
+
+
+def test_fetch_returns_structured_contacts_from_team_page(mocker):
+    from scripts.dm_team_page import fetch
+
+    store = mocker.MagicMock()
+    store.get_company.return_value = {"website": "https://acme.ai"}
+    mocker.patch("scripts.dm_team_page.SupabaseStore", return_value=store)
+    mocker.patch(
+        "scripts.dm_team_page.find_team_page",
+        return_value=("https://acme.ai/team", "<p>Alice Chen - CTO</p>" * 20),
+    )
+    mocker.patch(
+        "scripts.dm_team_page.parse_contacts_with_gemini",
+        return_value=[{"name": "Alice Chen", "contact_type": "person"}],
+    )
+    mocker.patch.dict("os.environ", {"GEMINI_API_KEY": "key"})
+
+    assert fetch("acme.ai") == [{"name": "Alice Chen", "contact_type": "person"}]
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_team_page
+
+    mocker.patch("scripts.dm_team_page.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_team_page.write_contacts")
+    mocker.patch("sys.argv", ["dm_team_page.py", "--domain", "acme.ai", "--write"])
+
+    dm_team_page.main()
+
+    writer.assert_called_once_with(
+        domain="acme.ai",
+        source="team_page",
+        contacts=[{"name": "Alice"}],
+    )

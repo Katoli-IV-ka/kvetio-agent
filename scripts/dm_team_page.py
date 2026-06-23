@@ -9,16 +9,21 @@ Writes plain text, not JSON. The agent extracts structured contacts.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).parent))
+from contact_writer import write_contacts
 from supabase_store import SupabaseStore
+from translate import DEFAULT_GEMINI_TRANSLATION_MODEL, GEMINI_ENDPOINT, _post_with_retries
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +76,96 @@ def extract_linkedin_urls(html: str) -> list[str]:
     return result[:20]
 
 
+def _team_page_prompt(text: str, source_url: str) -> str:
+    return (
+        "Extract decision-maker contacts from this company team/about page. "
+        "Return only a JSON array. Each item must contain exactly these keys: "
+        "name, contact_type, info, email, phone, linkedin_url, x_url, "
+        "facebook_url, instagram_url, other_channels. Use contact_type='person' "
+        "for named people and 'organization' only for company-level channels. "
+        "Use null for unknown scalar fields and [] for other_channels. "
+        "Do not invent emails, titles, links, or people. Source URL: "
+        f"{source_url}\n\n{text}"
+    )
+
+
+def _extract_gemini_text(data: dict[str, Any]) -> str:
+    return (
+        data.get("candidates", [{}])[0]
+        .get("content", {})
+        .get("parts", [{}])[0]
+        .get("text", "")
+    )
+
+
+def _normalize_contact_from_team_page(contact: dict, source_url: str) -> dict | None:
+    name = str(contact.get("name") or "").strip()
+    if not name:
+        return None
+    normalized = {
+        "name": name,
+        "contact_type": contact.get("contact_type") or "person",
+        "info": contact.get("info"),
+        "email": contact.get("email"),
+        "phone": contact.get("phone"),
+        "linkedin_url": contact.get("linkedin_url"),
+        "x_url": contact.get("x_url"),
+        "facebook_url": contact.get("facebook_url"),
+        "instagram_url": contact.get("instagram_url"),
+        "other_channels": [
+            item for item in (contact.get("other_channels") or [])
+            if isinstance(item, dict)
+        ],
+    }
+    if not any(
+        item.get("type") == "team_page" and item.get("url") == source_url
+        for item in normalized["other_channels"]
+    ):
+        normalized["other_channels"].append({"type": "team_page", "url": source_url})
+    return normalized
+
+
+def parse_contacts_with_gemini(
+    text: str,
+    *,
+    api_key: str,
+    source_url: str,
+    model: str = DEFAULT_GEMINI_TRANSLATION_MODEL,
+) -> list[dict]:
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": _team_page_prompt(text, source_url)}]}],
+        "generationConfig": {"temperature": 0.1},
+    }
+    headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
+    response = _post_with_retries(
+        GEMINI_ENDPOINT.format(model=model),
+        payload,
+        headers,
+        timeout=30.0,
+        attempts=3,
+    )
+    raw_text = _extract_gemini_text(response.json()).strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.strip("`")
+        raw_text = raw_text.removeprefix("json").strip()
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        logger.warning("Gemini team-page parsing returned invalid JSON for %s", source_url)
+        return []
+    if not isinstance(parsed, list):
+        logger.warning("Gemini team-page parsing returned non-list JSON for %s", source_url)
+        return []
+    contacts: list[dict] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_contact_from_team_page(item, source_url)
+        if normalized:
+            contacts.append(normalized)
+    return contacts
+
+
 def find_team_page(website: str) -> tuple[str, str] | None:
     """Return (url, html) for the first useful team/about page."""
     base = website.rstrip("/")
@@ -86,36 +181,46 @@ def find_team_page(website: str) -> tuple[str, str] | None:
     return None
 
 
-def fetch(domain: str) -> str:
-    """Return cleaned page text or an empty string if no team page is found."""
+def fetch(domain: str) -> list[dict]:
+    """Return structured contacts extracted from a company team/about page."""
     store = SupabaseStore()
     row = store.get_company(domain)
-    website = (row or {}).get("website", "")
-    if not website:
-        logger.info("No website for %s", domain)
-        return ""
+    website = (row or {}).get("website", "") or f"https://{domain}"
 
     result = find_team_page(website)
     if not result:
         logger.info("No team page found for %s", domain)
-        return ""
+        return []
 
     url, html = result
     text = clean_html(html)
     linkedin_urls = extract_linkedin_urls(html)
-
-    output = f"[SOURCE: {url}]\n\n{text}"
     if linkedin_urls:
-        output += "\n\n[LINKEDIN_URLS]\n" + "\n".join(linkedin_urls)
-    return output
+        text += "\n\nLinkedIn URLs:\n" + "\n".join(linkedin_urls)
+
+    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set; skipping team-page parsing for %s", domain)
+        return []
+
+    try:
+        return parse_contacts_with_gemini(text, api_key=api_key, source_url=url)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Gemini team-page parsing failed for %s: %s", domain, exc)
+        return []
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Team page fetcher")
     parser.add_argument("--domain", required=True)
+    parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    print(fetch(args.domain))
+    results = fetch(args.domain)
+    if args.write:
+        write_contacts(domain=args.domain, source="team_page", contacts=results)
+        return
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
