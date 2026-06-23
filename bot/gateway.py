@@ -638,7 +638,10 @@ class TelegramSender:
         async with httpx.AsyncClient(timeout=10) as client:
             try:
                 resp = await client.post(f"{self._base}{method}", json=payload)
-                return resp.json()
+                data = resp.json()
+                if not data.get("ok"):
+                    logger.error("Telegram API %s error %s: %s", method, resp.status_code, data)
+                return data
             except Exception as exc:  # noqa: BLE001
                 logger.error("Telegram API %s failed: %s", method, exc)
                 return {}
