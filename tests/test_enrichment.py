@@ -425,3 +425,89 @@ def test_run_enrichment_writes_each_link_from_list():
     # title falls through to the link's own title, not the kind
     first_entry = store.upsert_research_record.call_args_list[0][0][0]
     assert first_entry.title == "P1"
+
+
+from enrichment import (
+    FirmographicsExtractor,
+    _headcount_to_size,
+    _jurisdiction_to_country,
+    run_firmographics,
+)
+
+
+def test_headcount_to_size_ranges():
+    assert _headcount_to_size(1)    == "1-10"
+    assert _headcount_to_size(10)   == "1-10"
+    assert _headcount_to_size(11)   == "11-50"
+    assert _headcount_to_size(50)   == "11-50"
+    assert _headcount_to_size(51)   == "51-200"
+    assert _headcount_to_size(200)  == "51-200"
+    assert _headcount_to_size(201)  == "201-500"
+    assert _headcount_to_size(501)  == "501-1000"
+    assert _headcount_to_size(1001) == "1000+"
+
+
+def test_jurisdiction_to_country_parses_prefix():
+    assert _jurisdiction_to_country("us_de") == "US"
+    assert _jurisdiction_to_country("gb")    == "GB"
+    assert _jurisdiction_to_country("de")    == "DE"
+
+
+def test_firmographics_extractor_reads_wikidata_payload():
+    class FakeStore:
+        def get_research_records_for_company(self, domain):
+            return [
+                {
+                    "source": "wikidata_resolver",
+                    "payload": {"inception": "2015-03-01", "employees": "+120"},
+                }
+            ]
+
+    extractor = FirmographicsExtractor()
+    result = extractor.extract({"domain": "acme.com"}, FakeStore())
+    assert result["founded_year"] == 2015
+    assert result["company_size"] == "51-200"
+
+
+def test_firmographics_extractor_reads_opencorporates_payload():
+    class FakeStore:
+        def get_research_records_for_company(self, domain):
+            return [
+                {
+                    "source": "opencorporates_resolver",
+                    "payload": {"jurisdiction": "us_ca"},
+                }
+            ]
+
+    extractor = FirmographicsExtractor()
+    result = extractor.extract({"domain": "acme.com"}, FakeStore())
+    assert result["country"] == "US"
+
+
+def test_firmographics_extractor_skips_empty_payload():
+    class FakeStore:
+        def get_research_records_for_company(self, domain):
+            return [{"source": "wikidata_resolver", "payload": {}}]
+
+    extractor = FirmographicsExtractor()
+    result = extractor.extract({"domain": "acme.com"}, FakeStore())
+    assert result == {}
+
+
+def test_run_firmographics_calls_patch_when_data_found():
+    patched = {}
+
+    class FakeStore:
+        def get_research_records_for_company(self, domain):
+            return [
+                {
+                    "source": "wikidata_resolver",
+                    "payload": {"inception": "2010-06-01"},
+                }
+            ]
+
+        def patch_company(self, domain, fields):
+            patched.update(fields)
+
+    run_firmographics({"domain": "acme.com"}, FakeStore())
+    assert patched == {"founded_year": 2010}

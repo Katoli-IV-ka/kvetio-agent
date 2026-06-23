@@ -580,6 +580,77 @@ RESOLVERS: list[Resolver] = [
 ]
 
 
+def _headcount_to_size(n: int) -> str:
+    """Map raw headcount to a canonical company_size label."""
+    if n <= 10:   return "1-10"
+    if n <= 50:   return "11-50"
+    if n <= 200:  return "51-200"
+    if n <= 500:  return "201-500"
+    if n <= 1000: return "501-1000"
+    return "1000+"
+
+
+def _jurisdiction_to_country(jurisdiction: str) -> str:
+    """'us_de' → 'US', 'gb' → 'GB'. Uses prefix before first underscore."""
+    return jurisdiction.split("_")[0].upper()
+
+
+class FirmographicsExtractor:
+    """Reads Wikidata / OpenCorporates payloads already stored as research_records
+    and extracts firmographic facts (country, founded_year, company_size).
+
+    Does NOT make network calls — all data is already in the DB from prior resolvers.
+    """
+
+    def extract(self, company: dict, store) -> dict:
+        """Return dict of firmographic updates for patch_company. Empty dict if nothing found."""
+        updates: dict = {}
+        for rec in store.get_research_records_for_company(company.get("domain") or ""):
+            source = rec.get("source") or ""
+            payload = rec.get("payload") or {}
+
+            if "wikidata" in source:
+                if not updates.get("founded_year"):
+                    inception = payload.get("inception")  # e.g. "2015-03-01"
+                    if inception:
+                        try:
+                            updates["founded_year"] = int(str(inception)[:4])
+                        except (ValueError, TypeError):
+                            pass
+
+                if not updates.get("company_size"):
+                    raw = payload.get("employees")  # e.g. "+120" or "120"
+                    if raw:
+                        try:
+                            n = int(str(raw).lstrip("+").split(".")[0])
+                            updates["company_size"] = _headcount_to_size(n)
+                        except (ValueError, TypeError):
+                            pass
+
+            if "opencorporates" in source:
+                if not updates.get("country"):
+                    jurisdiction = payload.get("jurisdiction")
+                    if jurisdiction:
+                        updates["country"] = _jurisdiction_to_country(jurisdiction)
+
+        return updates
+
+
+def run_firmographics(company: dict, store) -> dict:
+    """Extract firmographic fields from existing research_records and patch companies table.
+
+    Call after run_enrichment so Wikidata/OpenCorporates records are already written.
+    Returns the dict of fields written (empty dict if nothing found).
+    """
+    updates = FirmographicsExtractor().extract(company, store)
+    if updates:
+        store.patch_company(company["domain"], updates)
+        logger.info(
+            "firmographics %s: %s", company.get("domain"), sorted(updates.keys())
+        )
+    return updates
+
+
 def _main() -> None:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
