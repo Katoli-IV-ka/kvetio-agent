@@ -180,6 +180,26 @@ def test_pipeline_main_applies_bot_runtime_params():
     assert "максимум компаний на сегмент" in p
 
 
+def test_relevance_check_prompt_contract():
+    p = _read("relevance_check_task.md")
+    assert "relevance_check" in p.lower() or "Relevance Check" in p
+    assert "scripts/site_fetch.py" in p
+    assert "category" in p
+    assert "category_label" in p
+    assert "strict json" in p.lower()
+
+
+def test_site_research_prompt_contract():
+    p = _read("site_research_task.md")
+    assert "SiteResearchAgent" in p
+    assert "status='new'" in p
+    assert "scripts/site_fetch.py" in p
+    assert "relevance_check_task.md" in p
+    assert "scripts/research_notes_store.py" in p
+    assert "site_researched" in p
+    assert "not_relevant" in p
+
+
 def test_prompts_do_not_reference_removed_company_fields() -> None:
     score_prompt = "scoring" + "_task"
     removed_terms = [
