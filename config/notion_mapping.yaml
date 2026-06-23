@@ -12,7 +12,7 @@ companies:
     - { db_column: name,         notion_property: "Company Name", notion_type: title,     direction: forward }
     - { db_column: website,      notion_property: "Website",      notion_type: url,       direction: forward }
     - { db_column: linkedin_url, notion_property: "LinkedIn",     notion_type: url,       direction: forward }
-    - { db_column: description,  notion_property: "Sammary",      notion_type: rich_text, direction: forward }
+    - { db_column: description,  notion_property: "AI Summary",   notion_type: rich_text, direction: forward }
 
 contacts:
   notion_database_id_env: NOTION_CONTACTS_DB_ID
@@ -20,7 +20,7 @@ contacts:
   db_key: id
   fields:
     - { db_column: name,                notion_property: "Name",                  notion_type: title,        direction: forward }
-    - { db_column: contact_type,        notion_property: "Type",                  notion_type: select,       direction: forward }
+    - { db_column: contact_type,        notion_property: "Contact Type",          notion_type: select,       direction: forward }
     - { db_column: info,                notion_property: "Информация о контакте", notion_type: rich_text,    direction: forward }
     - { db_column: email,               notion_property: "Email",                 notion_type: email,        direction: forward }
     - { db_column: phone,               notion_property: "Phone",                 notion_type: phone_number, direction: forward }

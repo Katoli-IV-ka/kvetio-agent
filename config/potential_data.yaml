@@ -1,0 +1,26 @@
+# Маппинг «ICP-сегмент → типы данных» для Notion multi_select «Potential Data».
+# Детерминированная эвристика. Меняется без правок кода и без деплоя.
+#
+# Используется profile builder'ом в notion_sync при forward-синке компаний.
+# Логика: берём типы по segments[icp_segment], затем объединяем (union) с
+# status_overrides[status], если статус компании совпал. Порядок сохраняется,
+# дубли убираются.
+#
+# Полный набор значений ниже = опции, которые должны существовать в свойстве
+# «Potential Data» (multi_select) в Notion-базе компаний.
+
+segments:
+  medical-imaging:      [Medical Data, Images, Annotation]
+  video-photo-ai:       [Images, Video, Synthetic Data]
+  speech-and-audio:     [Audio, Voice Data, Transcription]
+  autonomous-vehicles:  [Camera Data, Sensor Data, Video, Annotation]
+  robotics-ai:          [Camera Data, Sensor Data, Video, Annotation]
+  agriculture-ai:       [Images, Geospatial Data, Sensor Data]
+  generative-ai:        [Text, LLM Data, Human Feedback, Synthetic Data]
+
+# Доп. правило по статусу компании. Объединяется с сегментными типами.
+status_overrides:
+  data_partner:         [Data Supplier]
+
+# Поведение для неизвестного сегмента: пустой список (поле в Notion очищается).
+# Это осознанный дефолт — лучше пусто, чем неверный тип данных.

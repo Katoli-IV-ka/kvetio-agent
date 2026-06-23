@@ -1,7 +1,7 @@
 -- Kvetio Agent current Supabase clean-install schema.
 -- This is the only active SQL schema contract for fresh environments.
 -- Historical numbered migrations live under sql/migrations/ for live upgrades.
--- Last updated: 2026-06-19 (layered DB contract).
+-- Last updated: 2026-06-23 (029 sales fields P0/P1; 030 P2 tables).
 --
 -- Table taxonomy:
 --   Data: companies, contacts, dossiers
@@ -48,6 +48,12 @@ CREATE TABLE companies (
     -- NewsAgent: strong news signal on a dossier_ready company flags an
     -- incremental dossier rebuild. Not a status — status still only moves forward.
     needs_refresh TIMESTAMPTZ,
+    -- Firmographic fields (029)
+    legal_name     TEXT,
+    country        TEXT,
+    hq_location    TEXT,
+    founded_year   SMALLINT,
+    employee_count INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -61,6 +67,9 @@ CREATE INDEX idx_companies_manual_review
 CREATE INDEX idx_companies_needs_refresh
     ON companies (needs_refresh)
     WHERE needs_refresh IS NOT NULL;
+CREATE INDEX idx_companies_country
+    ON companies (country)
+    WHERE country IS NOT NULL;
 
 CREATE TRIGGER trg_companies_updated_at
 BEFORE UPDATE ON companies
@@ -172,6 +181,15 @@ CREATE TABLE contacts (
     other_channels JSONB NOT NULL DEFAULT '[]'::jsonb
         CONSTRAINT contacts_channels_array CHECK (jsonb_typeof(other_channels) = 'array'),
     discovered_from_research_record_id UUID REFERENCES research_records(id) ON DELETE SET NULL,
+    -- Sales classification (029)
+    tier            SMALLINT CONSTRAINT contacts_tier_check CHECK (tier BETWEEN 1 AND 3),
+    role_title      TEXT,
+    seniority       TEXT CONSTRAINT contacts_seniority_check CHECK (seniority IN (
+                        'C-level', 'VP', 'Director', 'Manager', 'IC', 'Unknown')),
+    decision_area   TEXT,
+    outreach_status TEXT CONSTRAINT contacts_outreach_status_check CHECK (outreach_status IN (
+                        'cold', 'contacted', 'replied', 'meeting_set',
+                        'not_relevant', 'do_not_contact')),
     notion_page_id TEXT,
     notion_synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -184,6 +202,8 @@ CREATE UNIQUE INDEX idx_contacts_dedup_upsert
     ON contacts (company_id, contact_type, name);
 CREATE INDEX idx_contacts_company_id ON contacts (company_id);
 CREATE INDEX idx_contacts_email ON contacts (email) WHERE email IS NOT NULL;
+CREATE INDEX idx_contacts_tier ON contacts (tier) WHERE tier IS NOT NULL;
+CREATE INDEX idx_contacts_outreach_status ON contacts (outreach_status) WHERE outreach_status IS NOT NULL;
 
 CREATE TRIGGER trg_contacts_updated_at
 BEFORE UPDATE ON contacts
@@ -241,6 +261,13 @@ CREATE TABLE dossiers (
     last_news_date DATE,
     extra_facts JSONB NOT NULL DEFAULT '{}'::jsonb,
     section_summaries JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- Sales-brief fields (029)
+    pain_summary            TEXT,
+    outreach_hook           TEXT,
+    pitch_angle             TEXT,
+    why_interesting         TEXT,
+    next_step               TEXT,
+    entry_point_contact_id  UUID REFERENCES contacts(id) ON DELETE SET NULL,
     summary_md TEXT,
     audit_md TEXT,
     notion_page_id TEXT,
@@ -252,6 +279,7 @@ CREATE TABLE dossiers (
 );
 
 CREATE INDEX idx_dossiers_icp_fit ON dossiers (icp_fit);
+CREATE INDEX idx_dossiers_entry_contact ON dossiers (entry_point_contact_id) WHERE entry_point_contact_id IS NOT NULL;
 CREATE INDEX idx_dossiers_funding_stage ON dossiers (funding_stage);
 CREATE INDEX idx_dossiers_derived_at ON dossiers (derived_at DESC);
 
@@ -269,3 +297,54 @@ CREATE TABLE dossier_links (
 );
 
 CREATE INDEX idx_dl_analysis_record ON dossier_links (analysis_record_id);
+
+-- ─── funding_rounds (P2) ────────────────────────────────────────────────────
+-- 1:N funding events per company. Supersedes flat dossiers.funding_* columns
+-- in the long run; keep both until a future cleanup migration.
+
+CREATE TABLE funding_rounds (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    stage           TEXT NOT NULL,
+    amount_usd      BIGINT,
+    announced_date  DATE,
+    source_url      TEXT,
+    investors       TEXT[],
+    notes           TEXT,
+    research_record_id UUID REFERENCES research_records(id) ON DELETE SET NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (company_id, stage, COALESCE(announced_date, '1970-01-01'))
+);
+
+CREATE INDEX idx_fr_company ON funding_rounds (company_id);
+CREATE INDEX idx_fr_date    ON funding_rounds (announced_date DESC);
+
+CREATE TRIGGER trg_fr_updated_at
+BEFORE UPDATE ON funding_rounds
+FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ─── company_relations (P2) ─────────────────────────────────────────────────
+-- Directional 1:N relationship between two known companies.
+-- Primary use: data_partner track and vendor/customer chains.
+
+CREATE TABLE company_relations (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    from_company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    to_company_id       UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    relation_type       TEXT NOT NULL
+        CONSTRAINT cr_type_check CHECK (relation_type IN (
+            'data_partner', 'customer', 'supplier', 'investor', 'competitor', 'other'
+        )),
+    confidence          NUMERIC(3,2) NOT NULL DEFAULT 0.70
+        CONSTRAINT cr_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
+    source_url          TEXT,
+    notes               TEXT,
+    research_record_id  UUID REFERENCES research_records(id) ON DELETE SET NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (from_company_id, to_company_id, relation_type)
+);
+
+CREATE INDEX idx_cr_from ON company_relations (from_company_id);
+CREATE INDEX idx_cr_to   ON company_relations (to_company_id);
+CREATE INDEX idx_cr_type ON company_relations (relation_type);
