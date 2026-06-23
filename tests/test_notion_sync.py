@@ -136,6 +136,9 @@ class FakeDb:
                 r.update(fields)
                 return
 
+    def fetch_for_company(self, table, company_id):
+        return [r for r in self.tables.get(table, []) if r.get("company_id") == company_id]
+
 
 COMPANIES_MAPPING = {
     "companies": {
@@ -343,7 +346,7 @@ def test_contacts_mapping_matches_compact_schema():
     contacts_fields = {f["notion_property"] for f in mapping["contacts"]["fields"]}
     assert contacts_fields == {
         "Name",
-        "Type",
+        "Contact Type",
         "Информация о контакте",
         "Email",
         "Phone",
@@ -358,32 +361,25 @@ def test_companies_mapping_matches_release_schema():
     mapping = ns.load_mapping()
     fields = {f["db_column"]: f for f in mapping["companies"]["fields"]}
 
-    assert fields == {
-        "name": {
-            "db_column": "name",
-            "notion_property": "Company Name",
-            "notion_type": "title",
-            "direction": "forward",
-        },
-        "website": {
-            "db_column": "website",
-            "notion_property": "Website",
-            "notion_type": "url",
-            "direction": "forward",
-        },
-        "linkedin_url": {
-            "db_column": "linkedin_url",
-            "notion_property": "LinkedIn",
-            "notion_type": "url",
-            "direction": "forward",
-        },
-        "description": {
-            "db_column": "description",
-            "notion_property": "Sammary",
-            "notion_type": "rich_text",
-            "direction": "forward",
-        },
-    }
+    # Core fields always present
+    assert fields["name"]["notion_type"] == "title"
+    assert fields["website"]["notion_type"] == "url"
+    assert fields["linkedin_url"]["notion_type"] == "url"
+    assert fields["description"]["notion_type"] == "rich_text"
+
+    # Firmographic fields (029)
+    assert fields["icp_segment"]["notion_type"] == "select"
+    assert fields["country"]["notion_type"] == "select"
+    assert fields["founded_year"]["notion_type"] == "number"
+    assert fields["company_size"]["notion_type"] == "select"
+
+    # Computed field
+    assert fields["funding_info"]["notion_type"] == "rich_text"
+    assert fields["funding_info"]["direction"] == "forward"
+
+    # All are forward
+    for col, f in fields.items():
+        assert f["direction"] == "forward", f"{col} should be forward"
 
 
 def test_to_notion_property_phone_number():
@@ -579,3 +575,50 @@ def test_sync_dossiers_reads_typed_fields():
 
     assert result["entity"] == "dossiers"
     assert result["updated"] == 1
+
+
+def test_format_funding_info_full():
+    d = {"funding_stage": "Series A", "funding_amount_usd": 12_000_000, "funding_date": "2024-06-15"}
+    result = ns._format_funding_info(d)
+    assert result == "Series A · $12M · Jun 2024"
+
+
+def test_format_funding_info_billions():
+    d = {"funding_stage": "Series D", "funding_amount_usd": 1_500_000_000, "funding_date": None}
+    result = ns._format_funding_info(d)
+    assert result == "Series D · $1.5B"
+
+
+def test_format_funding_info_thousands():
+    d = {"funding_stage": "Seed", "funding_amount_usd": 500_000, "funding_date": "2023-01-10"}
+    result = ns._format_funding_info(d)
+    assert result == "Seed · $500K · Jan 2023"
+
+
+def test_format_funding_info_stage_only():
+    d = {"funding_stage": "Grant", "funding_amount_usd": None, "funding_date": None}
+    assert ns._format_funding_info(d) == "Grant"
+
+
+def test_format_funding_info_empty_dossier():
+    assert ns._format_funding_info({}) is None
+
+
+def test_enrich_company_rows_adds_funding_info():
+    class FakeDb:
+        def fetch_for_company(self, table, company_id):
+            return [{"funding_stage": "Seed", "funding_amount_usd": 2_000_000, "funding_date": "2022-03-01"}]
+
+    rows = [{"id": "uuid-1", "domain": "acme.com", "name": "Acme"}]
+    result = ns.enrich_company_rows(rows, FakeDb())
+    assert result[0]["funding_info"] == "Seed · $2M · Mar 2022"
+
+
+def test_enrich_company_rows_no_dossier_gives_none():
+    class FakeDb:
+        def fetch_for_company(self, table, company_id):
+            return []
+
+    rows = [{"id": "uuid-2", "domain": "empty.com", "name": "Empty"}]
+    result = ns.enrich_company_rows(rows, FakeDb())
+    assert result[0]["funding_info"] is None

@@ -187,6 +187,64 @@ def enrich_contact_rows(rows: list[dict], db) -> list[dict]:
     return enriched
 
 
+def _format_funding_info(dossier: dict) -> str | None:
+    """Format dossier funding fields as a compact readable string.
+
+    Returns None if no funding data is present.
+    Examples:
+      "Series A · $12M · Jun 2024"
+      "Series D · $1.5B"
+      "Seed · $500K · Jan 2023"
+      "Grant"
+    """
+    stage = (dossier.get("funding_stage") or "").strip()
+    amount = dossier.get("funding_amount_usd")
+    date_str = dossier.get("funding_date")
+
+    parts = []
+    if stage:
+        parts.append(stage)
+
+    if amount is not None:
+        try:
+            amt = float(amount)
+            if amt >= 1_000_000_000:
+                formatted = f"${amt / 1_000_000_000:.10g}B"
+            elif amt >= 1_000_000:
+                formatted = f"${amt / 1_000_000:.10g}M"
+            elif amt >= 1_000:
+                formatted = f"${amt / 1_000:.10g}K"
+            else:
+                formatted = f"${amt:.0f}"
+            parts.append(formatted)
+        except (TypeError, ValueError):
+            pass
+
+    if date_str:
+        try:
+            from datetime import datetime as _dt
+            d = _dt.strptime(str(date_str)[:10], "%Y-%m-%d")
+            parts.append(d.strftime("%b %Y"))
+        except ValueError:
+            pass
+
+    return " · ".join(parts) if parts else None
+
+
+def enrich_company_rows(rows: list[dict], db) -> list[dict]:
+    """Add computed funding_info field to company rows by fetching their dossiers."""
+    enriched = []
+    for row in rows:
+        company_id = row.get("id")
+        funding_info = None
+        if company_id:
+            dossiers = db.fetch_for_company("dossiers", company_id)
+            if dossiers:
+                funding_info = _format_funding_info(dossiers[0])
+        enriched.append({**row, "funding_info": funding_info})
+    return enriched
+
+
 class NotionGateway:
     """Обёртка над notion-client. Изолирует API для тестируемости."""
     def __init__(self, client):
@@ -320,6 +378,8 @@ class NotionSync:
         rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
         if entity == "contacts":
             rows = enrich_contact_rows(rows, self.db)
+        elif entity == "companies":
+            rows = enrich_company_rows(rows, self.db)
         created = updated = errors = 0
         for row in rows:
             try:

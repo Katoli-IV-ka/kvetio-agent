@@ -144,3 +144,14 @@ def test_cli_run_get_dossier(mock_store):
     args = _build_parser().parse_args(["--get-dossier", "cid-1"])
     _run(args, mock_store)
     mock_store._client.table.assert_called_with("dossiers")
+
+
+def test_dossier_columns_includes_sales_brief_fields():
+    """New sales-brief columns must be in DOSSIER_COLUMNS for upsert to write them."""
+    from dossier_store import DOSSIER_COLUMNS
+    required = {
+        "pain_summary", "outreach_hook", "pitch_angle",
+        "why_interesting", "next_step", "entry_point_contact_id",
+    }
+    missing = required - set(DOSSIER_COLUMNS)
+    assert not missing, f"Missing from DOSSIER_COLUMNS: {missing}"

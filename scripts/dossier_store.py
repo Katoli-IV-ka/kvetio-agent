@@ -33,6 +33,13 @@ DOSSIER_COLUMNS = (
     "section_summaries",
     "summary_md",
     "audit_md",
+    # Sales-brief fields (029)
+    "pain_summary",
+    "outreach_hook",
+    "pitch_angle",
+    "why_interesting",
+    "next_step",
+    "entry_point_contact_id",
     "notion_page_id",
     "notion_synced_at",
     "derived_from_model",
