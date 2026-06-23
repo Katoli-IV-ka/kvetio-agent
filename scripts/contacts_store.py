@@ -65,6 +65,46 @@ def normalize_x_url(contact: dict) -> str | None:
     return f"https://x.com/{handle.lstrip('@')}"
 
 
+def _normalize_identity_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = str(value).strip().lower()
+    if normalized.endswith("/"):
+        normalized = normalized.rstrip("/")
+    if normalized.startswith("http://"):
+        normalized = "https://" + normalized[len("http://"):]
+    return normalized or None
+
+
+def _normalized_name(value: str) -> str:
+    return " ".join(value.lower().split())
+
+
+def contact_identity_keys(contact: dict) -> set[str]:
+    """Return strong channel keys plus name fallback for one contact."""
+    keys: set[str] = set()
+    email = _normalize_identity_value(contact.get("email"))
+    if email:
+        keys.add(f"email:{email}")
+    for field in ("linkedin_url", "x_url", "facebook_url", "instagram_url"):
+        normalized = _normalize_identity_value(contact.get(field))
+        if normalized:
+            keys.add(f"{field}:{normalized}")
+    for item in contact.get("other_channels") or []:
+        if not isinstance(item, dict):
+            continue
+        url = _normalize_identity_value(item.get("url"))
+        if url:
+            keys.add(f"channel:{url}")
+    try:
+        name = _normalized_name(contact_name(contact))
+    except ValueError:
+        name = ""
+    if name:
+        keys.add(f"name:{contact.get('contact_type', 'person')}:{name}")
+    return keys
+
+
 def _channel(type_: str, url: str, label: str | None = None) -> dict:
     item = {"type": type_, "url": url}
     if label:
@@ -113,11 +153,56 @@ def normalize_other_channels(contact: dict) -> list[dict]:
     return result
 
 
+def _create_minimal_company_ref(store: SupabaseStore, domain: str) -> dict:
+    row = {
+        "domain": domain,
+        "name": domain,
+        "website": f"https://{domain}",
+        "status": "discovered",
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    res = store._client.table("companies").upsert(row, on_conflict="domain").execute()
+    if res.data:
+        created = res.data[0]
+        return {"id": created["id"], "domain": created["domain"]}
+    res = (
+        store._client.table("companies")
+        .select("id,domain")
+        .eq("domain", domain)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        raise ValueError(f"company not found for contact after create: {domain}")
+    return res.data[0]
+
+
+def _contacts_for_company_id(store: SupabaseStore, company_id: str) -> list[dict]:
+    res = (
+        store._client.table("contacts")
+        .select("*")
+        .eq("company_id", company_id)
+        .order("contact_type")
+        .order("name")
+        .execute()
+    )
+    return res.data or []
+
+
+def _find_existing_contact(existing: list[dict], new_contact: dict) -> dict | None:
+    new_keys = contact_identity_keys(new_contact)
+    for row in existing:
+        if contact_identity_keys(row) & new_keys:
+            return row
+    return None
+
+
 def resolve_company_ref(
     store: SupabaseStore,
     *,
     domain: str | None = None,
     company_id: str | None = None,
+    create_missing: bool = False,
 ) -> dict:
     """Return company id/domain for contact writes."""
     if company_id:
@@ -140,17 +225,54 @@ def resolve_company_ref(
         raise ValueError("company_id or company_domain is required")
 
     if not res.data:
+        if domain and create_missing:
+            return _create_minimal_company_ref(store, domain)
         ref = company_id or domain
         raise ValueError(f"company not found for contact: {ref}")
     return res.data[0]
 
 
+def _merge_contact_row(existing: dict, incoming: dict) -> dict:
+    merged = dict(existing)
+    for field in (
+        "info",
+        "email",
+        "phone",
+        "linkedin_url",
+        "x_url",
+        "facebook_url",
+        "instagram_url",
+    ):
+        if not merged.get(field) and incoming.get(field):
+            merged[field] = incoming[field]
+    if not merged.get("name") and incoming.get("name"):
+        merged["name"] = incoming["name"]
+    if not merged.get("contact_type") and incoming.get("contact_type"):
+        merged["contact_type"] = incoming["contact_type"]
+    if (
+        not merged.get("discovered_from_research_record_id")
+        and incoming.get("discovered_from_research_record_id")
+    ):
+        merged["discovered_from_research_record_id"] = incoming[
+            "discovered_from_research_record_id"
+        ]
+
+    channels = []
+    for item in (existing.get("other_channels") or []) + (incoming.get("other_channels") or []):
+        if isinstance(item, dict):
+            channels.append(item)
+    merged["other_channels"] = normalize_other_channels({"other_channels": channels})
+    merged["updated_at"] = datetime.utcnow().isoformat()
+    return merged
+
+
 def upsert_contact(store: SupabaseStore, contact: dict) -> str:
-    """Upsert one contact. Conflict key: (company_id, contact_type, name)."""
+    """Write one contact using channel-first identity with name fallback."""
     company_ref = resolve_company_ref(
         store,
         domain=contact.get("company_domain"),
         company_id=contact.get("company_id"),
+        create_missing=bool(contact.get("company_domain")),
     )
     name = contact_name(contact)
     contact_type = contact.get("contact_type", "person")
@@ -172,10 +294,25 @@ def upsert_contact(store: SupabaseStore, contact: dict) -> str:
         row["discovered_from_research_record_id"] = contact[
             "discovered_from_research_record_id"
         ]
-    res = store._client.table("contacts").upsert(
-        row, on_conflict="company_id,contact_type,name"
-    ).execute()
-    logger.debug("upsert_contact: %s / %s", company_ref["domain"], name)
+
+    existing = _contacts_for_company_id(store, company_ref["id"])
+    match = _find_existing_contact(existing, row)
+    if match:
+        update_row = _merge_contact_row(match, row)
+        contact_id = match["id"]
+        res = (
+            store._client.table("contacts")
+            .update(update_row)
+            .eq("id", contact_id)
+            .execute()
+        )
+        logger.debug("update_contact: %s / %s", company_ref["domain"], update_row["name"])
+        if res.data:
+            return res.data[0].get("id", contact_id)
+        return contact_id
+
+    res = store._client.table("contacts").insert(row).execute()
+    logger.debug("insert_contact: %s / %s", company_ref["domain"], name)
     if res.data:
         return res.data[0]["id"]
     return ""
