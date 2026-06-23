@@ -11,10 +11,10 @@
 
 segments:
   medical-imaging:      [Medical Data, Images, Annotation]
-  video-photo-ai:       [Video, Images, Annotation, Synthetic Data]
+  video-photo-ai:       [video, Images, Annotation, Synthetic Data]
   speech-and-audio:     [Audio, Voice Data, Transcription]
-  autonomous-vehicles:  [Images, Annotation, Video, Camera Data, Sensor Data, Geospatial Data, Synthetic Data]
-  robotics-ai:          [Images, Annotation, Video, Synthetic Data, Camera Data, Sensor Data]
+  autonomous-vehicles:  [Images, Annotation, video, Camera Data, Sensor Data, Geospatial Data, Synthetic Data]
+  robotics-ai:          [Images, Annotation, video, Synthetic Data, Camera Data, Sensor Data]
   agriculture-ai:       [Images, Annotation, Geospatial Data, Camera Data]
   generative-ai:        [Text, LLM Data, Human Feedback, Synthetic Data]
 

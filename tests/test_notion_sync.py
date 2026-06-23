@@ -496,12 +496,12 @@ def test_companies_mapping_matches_release_schema():
     assert set(fields.keys()) == expected_columns
     assert fields["name"]["notion_property"] == "Company Name"
     assert fields["name"]["notion_type"] == "title"
-    assert fields["icp_segment"]["notion_property"] == "ICP Segment"
+    assert fields["icp_segment"]["notion_property"] == "ICP-Segment"
     assert fields["description"]["notion_property"] == "AI Summary"
-    assert fields["founded_year"]["notion_property"] == "Founded"
+    assert fields["founded_year"]["notion_property"] == "Founding"
     assert fields["funding_info"]["source"] == "computed"
     assert fields["potential_data"]["notion_type"] == "multi_select"
-    assert fields["last_info_update"]["notion_property"] == "Last Info Update"
+    assert fields["last_info_update"]["notion_property"] == "Last info update"
     assert fields["last_info_update"]["notion_type"] == "date"
     assert mapping["companies"].get("profile_builder") is True
     for f in mapping["companies"]["fields"]:
