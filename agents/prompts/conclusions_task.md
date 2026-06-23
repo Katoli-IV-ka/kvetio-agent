@@ -65,9 +65,20 @@ python scripts/dossier_store.py --list-analysis-records <company_id>
 python scripts/dossier_store.py --upsert-dossier
 ```
 
-Write typed fields (`funding_stage`, `funding_amount_usd`, `funding_date`,
-`team_size_estimate`, `product_category`, `ai_use_case`, `icp_fit`,
-`last_news_date`), `section_summaries`, `summary_md`, and `audit_md`.
+Write typed fields to `dossiers`:
+
+**Существующие поля:**
+- `funding_stage`, `funding_amount_usd`, `funding_date`
+- `team_size_estimate`, `product_category`, `ai_use_case`
+- `icp_fit`, `last_news_date`
+- `section_summaries`, `summary_md`, `audit_md`
+
+**Новые sales-brief поля (обязательно заполнить для dossier_ready):**
+- `pain_summary` — 2-4 предложения: какая конкретная боль с данными есть у этой компании исходя из их продукта. Не сухой список типов данных — нарратив специфики и проблемы. Пример: "Компания строит систему сегментации медицинских снимков. Узкое место — размеченные DICOM-датасеты: публичных почти нет, внутренняя разметка дорогая и медленная, а качество критично для регуляторного одобрения."
+- `pitch_angle` — 1-2 предложения: наш конкретный угол ценностного предложения для этой компании. Пример: "Мы можем поставить pre-labelled DICOM датасеты от аккредитованных радиологов, что сокращает time-to-model на 3-6 месяцев."
+- `why_interesting` — 1-3 предложения: внутренняя заметка, почему лид сильный. Пример: "Свежий раунд Series A, активный найм ML-инженеров, CEO публично жаловался на annotation bottleneck на конференции."
+- `outreach_hook` — одно конкретное свежее событие ЛПР для первого сообщения в LinkedIn. Пример: "Выступил на MICCAI 2025 с докладом «Annotation Quality in Medical AI»." Если события нет — оставить null.
+
 Then write `dossier_links` for every contributing `analysis_record`.
 
 ## Status update
@@ -84,8 +95,12 @@ WHERE domain = '<domain>';
 After dossier write, run:
 
 ```bash
-python scripts/notion_sync.py --entity companies --all
-python scripts/notion_sync.py --entity dossiers
+python scripts/notion_sync.py --entity companies --forward
+python scripts/notion_sync.py --entity contacts --forward
 ```
+
+`enrich_company_rows` автоматически подтянет dossier и синтезирует `Funding Info`.
+Новые колонки (ICP Segment, Country, Founded, Company Size, Funding Info) обновятся
+в таблице Companies в Notion.
 
 Use the repository sync script. Do not publish ad hoc pages manually.
