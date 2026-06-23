@@ -45,7 +45,6 @@ CREATE TABLE companies (
     )),
     icp_segment TEXT,
     description TEXT,
-    hq_country TEXT,
     -- NewsAgent: strong news signal on a dossier_ready company flags an
     -- incremental dossier rebuild. Not a status — status still only moves forward.
     needs_refresh TIMESTAMPTZ,
@@ -258,7 +257,6 @@ CREATE TABLE dossiers (
     funding_stage TEXT,
     funding_amount_usd BIGINT,
     funding_date DATE,
-    team_size_estimate TEXT,
     product_category TEXT,
     ai_use_case TEXT,
     icp_fit TEXT
@@ -302,57 +300,6 @@ CREATE TABLE dossier_links (
 );
 
 CREATE INDEX idx_dl_analysis_record ON dossier_links (analysis_record_id);
-
--- ─── funding_rounds (P2) ────────────────────────────────────────────────────
--- 1:N funding events per company. Supersedes flat dossiers.funding_* columns
--- in the long run; keep both until a future cleanup migration.
-
-CREATE TABLE funding_rounds (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    company_id      UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    stage           TEXT NOT NULL,
-    amount_usd      BIGINT,
-    announced_date  DATE,
-    source_url      TEXT,
-    investors       TEXT[],
-    notes           TEXT,
-    research_record_id UUID REFERENCES research_records(id) ON DELETE SET NULL,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (company_id, stage, COALESCE(announced_date, '1970-01-01'))
-);
-
-CREATE INDEX idx_fr_company ON funding_rounds (company_id);
-CREATE INDEX idx_fr_date    ON funding_rounds (announced_date DESC);
-
-CREATE TRIGGER trg_fr_updated_at
-BEFORE UPDATE ON funding_rounds
-FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- ─── company_relations (P2) ─────────────────────────────────────────────────
--- Directional 1:N relationship between two known companies.
--- Primary use: data_partner track and vendor/customer chains.
-
-CREATE TABLE company_relations (
-    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    from_company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    to_company_id       UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    relation_type       TEXT NOT NULL
-        CONSTRAINT cr_type_check CHECK (relation_type IN (
-            'data_partner', 'customer', 'supplier', 'investor', 'competitor', 'other'
-        )),
-    confidence          NUMERIC(3,2) NOT NULL DEFAULT 0.70
-        CONSTRAINT cr_confidence_check CHECK (confidence >= 0 AND confidence <= 1),
-    source_url          TEXT,
-    notes               TEXT,
-    research_record_id  UUID REFERENCES research_records(id) ON DELETE SET NULL,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (from_company_id, to_company_id, relation_type)
-);
-
-CREATE INDEX idx_cr_from ON company_relations (from_company_id);
-CREATE INDEX idx_cr_to   ON company_relations (to_company_id);
-CREATE INDEX idx_cr_type ON company_relations (relation_type);
 
 -- ─── translations ────────────────────────────────────────────────────────────
 

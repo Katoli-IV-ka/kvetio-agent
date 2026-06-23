@@ -386,7 +386,7 @@ CREATE TABLE dossiers (
     funding_stage       TEXT,
     funding_amount_usd  BIGINT,
     funding_date        DATE,
-    team_size_estimate  TEXT,
+    company_size  TEXT,
     product_category    TEXT,
     ai_use_case         TEXT,
     icp_fit             TEXT
@@ -876,7 +876,7 @@ Add the new-shape dossier helpers:
 ```python
 DOSSIER_COLUMNS = (
     "company_id", "funding_stage", "funding_amount_usd", "funding_date",
-    "team_size_estimate", "product_category", "ai_use_case", "icp_fit",
+    "company_size", "product_category", "ai_use_case", "icp_fit",
     "last_news_date", "extra_facts", "section_summaries", "summary_md",
     "audit_md", "notion_page_id", "notion_synced_at", "derived_from_model",
     "version",
@@ -1072,11 +1072,11 @@ Expected: FAIL — `contact_display_name` reads `first_name`/`last_name`; `sync_
 
 - [ ] **Step 3: Edit `scripts/notion_sync.py`**
 
-`contact_display_name` (line ~148) returns `str(row.get("name") or "").strip()`. In `_sync_contacts_reverse` (lines ~369–370) write `changes["name"] = title` and `changes["contact_type"] = <select value>` instead of splitting into first/last. Rewrite `sync_dossiers` (line ~437) to map the new columns: `summary_md` → page body, `section_summaries` → section blocks, and project `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date` as Notion properties; sync `notion_page_id`/`notion_synced_at` back to `dossiers`. Keep `--entity dossiers` (line ~489) and its dispatch (line ~523). Remove any reads of the old `sections`/`table_fields`/`generated_at` columns.
+`contact_display_name` (line ~148) returns `str(row.get("name") or "").strip()`. In `_sync_contacts_reverse` (lines ~369–370) write `changes["name"] = title` and `changes["contact_type"] = <select value>` instead of splitting into first/last. Rewrite `sync_dossiers` (line ~437) to map the new columns: `summary_md` → page body, `section_summaries` → section blocks, and project `funding_stage`, `company_size`, `icp_fit`, `product_category`, `last_news_date` as Notion properties; sync `notion_page_id`/`notion_synced_at` back to `dossiers`. Keep `--entity dossiers` (line ~489) and its dispatch (line ~523). Remove any reads of the old `sections`/`table_fields`/`generated_at` columns.
 
 - [ ] **Step 4: Edit `config/notion_mapping.yaml`**
 
-Rename contact field mappings `first_name`/`last_name` → `name`, add `contact_type` select mapping; update the `dossiers` entity block to the new properties (`funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`; body from `summary_md`).
+Rename contact field mappings `first_name`/`last_name` → `name`, add `contact_type` select mapping; update the `dossiers` entity block to the new properties (`funding_stage`, `company_size`, `icp_fit`, `product_category`, `last_news_date`; body from `summary_md`).
 
 - [ ] **Step 5: Run tests**
 
@@ -1166,7 +1166,7 @@ FROM analysis_records ar
 LEFT JOIN analysis_links al ON al.analysis_record_id = ar.id
 GROUP BY ar.section;
 
-SELECT funding_stage, icp_fit, team_size_estimate,
+SELECT funding_stage, icp_fit, company_size,
        section_summaries->>'financials' AS fin_summary,
        length(summary_md) AS narrative_chars,
        (SELECT count(*) FROM dossier_links WHERE company_id = d.company_id) AS provenance_links

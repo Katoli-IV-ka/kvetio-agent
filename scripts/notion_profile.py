@@ -103,11 +103,9 @@ def build_company_notion_profile(
         "icp_segment": company.get("icp_segment"),
         "status": company.get("status"),
         "description": description,
-        "country": company.get("country") or company.get("hq_country"),
-        "hq_country": company.get("hq_country") or company.get("country"),
+        "country": company.get("country"),
         "founded_year": company.get("founded_year"),
-        "company_size": company.get("company_size") or d.get("team_size_estimate"),
-        "team_size_estimate": d.get("team_size_estimate"),
+        "company_size": company.get("company_size"),
         "funding_info": _compute_funding_info(d.get("funding_stage"), d.get("funding_amount_usd")),
         "potential_data": _compute_potential_data(
             company.get("icp_segment"), company.get("status"), potential_cfg

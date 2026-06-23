@@ -344,7 +344,7 @@ CREATE TABLE company_profiles (
     -- | 'bootstrapped' | 'unknown'
     funding_amount_usd  BIGINT,       -- latest round in USD
     funding_date        DATE,         -- latest round close date
-    team_size_estimate  TEXT,         -- '1-10' | '10-50' | '50-200' | '200-500' | '500+'
+    company_size  TEXT,         -- '1-10' | '10-50' | '50-200' | '200-500' | '500+'
     product_category    TEXT,         -- e.g. 'MLOps', 'Data Infrastructure'
     ai_use_case         TEXT,         -- short phrase: what the company does with AI
     icp_fit             TEXT
@@ -395,7 +395,7 @@ CREATE TABLE profile_analysis_links (
     company_id          UUID NOT NULL REFERENCES company_profiles(company_id) ON DELETE CASCADE,
     analysis_entry_id   UUID NOT NULL REFERENCES analysis_entries(id) ON DELETE CASCADE,
     contributed_to      TEXT,
-    -- field name or section: 'funding_stage', 'team_size_estimate', 'financials', etc.
+    -- field name or section: 'funding_stage', 'company_size', 'financials', etc.
     PRIMARY KEY (company_id, analysis_entry_id)
 );
 
@@ -501,7 +501,7 @@ JOIN analysis_entries ae ON ae.id = pal.analysis_entry_id
 WHERE pal.company_id = '<id>' AND pal.contributed_to = 'funding_stage';
 
 -- Companies by ICP fit and funding stage (structured, no text parsing)
-SELECT c.name, c.domain, cp.icp_fit, cp.funding_stage, cp.team_size_estimate
+SELECT c.name, c.domain, cp.icp_fit, cp.funding_stage, cp.company_size
 FROM company_profiles cp
 JOIN companies c ON c.id = cp.company_id
 WHERE cp.icp_fit = 'strong' AND cp.funding_stage IN ('series_a', 'series_b')
@@ -584,7 +584,7 @@ ORDER BY cp.derived_at DESC;
   replaces `--entity dossiers`. Read:
   - `summary_md` → Notion dossier page body
   - `section_summaries` → section blocks
-  - `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`,
+  - `funding_stage`, `company_size`, `icp_fit`, `product_category`,
     `last_news_date` → Notion properties (select or text)
   - Sync `notion_page_id` and `notion_synced_at` back to `company_profiles`.
 - Remove all references to `dossiers` table.
@@ -688,7 +688,7 @@ All prompts must treat this spec as the active database contract.
    a. Read analysis_entries for company_id
    b. Extract typed facts from analysis_entries.facts:
       - funding_stage, funding_amount_usd, funding_date  ← section 'financials'
-      - team_size_estimate                                ← section 'company'
+      - company_size                                ← section 'company'
       - product_category, ai_use_case                    ← section 'product'
       - icp_fit                                           ← section 'collaboration'
       - last_news_date                                    ← section 'news'
@@ -748,7 +748,7 @@ Do not write to `dossiers` (table removed). Final output target is
 
 - page body: `company_profiles.summary_md`
 - section blocks: `company_profiles.section_summaries`
-- Notion properties (table view): `funding_stage`, `team_size_estimate`,
+- Notion properties (table view): `funding_stage`, `company_size`,
   `icp_fit`, `product_category`, `last_news_date`
 - Notion binding: `company_profiles.notion_page_id` / `notion_synced_at`
 
@@ -931,7 +931,7 @@ LEFT JOIN analysis_entry_research_links aerl ON aerl.analysis_entry_id = ae.id
 GROUP BY ae.section;
 
 -- Company profile has structured fields and narrative
-SELECT funding_stage, icp_fit, team_size_estimate,
+SELECT funding_stage, icp_fit, company_size,
        section_summaries->>'financials' AS fin_summary,
        length(summary_md) AS narrative_chars,
        (SELECT count(*) FROM profile_analysis_links

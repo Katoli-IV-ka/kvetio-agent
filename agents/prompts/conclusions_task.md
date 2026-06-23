@@ -69,9 +69,12 @@ Write typed fields to `dossiers`:
 
 **Существующие поля:**
 - `funding_stage`, `funding_amount_usd`, `funding_date`
-- `team_size_estimate`, `product_category`, `ai_use_case`
+- `product_category`, `ai_use_case`
 - `icp_fit`, `last_news_date`
 - `section_summaries`, `summary_md`, `audit_md`
+
+Размер компании не записывай в `dossiers`: используй `companies.company_size`,
+которое заполняет firmographics enrichment.
 
 **Новые sales-brief поля (обязательно заполнить для dossier_ready):**
 - `pain_summary` — 2-4 предложения: какая конкретная боль с данными есть у этой компании исходя из их продукта. Не сухой список типов данных — нарратив специфики и проблемы. Пример: "Компания строит систему сегментации медицинских снимков. Узкое место — размеченные DICOM-датасеты: публичных почти нет, внутренняя разметка дорогая и медленная, а качество критично для регуляторного одобрения."

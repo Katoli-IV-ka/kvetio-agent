@@ -39,7 +39,7 @@
 конечный продукт состоит из двух сущностей:
 
 **Досье компании** (`dossiers`) — типизированные поля + 6 текстовых секций:
-funding_stage / funding_amount_usd / funding_date, team_size_estimate,
+funding_stage / funding_amount_usd / funding_date, company_size,
 product_category, ai_use_case, icp_fit, last_news_date, плюс `section_summaries`
 (О компании, Продукт, Сотрудничество, Финансы, Новости, Аудит) и `summary_md`.
 
@@ -100,7 +100,7 @@ product_category, ai_use_case, icp_fit, last_news_date, плюс `section_summar
 
 | Поле | Заполнено |
 |---|---:|
-| team_size_estimate | 41 / 42 |
+| company_size | 41 / 42 |
 | icp_fit (известный) | 42 / 42 |
 | summary_md | 32 / 42 |
 | audit_md | 32 / 42 |

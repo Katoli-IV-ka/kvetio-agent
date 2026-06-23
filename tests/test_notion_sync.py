@@ -372,7 +372,6 @@ def test_companies_mapping_matches_release_schema():
     # Firmographic fields (029)
     assert fields["icp_segment"]["notion_type"] == "select"
     assert fields["country"]["notion_type"] == "select"
-    assert fields["hq_country"]["notion_property"] == "HQ Country"
     assert fields["founded_year"]["notion_type"] == "number"
     assert fields["company_size"]["notion_type"] == "select"
 
@@ -381,15 +380,14 @@ def test_companies_mapping_matches_release_schema():
     assert fields["funding_info"]["direction"] == "forward"
     expected_columns = {
         "name", "website", "linkedin_url", "icp_segment", "status",
-        "description", "country", "hq_country", "founded_year", "company_size",
-        "funding_info", "team_size_estimate", "potential_data", "last_info_update",
+        "description", "country", "founded_year", "company_size",
+        "funding_info", "potential_data", "last_info_update",
     }
     assert set(fields.keys()) == expected_columns
     assert fields["name"]["notion_property"] == "Company Name"
     assert fields["name"]["notion_type"] == "title"
     assert fields["description"]["notion_property"] == "AI Summary"
     assert fields["funding_info"]["source"] == "computed"
-    assert fields["team_size_estimate"]["source"] == "dossier"
     assert fields["potential_data"]["notion_type"] == "multi_select"
     assert fields["last_info_update"]["notion_type"] == "date"
     assert mapping["companies"].get("profile_builder") is True
@@ -707,7 +705,6 @@ def test_sync_dossiers_translates_prose_fields():
         "summary_md": "English summary",
         "audit_md": "English audit",
         "section_summaries": {"intro": "Intro section"},
-        "team_size_estimate": "11-50",
     }]
 
     sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,

@@ -24,7 +24,6 @@ DOSSIER_COLUMNS = (
     "funding_stage",
     "funding_amount_usd",
     "funding_date",
-    "team_size_estimate",
     "product_category",
     "ai_use_case",
     "icp_fit",
