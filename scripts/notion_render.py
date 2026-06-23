@@ -9,6 +9,10 @@ from __future__ import annotations
 from datetime import date
 
 
+# ---------------------------------------------------------------------------
+# Primitive block builders
+# ---------------------------------------------------------------------------
+
 def heading_1_block(text: str) -> dict:
     return {
         "object": "block",
@@ -53,6 +57,10 @@ def quote_block(text: str) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Rich-text segments
+# ---------------------------------------------------------------------------
+
 def label_segment(text: str) -> dict:
     return {
         "type": "text",
@@ -96,6 +104,10 @@ def callout_block(emoji: str, children: list[dict]) -> dict:
         },
     }
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 _LEADER_KEYWORDS = ("CEO", "CTO", "CPO", "VP", "Head", "Founder",
                     "Co-Founder", "President", "Director")
@@ -180,16 +192,9 @@ def _leaders_paragraph(contacts: list[dict]) -> dict | None:
     }
 
 
-def _paragraph_block(text: str, link: str | None = None) -> dict:
-    if link:
-        rt = [
-            {"type": "text", "text": {"content": "🔗 "}},
-            {"type": "text", "text": {"content": text, "link": {"url": link}}},
-        ]
-    else:
-        rt = [{"type": "text", "text": {"content": text}}]
-    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt}}
-
+# ---------------------------------------------------------------------------
+# Section builders
+# ---------------------------------------------------------------------------
 
 def build_company_section(
     company: dict,
@@ -418,6 +423,17 @@ def build_financials_section(
     return callout_block("💰", children)
 
 
+def _paragraph_block(text: str, link: str | None = None) -> dict:
+    if link:
+        rt = [
+            {"type": "text", "text": {"content": "🔗 "}},
+            {"type": "text", "text": {"content": text, "link": {"url": link}}},
+        ]
+    else:
+        rt = [{"type": "text", "text": {"content": text}}]
+    return {"object": "block", "type": "paragraph", "paragraph": {"rich_text": rt}}
+
+
 def build_news_section(news: list[dict] | None) -> dict | None:
     """Build Новости callout. Returns None if no news items."""
     if not news:
@@ -441,7 +457,7 @@ def build_news_section(news: list[dict] | None) -> dict | None:
         if summary:
             children.append(_paragraph_block(summary))
         if url:
-            from urllib.parse import urlparse
+            from urllib.parse import urlparse  # noqa: PLC0415
             domain = urlparse(url).netloc or url
             children.append(_paragraph_block(domain, link=url))
 
@@ -557,6 +573,10 @@ def build_conclusion_section(
     return callout_block("🎯", children)
 
 
+# ---------------------------------------------------------------------------
+# Top-level assembler
+# ---------------------------------------------------------------------------
+
 def build_page_blocks(
     company: dict,
     dossier: dict | None,
@@ -608,3 +628,39 @@ def build_page_blocks(
     blocks.append(empty_block())
 
     return blocks
+
+
+# ---------------------------------------------------------------------------
+# Data orchestrator
+# ---------------------------------------------------------------------------
+
+def render_and_write_body(
+    sync,          # NotionSync instance with .db and .notion attributes
+    company_id: str,
+    page_id: str,
+    refresh: bool = False,
+) -> None:
+    """Fetch data from DB, build blocks, write to Notion.
+
+    If refresh=True, delete all existing page blocks first.
+    """
+    company = sync.db.fetch_one_by_id("companies", company_id) or {}
+    dossier_rows = sync.db.fetch_for_company("dossiers", company_id)
+    dossier = dossier_rows[0] if dossier_rows else None
+
+    analysis_rows = sync.db.fetch_for_company("analysis_records", company_id)
+    analysis: dict[str, dict] = {row["section"]: row for row in analysis_rows}
+
+    contacts = sync.db.fetch_for_company("contacts", company_id)
+    news = sync.db.fetch_news_for_company(company_id)
+
+    blocks = build_page_blocks(company, dossier, analysis, contacts, news)
+    if not blocks:
+        return
+
+    if refresh:
+        existing = sync.notion.list_block_children(page_id)
+        for blk in existing:
+            sync.notion.delete_block(blk["id"])
+
+    sync.notion.append_children(page_id, blocks)
