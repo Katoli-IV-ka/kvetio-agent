@@ -472,7 +472,7 @@ def test_build_page_blocks_has_disclaimer():
 
 # ---- Gateway extensions ---------------------------------------------------
 
-import notion_sync as ns
+import notion_sync as ns  # noqa: E402
 
 
 def _make_fake_inner(blocks_data):

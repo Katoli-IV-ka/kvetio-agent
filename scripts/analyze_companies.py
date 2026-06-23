@@ -16,11 +16,8 @@ For each company:
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -168,7 +165,6 @@ def extract_facts_from_research_records(
     elif section == "financials":
         # Extract funding: stage, amount, date
         sources = []
-        funding_found = False
         for record in research_records:
             payload = record.get("payload", {})
             record_type = record.get("record_type", "")
@@ -176,7 +172,6 @@ def extract_facts_from_research_records(
             source = record.get("source", "")
 
             if record_type == "funding_announcement":
-                funding_found = True
                 if payload.get("funding_stage"):
                     facts["latest_funding_stage"] = payload["funding_stage"]
                 if payload.get("funding_amount"):
@@ -252,7 +247,7 @@ def analyze_company(store: SupabaseStore, domain: str, segment: str) -> dict:
         # Fetch research_records
         research_records = store.get_research_records_for_analysis(company_id)
         if not research_records:
-            result["errors"].append(f"No research_records found")
+            result["errors"].append("No research_records found")
         else:
             logger.info(f"  Found {len(research_records)} research records")
 
@@ -297,7 +292,7 @@ def analyze_company(store: SupabaseStore, domain: str, segment: str) -> dict:
         # Update company status to 'analyzed'
         try:
             store.update_status(domain, "analyzed")
-            logger.info(f"  Updated status to 'analyzed'")
+            logger.info("  Updated status to 'analyzed'")
         except Exception as e:
             result["errors"].append(f"Failed to update status: {str(e)}")
 

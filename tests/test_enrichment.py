@@ -427,7 +427,7 @@ def test_run_enrichment_writes_each_link_from_list():
     assert first_entry.title == "P1"
 
 
-from enrichment import (
+from enrichment import (  # noqa: E402
     FirmographicsExtractor,
     _headcount_to_size,
     _jurisdiction_to_country,
