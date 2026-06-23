@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
+from contact_writer import write_contacts
 from supabase_store import SupabaseStore
 
 logger = logging.getLogger(__name__)
@@ -117,8 +118,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Corporate contact page scraper")
     parser.add_argument("--domain", required=True)
+    parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(fetch(args.domain), ensure_ascii=False, indent=2))
+    results = fetch(args.domain)
+    if args.write:
+        write_contacts(domain=args.domain, source="contact_page", contacts=results)
+        return
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

@@ -84,3 +84,19 @@ def test_fetch_returns_contact_records(mocker):
     assert result[0]["other_channels"] == [
         {"type": "contact_page", "url": "https://radai.com/contact"},
     ]
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_contact_page
+
+    mocker.patch("scripts.dm_contact_page.fetch", return_value=[{"name": "Contact"}])
+    writer = mocker.patch("scripts.dm_contact_page.write_contacts")
+    mocker.patch("sys.argv", ["dm_contact_page.py", "--domain", "acme.ai", "--write"])
+
+    dm_contact_page.main()
+
+    writer.assert_called_once_with(
+        domain="acme.ai",
+        source="contact_page",
+        contacts=[{"name": "Contact"}],
+    )

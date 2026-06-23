@@ -19,6 +19,7 @@ import httpx
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).parent))
+from contact_writer import write_contacts
 
 logger = logging.getLogger(__name__)
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -121,8 +122,13 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Apollo.io DM fetcher")
     parser.add_argument("--domain", required=True)
+    parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(fetch(args.domain), ensure_ascii=False, indent=2))
+    results = fetch(args.domain)
+    if args.write:
+        write_contacts(domain=args.domain, source="apollo", contacts=results)
+        return
+    print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
