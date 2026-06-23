@@ -24,9 +24,9 @@ def test_contacts_mapping_has_company_relation_and_name():
     by_column = {field["db_column"]: field for field in fields}
 
     assert by_column["company_page_ids"]["notion_type"] == "relation"
+    assert by_column["company_page_ids"]["notion_property"] == "Company"
     assert by_column["name"]["notion_property"] == "Name"
     assert by_column["contact_type"]["notion_type"] == "select"
-    assert "contact" + "_result" not in by_column
 
 
 def test_validate_mapping_flags_bad_type():
@@ -347,13 +347,15 @@ def test_contacts_mapping_matches_compact_schema():
     assert contacts_fields == {
         "Name",
         "Contact Type",
-        "Информация о контакте",
+        "Contact Info",
         "Email",
         "Phone",
         "LinkedIn",
         "Facebook",
         "Instagram",
-        "Компании",
+        "Company",
+        "Outreach Status",
+        "Source",
     }
 
 
@@ -370,16 +372,29 @@ def test_companies_mapping_matches_release_schema():
     # Firmographic fields (029)
     assert fields["icp_segment"]["notion_type"] == "select"
     assert fields["country"]["notion_type"] == "select"
+    assert fields["hq_country"]["notion_property"] == "HQ Country"
     assert fields["founded_year"]["notion_type"] == "number"
     assert fields["company_size"]["notion_type"] == "select"
 
     # Computed field
     assert fields["funding_info"]["notion_type"] == "rich_text"
     assert fields["funding_info"]["direction"] == "forward"
-
-    # All are forward
-    for col, f in fields.items():
-        assert f["direction"] == "forward", f"{col} should be forward"
+    expected_columns = {
+        "name", "website", "linkedin_url", "icp_segment", "status",
+        "description", "country", "hq_country", "founded_year", "company_size",
+        "funding_info", "team_size_estimate", "potential_data", "last_info_update",
+    }
+    assert set(fields.keys()) == expected_columns
+    assert fields["name"]["notion_property"] == "Company Name"
+    assert fields["name"]["notion_type"] == "title"
+    assert fields["description"]["notion_property"] == "AI Summary"
+    assert fields["funding_info"]["source"] == "computed"
+    assert fields["team_size_estimate"]["source"] == "dossier"
+    assert fields["potential_data"]["notion_type"] == "multi_select"
+    assert fields["last_info_update"]["notion_type"] == "date"
+    assert mapping["companies"].get("profile_builder") is True
+    for f in mapping["companies"]["fields"]:
+        assert f["direction"] == "forward"
 
 
 def test_to_notion_property_phone_number():
@@ -415,6 +430,48 @@ def test_validate_mapping_accepts_phone_number_and_relation():
     }
     errors = ns.validate_mapping(mapping)
     assert errors == []
+
+
+def test_validate_mapping_accepts_source_field():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "ENV",
+            "db_table": "companies",
+            "db_key": "domain",
+            "fields": [
+                {
+                    "db_column": "funding_info",
+                    "notion_property": "Funding Info",
+                    "notion_type": "rich_text",
+                    "direction": "forward",
+                    "source": "computed",
+                }
+            ],
+        }
+    }
+    # Should not raise
+    ns.validate_mapping(mapping)
+
+
+def test_validate_mapping_rejects_computed_reverse():
+    mapping = {
+        "companies": {
+            "notion_database_id_env": "ENV",
+            "db_table": "companies",
+            "db_key": "domain",
+            "fields": [
+                {
+                    "db_column": "funding_info",
+                    "notion_property": "Funding Info",
+                    "notion_type": "rich_text",
+                    "direction": "reverse",
+                    "source": "computed",
+                }
+            ],
+        }
+    }
+    errors = ns.validate_mapping(mapping)
+    assert any("computed" in e and "reverse" in e for e in errors)
 
 
 def test_enrich_contact_rows_uses_company_id_relation():
@@ -622,3 +679,89 @@ def test_enrich_company_rows_no_dossier_gives_none():
     rows = [{"id": "uuid-2", "domain": "empty.com", "name": "Empty"}]
     result = ns.enrich_company_rows(rows, FakeDb())
     assert result[0]["funding_info"] is None
+
+
+def test_no_dossiers_entity_in_mapping():
+    mapping = ns.load_mapping()
+    assert "dossiers" not in mapping
+
+
+def test_sync_dossiers_translates_prose_fields():
+    """translator.translate() is called on summary_md, section_summaries values, and audit_md."""
+    from unittest.mock import MagicMock
+
+    translations = {
+        "English summary": "Русский summary",
+        "English audit": "Русский audit",
+        "Intro section": "Вступительный раздел",
+    }
+    translator = MagicMock()
+    translator.translate.side_effect = lambda t: translations.get(t, t)
+
+    notion = FakeNotion()
+    notion.pages["page-1"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb([])
+    db.tables["companies"] = [{"id": "cid", "domain": "acme.com", "notion_page_id": "page-1"}]
+    db.tables["dossiers"] = [{
+        "company_id": "cid",
+        "summary_md": "English summary",
+        "audit_md": "English audit",
+        "section_summaries": {"intro": "Intro section"},
+        "team_size_estimate": "11-50",
+    }]
+
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"}, translator=translator)
+    sync.sync_dossiers()
+
+    translator.translate.assert_any_call("English summary")
+    translator.translate.assert_any_call("English audit")
+    translator.translate.assert_any_call("Intro section")
+
+
+def test_sync_forward_uses_profile_builder_when_flag_set():
+    """When mapping has profile_builder:true, sync_forward uses build_company_profiles."""
+    from unittest.mock import patch, MagicMock
+
+    profile_mapping = {
+        "companies": {
+            "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
+            "db_table": "companies",
+            "db_key": "domain",
+            "db_status_filter": ["relevant"],
+            "profile_builder": True,
+            "fields": [
+                {"db_column": "name", "notion_property": "Company Name",
+                 "notion_type": "title", "direction": "forward", "source": "db_column"},
+                {"db_column": "funding_info", "notion_property": "Funding Info",
+                 "notion_type": "rich_text", "direction": "forward", "source": "computed"},
+            ],
+        }
+    }
+
+    rows = [{"domain": "acme.com", "name": "Acme", "status": "relevant",
+             "notion_page_id": None, "notion_synced_at": None}]
+    notion = FakeNotion()
+    notion.databases["DBID"] = {"properties": {
+        "Company Name": {"type": "title"},
+        "Funding Info": {"type": "rich_text"},
+    }}
+    db = FakeDb(rows)
+
+    built_profiles = [
+        {"domain": "acme.com", "name": "Acme", "funding_info": "$5M Seed",
+         "notion_page_id": None, "notion_synced_at": None,
+         "id": 1, "linkedin_url": None}
+    ]
+
+    with patch("notion_sync.build_company_profiles", return_value=built_profiles) as mock_build, \
+         patch("notion_sync.load_potential_cfg", return_value={}) as mock_cfg:
+        sync = ns.NotionSync(notion=notion, db=db, mapping=profile_mapping,
+                             env={"NOTION_COMPANIES_DB_ID": "DBID"})
+        result = sync.sync_forward("companies")
+
+    mock_build.assert_called_once()
+    call_args = mock_build.call_args
+    passed_rows = call_args[0][0]  # first positional arg is company_rows
+    assert [r["domain"] for r in passed_rows] == [r["domain"] for r in rows]
+    assert result["created"] == 1

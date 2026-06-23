@@ -28,6 +28,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
+from notion_profile import build_company_profiles, load_potential_cfg
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,9 @@ def validate_mapping(mapping: dict) -> list[str]:
                 errors.append(f"{entity}.{col}: недопустимый notion_type '{nt}'")
             if direction not in VALID_DIRECTIONS:
                 errors.append(f"{entity}.{col}: недопустимый direction '{direction}'")
+            source = f.get("source")
+            if source == "computed" and direction == "reverse":
+                errors.append(f"{entity}.{col}: source=computed cannot be used with direction=reverse")
     return errors
 
 
@@ -352,11 +356,12 @@ class DbGateway:
 
 
 class NotionSync:
-    def __init__(self, notion, db, mapping=None, env=None):
+    def __init__(self, notion, db, mapping=None, env=None, translator=None):
         self.notion = notion
         self.db = db
         self.mapping = mapping if mapping is not None else load_mapping()
         self.env = env if env is not None else os.environ
+        self.translator = translator
 
     def _cfg(self, entity):
         return self.mapping[entity]
@@ -376,9 +381,11 @@ class NotionSync:
         db_id = self._db_id(entity)
         fields = self._fields(entity, "forward")
         rows = self.db.fetch(cfg["db_table"], cfg.get("db_status_filter"))
+        if cfg.get("profile_builder"):
+            rows = build_company_profiles(rows, self.db, load_potential_cfg(), translator=self.translator)
         if entity == "contacts":
             rows = enrich_contact_rows(rows, self.db)
-        elif entity == "companies":
+        elif entity == "companies" and not cfg.get("profile_builder"):
             rows = enrich_company_rows(rows, self.db)
         created = updated = errors = 0
         for row in rows:
@@ -566,6 +573,15 @@ class NotionSync:
             if not company:
                 continue
             try:
+                if self.translator is not None:
+                    d = dict(d)
+                    d["summary_md"] = self.translator.translate(d.get("summary_md"))
+                    d["audit_md"] = self.translator.translate(d.get("audit_md"))
+                    if isinstance(d.get("section_summaries"), dict):
+                        d["section_summaries"] = {
+                            k: self.translator.translate(v)
+                            for k, v in d["section_summaries"].items()
+                        }
                 blocks = []
                 if d.get("summary_md"):
                     blocks += md_to_blocks("Досье — саммари", d["summary_md"])

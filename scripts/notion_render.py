@@ -648,6 +648,14 @@ def render_and_write_body(
     dossier_rows = sync.db.fetch_for_company("dossiers", company_id)
     dossier = dossier_rows[0] if dossier_rows else None
 
+    translator = getattr(sync, 'translator', None)
+    if translator is not None and dossier is not None:
+        dossier = dict(dossier)  # shallow copy — avoid mutating original
+        if dossier.get("summary_md"):
+            dossier["summary_md"] = translator.translate(dossier["summary_md"])
+        if dossier.get("audit_md"):
+            dossier["audit_md"] = translator.translate(dossier["audit_md"])
+
     analysis_rows = sync.db.fetch_for_company("analysis_records", company_id)
     analysis: dict[str, dict] = {row["section"]: row for row in analysis_rows}
 

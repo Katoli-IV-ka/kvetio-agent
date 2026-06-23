@@ -597,3 +597,70 @@ def test_render_and_write_body_no_refresh_does_not_delete():
     sync = _FakeSync(db, notion)
     nr.render_and_write_body(sync, _COMPANY["id"], "page-99", refresh=False)
     assert "keep-blk" not in notion.deleted
+
+
+def test_render_and_write_body_translates_via_sync_translator():
+    """render_and_write_body uses sync.translator to translate prose before rendering."""
+    from unittest.mock import MagicMock
+
+    translated_calls = []
+
+    def fake_translate(text):
+        if text:
+            translated_calls.append(text)
+            return f"[RU]{text}"
+        return text
+
+    translator = MagicMock()
+    translator.translate.side_effect = fake_translate
+
+    # Dossier with no analysis facts — forces fallback to audit_md and summary_md
+    dossier_with_prose = {
+        "company_id": _COMPANY["id"],
+        "product_category": "Computer Vision",
+        "ai_use_case": "Object detection",
+        "funding_stage": "Series B",
+        "team_size_estimate": "50-100",
+        "summary_md": "English summary prose",
+        "audit_md": "English audit prose",
+    }
+
+    db = _FakeDbForRender(
+        _COMPANY,
+        dossier_with_prose,
+        [],  # no analysis records — forces fallback to summary_md and audit_md
+        [],
+        [],
+    )
+    notion = _FakeNotionForRender()
+
+    class _FakeSyncWithTranslator:
+        def __init__(self):
+            self.db = db
+            self.notion = notion
+            self.translator = translator
+
+    sync = _FakeSyncWithTranslator()
+    nr.render_and_write_body(sync, _COMPANY["id"], "page-99", refresh=False)
+
+    # translator.translate must have been called with the prose fields
+    translator.translate.assert_any_call("English summary prose")
+    translator.translate.assert_any_call("English audit prose")
+
+    # The translated text should appear in the rendered blocks
+    all_text = []
+    for block in notion.appended.get("page-99", []):
+        def _collect_text(b):
+            for section in ("paragraph", "heading_1", "heading_2", "heading_3",
+                            "heading_4", "quote", "bulleted_list_item"):
+                rt = (b.get(section) or {}).get("rich_text", [])
+                for seg in rt:
+                    all_text.append((seg.get("text") or {}).get("content", ""))
+            for child in (b.get("callout") or {}).get("children", []):
+                _collect_text(child)
+        _collect_text(block)
+
+    assert any("[RU]English summary prose" in t for t in all_text), \
+        "Translated summary_md not found in rendered blocks"
+    assert any("[RU]English audit prose" in t for t in all_text), \
+        "Translated audit_md not found in rendered blocks"

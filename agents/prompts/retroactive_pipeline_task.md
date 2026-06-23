@@ -159,7 +159,7 @@ LIMIT <limit>;
 python scripts/enrichment.py --domain <domain>
 ```
 
-Скрипт пишет найденные ссылки в `source_links`. Прочитай JSON-вывод.
+Скрипт пишет найденные ссылки в `research_records`. Прочитай JSON-вывод.
 
 ### 2b — Дополнительные источники (WebSearch + WebFetch)
 
@@ -274,13 +274,13 @@ LIMIT <limit>;
 
 Для каждой компании:
 
-### 4a — Получи source_links
+### 4a — Получи research_records
 
 ```bash
 python scripts/dossier_store.py --list-source-links <company_id>
 ```
 
-### 4b — Напиши analysis_notes (5 секций + audit)
+### 4b — Напиши analysis_records (5 секций + audit)
 
 Секции: `company`, `product`, `collaboration`, `financials`, `news`.
 
@@ -294,7 +294,7 @@ echo '{
   "confidence": 0.75,
   "model": "claude-sonnet-4-6",
   "version": "v1"
-}' | python scripts/dossier_store.py --upsert-analysis-note
+}' | python scripts/dossier_store.py --upsert-analysis-record
 ```
 
 Audit:
@@ -307,7 +307,7 @@ echo '{
   "confidence": 0.70,
   "model": "claude-sonnet-4-6",
   "version": "v1"
-}' | python scripts/dossier_store.py --upsert-analysis-note
+}' | python scripts/dossier_store.py --upsert-analysis-record
 ```
 
 ### 4c — Статус update
@@ -340,10 +340,10 @@ LIMIT <limit>;
 
 Для каждой компании:
 
-### 5a — Получи analysis_notes
+### 5a — Получи analysis_records
 
 ```bash
-python scripts/dossier_store.py --list-analysis-notes <company_id>
+python scripts/dossier_store.py --list-analysis-records <company_id>
 ```
 
 ### 5b — Собери dossier

@@ -11,11 +11,11 @@
 
 segments:
   medical-imaging:      [Medical Data, Images, Annotation]
-  video-photo-ai:       [Images, Video, Synthetic Data]
+  video-photo-ai:       [Video, Images, Annotation, Synthetic Data]
   speech-and-audio:     [Audio, Voice Data, Transcription]
-  autonomous-vehicles:  [Camera Data, Sensor Data, Video, Annotation]
-  robotics-ai:          [Camera Data, Sensor Data, Video, Annotation]
-  agriculture-ai:       [Images, Geospatial Data, Sensor Data]
+  autonomous-vehicles:  [Images, Annotation, Video, Camera Data, Sensor Data, Geospatial Data, Synthetic Data]
+  robotics-ai:          [Images, Annotation, Video, Synthetic Data, Camera Data, Sensor Data]
+  agriculture-ai:       [Images, Annotation, Geospatial Data, Camera Data]
   generative-ai:        [Text, LLM Data, Human Feedback, Synthetic Data]
 
 # Доп. правило по статусу компании. Объединяется с сегментными типами.

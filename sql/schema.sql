@@ -42,9 +42,10 @@ CREATE TABLE companies (
             'analyzed',
             'dossier_ready',
             'data_partner'
-        )),
+    )),
     icp_segment TEXT,
     description TEXT,
+    hq_country TEXT,
     -- NewsAgent: strong news signal on a dossier_ready company flags an
     -- incremental dossier rebuild. Not a status — status still only moves forward.
     needs_refresh TIMESTAMPTZ,
@@ -53,7 +54,7 @@ CREATE TABLE companies (
     country        TEXT,
     hq_location    TEXT,
     founded_year   SMALLINT,
-    employee_count INT,
+    company_size   TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -187,11 +188,15 @@ CREATE TABLE contacts (
     seniority       TEXT CONSTRAINT contacts_seniority_check CHECK (seniority IN (
                         'C-level', 'VP', 'Director', 'Manager', 'IC', 'Unknown')),
     decision_area   TEXT,
-    outreach_status TEXT CONSTRAINT contacts_outreach_status_check CHECK (outreach_status IN (
-                        'cold', 'contacted', 'replied', 'meeting_set',
-                        'not_relevant', 'do_not_contact')),
     notion_page_id TEXT,
     notion_synced_at TIMESTAMPTZ,
+    source TEXT,
+    outreach_status TEXT NOT NULL DEFAULT 'new'
+        CONSTRAINT contacts_outreach_check
+        CHECK (outreach_status IN (
+            'new','queued','cold','contacted','replied','meeting_set',
+            'bounced','skip','not_relevant','do_not_contact'
+        )),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -348,3 +353,15 @@ CREATE TABLE company_relations (
 CREATE INDEX idx_cr_from ON company_relations (from_company_id);
 CREATE INDEX idx_cr_to   ON company_relations (to_company_id);
 CREATE INDEX idx_cr_type ON company_relations (relation_type);
+
+-- ─── translations ────────────────────────────────────────────────────────────
+
+CREATE TABLE translations (
+  source_hash     text NOT NULL,
+  target_lang     text NOT NULL DEFAULT 'ru',
+  source_text     text NOT NULL,
+  translated_text text NOT NULL,
+  model           text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (source_hash, target_lang)
+);
