@@ -161,3 +161,32 @@ def test_fetch_user_profile_twitter_handle_none_when_absent():
     }
     result = fetch_user_profile("jdoe", fake_client)
     assert result["x_url"] is None
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_github
+
+    mocker.patch("scripts.dm_github.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_github.write_contacts")
+    mocker.patch("sys.argv", ["dm_github.py", "--domain", "sift.com", "--write"])
+
+    dm_github.main()
+
+    writer.assert_called_once_with(
+        domain="sift.com",
+        source="github",
+        contacts=[{"name": "Alice"}],
+    )
+
+
+def test_main_without_write_does_not_call_contact_writer(mocker, capsys):
+    from scripts import dm_github
+
+    mocker.patch("scripts.dm_github.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_github.write_contacts")
+    mocker.patch("sys.argv", ["dm_github.py", "--domain", "sift.com"])
+
+    dm_github.main()
+
+    writer.assert_not_called()
+    assert "Alice" in capsys.readouterr().out

@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
+from contact_writer import write_contacts
 from http_client import HttpClient
 from supabase_store import SupabaseStore
 
@@ -196,9 +197,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="GitHub DM fetcher")
     parser.add_argument("--domain", required=True)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
 
     results = fetch(args.domain)
+    if args.write:
+        write_contacts(domain=args.domain, source="github", contacts=results)
+        return
     if args.dry_run:
         print(f"Found {len(results)} contacts (dry-run, not saved)", file=sys.stderr)
     print(json.dumps(results, ensure_ascii=False, indent=2))

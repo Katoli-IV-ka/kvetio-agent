@@ -70,3 +70,22 @@ def test_fetch_user_overview_maps_fields(respx_mock):
         overview = fetch_user_overview("jongwook", client)
     assert overview["fullname"] == "Jong Wook Kim"
     assert "Research Scientist" in overview["details"]
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_huggingface_contacts
+
+    mocker.patch("scripts.dm_huggingface_contacts.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_huggingface_contacts.write_contacts")
+    mocker.patch(
+        "sys.argv",
+        ["dm_huggingface_contacts.py", "--domain", "acme.ai", "--write"],
+    )
+
+    dm_huggingface_contacts.main()
+
+    writer.assert_called_once_with(
+        domain="acme.ai",
+        source="huggingface",
+        contacts=[{"name": "Alice"}],
+    )

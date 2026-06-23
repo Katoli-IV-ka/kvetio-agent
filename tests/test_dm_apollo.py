@@ -91,3 +91,19 @@ def test_search_people_uses_per_page_25():
         # httpx.post is called with json= kwarg
         actual_payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args[1].get("json")
         assert actual_payload["per_page"] == 25
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_apollo
+
+    mocker.patch("scripts.dm_apollo.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_apollo.write_contacts")
+    mocker.patch("sys.argv", ["dm_apollo.py", "--domain", "acme.ai", "--write"])
+
+    dm_apollo.main()
+
+    writer.assert_called_once_with(
+        domain="acme.ai",
+        source="apollo",
+        contacts=[{"name": "Alice"}],
+    )

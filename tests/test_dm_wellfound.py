@@ -60,3 +60,19 @@ def test_scrape_wellfound_returns_empty_on_404(respx_mock):
     respx_mock.get("/company/unknown-co").mock(return_value=Response(404))
     results = scrape_wellfound("unknown-co")
     assert results == []
+
+
+def test_main_write_calls_contact_writer(mocker):
+    from scripts import dm_wellfound
+
+    mocker.patch("scripts.dm_wellfound.fetch", return_value=[{"name": "Alice"}])
+    writer = mocker.patch("scripts.dm_wellfound.write_contacts")
+    mocker.patch("sys.argv", ["dm_wellfound.py", "--domain", "acme.ai", "--write"])
+
+    dm_wellfound.main()
+
+    writer.assert_called_once_with(
+        domain="acme.ai",
+        source="wellfound",
+        contacts=[{"name": "Alice"}],
+    )
