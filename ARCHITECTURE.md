@@ -624,6 +624,7 @@ stateDiagram-v2
 | Технические | `dossier_links` | Провенанс: какие `analysis_records` вошли в поля досье. |
 | Технические | `record_types` | Управляемый словарь допустимых типов для `research_records`. |
 | Технические | `run_logs` | История запусков. Используется ботом для `/status` и `/last`. |
+| Технические | `translations` | Кэш переводов текстов. PK `(source_hash, target_lang)`. |
 
 ### `companies`
 
@@ -634,6 +635,8 @@ stateDiagram-v2
 | `name` | TEXT | Отображаемое название |
 | `website` | TEXT | URL сайта |
 | `linkedin_url` | TEXT | LinkedIn URL |
+| `hq_country` | TEXT | Страна головного офиса (добавлено migration 029) |
+| `hq_location` | TEXT | Город/локация головного офиса (добавлено migration 029) |
 | `notion_page_id` | TEXT | ID страницы в Notion (после sync) |
 | `notion_synced_at` | TIMESTAMPTZ | Время последней синхронизации |
 | `status` | TEXT | Текущая стадия (см. status flow) |
@@ -674,6 +677,8 @@ stateDiagram-v2
 | `info` | TEXT | Роль, контекст, описание |
 | `email`, `phone`, `linkedin_url`, `x_url`, `facebook_url`, `instagram_url` | TEXT | Первичные каналы связи |
 | `other_channels` | JSONB array | Вторичные каналы: `[{"type": "github", "url": "..."}]` |
+| `source` | TEXT | Источник контакта (добавлено migration 029) |
+| `outreach_status` | TEXT NOT NULL DEFAULT 'new' | Статус аутрича: `new` / `queued` / `contacted` / `replied` / `bounced` / `skip` (добавлено migration 029) |
 | `discovered_from_research_record_id` | UUID FK → research_records | Провенанс контакта |
 | `notion_page_id`, `notion_synced_at` | — | Notion sync |
 
@@ -756,6 +761,20 @@ stateDiagram-v2
 | `errors` | JSONB array ошибок |
 | `notes` | Свободный текст |
 
+### `translations`
+
+Кэш переводов для `notion_sync.py` и `notion_render.py`. Добавлено migration `029_notion_profile_fields.sql`.
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `source_hash` | TEXT | SHA256 от исходного текста |
+| `target_lang` | TEXT | Язык перевода (напр. `ru`) |
+| `translated_text` | TEXT | Переведённый текст |
+| `model` | TEXT | Модель, выполнившая перевод |
+| `created_at` | TIMESTAMPTZ | Время создания записи |
+
+PK: `(source_hash, target_lang)`. Используется `scripts/translate.py`.
+
 ---
 
 ## 5. Notion
@@ -777,11 +796,13 @@ flowchart LR
 
 | Сущность | Синхронизируемые поля | Фильтр |
 |---|---|---|
-| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment` | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
-| `contacts` | `name`, `contact_type`, `info`, `email`, `phone`, `linkedin_url`, `facebook_url`, `instagram_url`, relation к компании | все |
-| `dossiers` | `funding_stage`, `team_size_estimate`, `icp_fit`, `product_category`, `last_news_date`, `funding_date`, `summary_md` | все |
+| `companies` | `name`, `website`, `linkedin_url`, `description`, `status`, `icp_segment`, `hq_country`, `hq_location`, `funding_stage`, `funding_amount_usd`, `funding_date`, `icp_fit`, `potential_data` (computed), `last_info_update` (computed) + 11 полей итого | `status IN (relevant, sources_gathered, analyzed, dossier_ready, data_partner)` |
+| `contacts` | `name`, `contact_type`, `info`, `email`, `phone`, `linkedin_url`, `facebook_url`, `instagram_url`, `outreach_status`, `source`, relation к компании (Contact Type, Contact Info, Company, Outreach Status, Source) | все |
+| `dossiers` | синхронизация досье выполняется через тело страницы компании (render) и свойства; отдельная сущность `dossiers` в `notion_mapping.yaml` удалена | — |
 
 `discovered` и `not_relevant` компании в Notion не попадают — только квалифицированные.
+
+> `profile_builder: true` в маппинге компаний означает, что `sync_forward` вызывает `build_company_profiles` вместо прямого чтения из `companies`. Функция выполняет ровно 3 DB-запроса (dossiers, research_records, contacts), вычисляет computed-поля и возвращает обогащённый dict.
 
 ### Триггеры синхронизации
 
@@ -833,10 +854,21 @@ heading_4  disclaimer (аналитический характер)
 
 ### Конфигурация
 
-Маппинг полей: `config/notion_mapping.yaml`. Три секции: `companies`, `contacts`, `dossiers`. Каждая секция содержит:
+Маппинг полей: `config/notion_mapping.yaml`. Две активные секции: `companies`, `contacts` (секция `dossiers` удалена). Каждая секция содержит:
 - `database_id` (берётся из env var)
 - `filters` — какие записи синхронизировать
 - `fields` — список полей Supabase → тип Notion-свойства
+
+Каждое поле маппинга может иметь атрибут `source`:
+- `source: db_column` — значение читается напрямую из колонки БД
+- `source: dossier` — значение читается из связанной таблицы `dossiers`
+- `source: computed` — значение вычисляется функцией в `notion_profile.py`
+
+`profile_builder: true` на секции включает `build_company_profiles` при `sync_forward`.
+
+`validate_mapping` принимает опциональный параметр `source`; комбинация `source=computed` + `direction=reverse` запрещена.
+
+Конфиг ICP-сегментов для computed-поля `potential_data`: `config/potential_data.yaml` — словарь `icp_segment → list[str]` multi_select значений Notion.
 
 ### Как добавить новое поле в Notion
 
@@ -850,4 +882,40 @@ heading_4  disclaimer (аналитический характер)
 - Не хранить в Notion данные, которые не нужны для просмотра лидов (raw_data, JSONB-payload).
 - `notion_page_id` хранится в Supabase (`companies.notion_page_id`, `contacts.notion_page_id`, `dossiers.notion_page_id`) для идемпотентного upsert при повторной синхронизации.
 - При удалении страницы в Notion — `notion_page_id` в Supabase остаётся, следующая синхронизация создаст страницу заново.
+
+### Модули синхронизации
+
+#### `scripts/notion_profile.py`
+
+Сборка обогащённого профиля компании для Notion. Добавлено в этой ветке.
+
+| Функция | Описание |
+|---|---|
+| `load_potential_cfg()` | Загружает `config/potential_data.yaml` → dict `icp_segment → list[str]` |
+| `_format_amount(v)` | Форматирует числовую сумму в читаемую строку (M/K/B) |
+| `_compute_funding_info(company, dossier)` | Собирает поля `funding_stage`, `funding_amount_usd`, `funding_date` из dossiier |
+| `_compute_potential_data(company, cfg)` | Возвращает multi_select список по сегменту из `potential_data.yaml` |
+| `_compute_last_info_update(company, research_records)` | Вычисляет дату последнего обновления данных |
+| `build_company_notion_profile(company, dossier, aggregates, potential_cfg, translator=None)` | Собирает dict для Notion из DB row + dossier + computed fields |
+| `build_company_profiles(company_rows, db, potential_cfg, translator=None)` | Prefetch-версия: ровно 3 DB-запроса (dossiers, research_records, contacts), нет N+1 |
+
+#### `scripts/translate.py`
+
+Кэшированный перевод текстов. Добавлено в этой ветке.
+
+| Функция/класс | Описание |
+|---|---|
+| `get_or_translate(store, text, backend, lang="ru")` | SHA256-ключ кэша; при промахе вызывает backend и сохраняет результат в `translations` |
+| `Translator` | Обёртка над store + backend. `translate(text) → str \| None` — `None`/пустая строка передаются без изменений |
+
+#### `scripts/notion_sync.py` — обновлено
+
+- `NotionSync.__init__` принимает `translator=None`.
+- `sync_forward` вызывает `build_company_profiles` при `profile_builder: true` в маппинге.
+- `sync_dossiers` переводит `summary_md`, `audit_md`, значения `section_summaries` через `self.translator`.
+- `validate_mapping` принимает опциональный `source`; отклоняет `source=computed` + `direction=reverse`.
+
+#### `scripts/notion_render.py` — обновлено
+
+- `render_and_write_body` переводит `summary_md` и `audit_md` через `getattr(sync, 'translator', None)` перед рендером.
 
