@@ -4,12 +4,12 @@
 -- Last updated: 2026-06-23 (029 sales fields P0/P1; 030 P2 tables).
 --
 -- Table taxonomy:
---   Data: companies, contacts, dossiers
+--   Data: companies, category_options, contacts, dossiers, research_notes
 --   Process: research_records, analysis_records
 --   Technical: analysis_links, dossier_links, record_types, run_logs
 --
 -- FK order:
---   companies -> run_logs -> record_types -> research_records -> contacts
+--   category_options -> companies -> run_logs -> record_types -> research_records -> contacts
 --   -> analysis_records -> analysis_links -> dossiers -> dossier_links
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -21,6 +21,23 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- ─── category_options ───────────────────────────────────────────────────────
+
+CREATE TABLE category_options (
+    value      TEXT PRIMARY KEY,
+    label      TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO category_options (value, label) VALUES
+    ('data_provider',     'Data provider'),
+    ('product_builder',   'Builds product'),
+    ('llm_wrapper',       'LLM wrapper'),
+    ('big_tech_ai',       'Big tech with AI product'),
+    ('non_tech_product',  'Non-tech, builds own product'),
+    ('startup_own_model', 'Startup building own model'),
+    ('closed_project',    'Closed project');
 
 -- ─── companies ──────────────────────────────────────────────────────────────
 
@@ -41,7 +58,9 @@ CREATE TABLE companies (
             'sources_gathered',
             'analyzed',
             'dossier_ready',
-            'data_partner'
+            'data_partner',
+            'new',
+            'site_researched'
     )),
     icp_segment TEXT,
     description TEXT,
@@ -51,6 +70,7 @@ CREATE TABLE companies (
     -- Firmographic fields (029)
     legal_name     TEXT,
     country        TEXT,
+    category       TEXT REFERENCES category_options(value),
     hq_location    TEXT,
     founded_year   SMALLINT,
     company_size   TEXT,
@@ -162,6 +182,22 @@ CREATE INDEX idx_rr_company_role ON research_records (company_id, record_role);
 CREATE TRIGGER trg_rr_updated_at
 BEFORE UPDATE ON research_records
 FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+-- ─── research_notes ────────────────────────────────────────────────────────
+
+CREATE TABLE research_notes (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id   UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    note_type    TEXT NOT NULL CONSTRAINT research_notes_type_check CHECK (
+                     note_type IN ('product', 'press_release', 'cooperative', 'finance')),
+    content      TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    source_url   TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (company_id, note_type, content_hash)
+);
+
+CREATE INDEX idx_research_notes_company ON research_notes (company_id);
 
 -- ─── contacts ───────────────────────────────────────────────────────────────
 
