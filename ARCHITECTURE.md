@@ -471,16 +471,16 @@ stateDiagram-v2
 6. Обновляет `founded_year` и `country` в таблице `companies`.
 
 **Пишет в БД:**
-- `companies`: `founded_year`, `country` (статус НЕ меняется).
-- `contacts`: люди и каналы связи.
-- `research_notes`: product информация (`note_type="product"`).
+- `companies`: `status='site_researched'`, `founded_year`, `country`.
+- `contacts`: люди и каналы связи через `contacts_store.upsert_contact`.
+- `research_records`: `record_type='product_update'`, `record_role='source'`, `agent='site_research'`.
 - `run_logs`: итоговая статистика.
 
 **Читает из БД:** `companies WHERE status='relevant'`.
 
-**Скрипты:** `scripts/site_fetch.py`, `scripts/research_notes_store.py`, `scripts/contacts_store.py`.
+**Скрипты:** `scripts/site_fetch.py`, `scripts/contacts_store.py`, `scripts/site_research_agent_relevant_track.py`.
 
-**Отличие от основной SiteResearchAgent:** не проверяет релевантность (компании уже квалифицированы), не меняет статус, не работает с `category_options`. Идемпотентна.
+**Отличие от основной SiteResearchAgent:** не проверяет релевантность (компании уже квалифицированы), не работает с `category_options`. Идемпотентна. Не пишет в `research_notes`.
 
 ---
 

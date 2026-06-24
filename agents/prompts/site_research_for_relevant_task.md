@@ -9,8 +9,8 @@ year, and country. Write findings back to Supabase.
 **Scope:** This is NOT a relevance gate. Companies are already `relevant`. Goal is
 to enrich with site-scraped data.
 
-**Status:** Companies remain `relevant` (status does not change). Only `contacts`,
-`research_notes` (product), `founded_year`, and `country` are updated.
+**Status:** After successful site scrape, company status changes `relevant` →
+`site_researched`. If the site is unreachable or scraping fails, status stays `relevant`.
 
 ## Run Parameters
 
@@ -101,7 +101,7 @@ store.upsert_research_record(record, company_id=<id>)
 
 ## Step 4 - Batch Write
 
-After processing each company, immediately write:
+After processing each company, immediately write and then update status:
 
 ```python
 # For each company with extracted data:
@@ -117,10 +117,11 @@ if product_note:
         "source_url": <primary_source_url>
     })
 
-# Update company fields
+# Update company fields + status
 update_company(store, id, {
     "founded_year": <year_or_null>,
     "country": <country_or_null>,
+    "status": "site_researched",
     "updated_at": "NOW()"
 })
 ```
@@ -159,8 +160,9 @@ python scripts/notify.py --run-summary '{
 
 ## Important Notes
 
-- **Status does not change.** Companies stay `relevant` after this task.
-- **Idempotent.** Repeat runs with same batch update the same records (contact
-  and note deduplication handles re-runs).
-- **No filtering.** All companies in the batch are processed equally; no
-  skip-based on criteria.
+- **Status changes.** `relevant` → `site_researched` after successful scrape.
+  Dead or unreachable sites keep status `relevant`.
+- **Idempotent.** Repeat runs update the same records (contact and record
+  deduplication handles re-runs). Status re-set to `site_researched` on re-run
+  is harmless.
+- **No filtering.** All reachable companies in the batch are processed equally.

@@ -293,6 +293,16 @@ def main():
                     }
                 }
 
+            # Update status to site_researched
+            if not args.dry_run:
+                try:
+                    store._client.table("companies").update(
+                        {"status": "site_researched", "updated_at": datetime.utcnow().isoformat()}
+                    ).eq("id", company_id).execute()
+                    print(f"  [✓ Status → site_researched]")
+                except Exception as e:
+                    print(f"  [✗ Status update error: {e}]")
+
         except subprocess.TimeoutExpired:
             print(f"  [Timeout]")
             continue
