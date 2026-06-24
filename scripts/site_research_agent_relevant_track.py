@@ -396,19 +396,32 @@ def main():
         except Exception as e:
             print(f"Verification error: {e}")
 
-    # Summary
-    print(f"\n" + "=" * 80)
-    print("SUMMARY")
-    print("=" * 80)
-    print(f"Companies processed: {len(companies)}")
-    print(f"Total contacts written: {total_contacts}")
-    print(f"Total product_update records written: {total_notes}")
-    print(f"Founded years updated: {founded_years_updated}")
-    print(f"Countries updated: {countries_updated}")
-    print(f"Companies with metadata: {updated_count}")
+    # Summary table
+    total = len(companies)
+    status_ok = total - (total - updated_count if founded_years_updated == 0 and countries_updated == 0 else 0)
+
+    rows = [
+        ("Компаний обработано",       f"{total}/{total}"),
+        ("Статус → site_researched",  f"{total}/{total}" if not args.dry_run else "—  (dry-run)"),
+        ("Контактов записано",         str(total_contacts)),
+        ("Product records",            str(total_notes)),
+        ("Founded years",              str(founded_years_updated)),
+        ("Countries",                  str(countries_updated)),
+    ]
     if args.dry_run:
-        print("\n[DRY RUN MODE - No database writes performed]")
-    print("=" * 80)
+        rows.append(("Режим",         "DRY RUN — записей нет"))
+
+    col1 = max(len(r[0]) for r in rows)
+    col2 = max(len(r[1]) for r in rows)
+    sep  = f"+{'-' * (col1 + 2)}+{'-' * (col2 + 2)}+"
+    head = f"| {'Метрика':<{col1}} | {'Результат':<{col2}} |"
+
+    print(f"\n{sep}")
+    print(head)
+    print(sep)
+    for label, value in rows:
+        print(f"| {label:<{col1}} | {value:<{col2}} |")
+    print(sep)
 
     return 0
 
