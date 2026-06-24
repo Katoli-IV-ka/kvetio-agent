@@ -28,8 +28,13 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from notion_profile import build_company_profiles, load_potential_cfg
-from translate import build_notion_localizer_from_env
+
+_SCRIPT_DIR = Path(__file__).parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from notion_profile import build_company_profiles, load_potential_cfg  # noqa: E402
+from translate import build_notion_localizer_from_env  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -297,10 +302,24 @@ class NotionGateway:
         self._c.blocks.delete(block_id=block_id)
 
     def retrieve_database(self, db_id):
-        return self._c.databases.retrieve(database_id=db_id)
+        database = self._c.databases.retrieve(database_id=db_id)
+        if "properties" in database:
+            return database
+        data_sources = database.get("data_sources") or []
+        if not data_sources:
+            return database
+        data_source_id = data_sources[0]["id"]
+        return self._c.data_sources.retrieve(data_source_id=data_source_id)
 
     def update_database(self, db_id, properties):
-        return self._c.databases.update(database_id=db_id, properties=properties)
+        database = self._c.databases.retrieve(database_id=db_id)
+        if "properties" in database:
+            return self._c.databases.update(database_id=db_id, properties=properties)
+        data_sources = database.get("data_sources") or []
+        if not data_sources:
+            return self._c.databases.update(database_id=db_id, properties=properties)
+        data_source_id = data_sources[0]["id"]
+        return self._c.data_sources.update(data_source_id=data_source_id, properties=properties)
 
 
 class DbGateway:

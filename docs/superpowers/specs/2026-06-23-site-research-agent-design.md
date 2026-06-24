@@ -72,7 +72,8 @@ SiteResearchAgent для каждой компании со `status='new'`:
    - контакты и внешние ссылки → `contacts`;
    - продукт/пресс-релизы/партнёрства/финансирование → `research_notes`
      (`note_type`);
-   - дата основания → `companies.founded`, страна → `companies.country`;
+   - год основания → `companies.founded_year` (int), страна →
+     `companies.country`;
    - `status='site_researched'`, `category`.
 5. `run_logs` + `notify.py`.
 
@@ -88,13 +89,24 @@ SiteResearchAgent для каждой компании со `status='new'`:
 не enum. Таблицу `research_records` существующего пайплайна НЕ трогаем —
 `research_notes` это отдельная таблица нового пайплайна.
 
-### companies (расширение)
+**Переиспользуем существующее (зафиксировано после сверки со схемой):**
+- Таблица `contacts` уже существует (schema.sql, столбцы `contact_type`,
+  `name`, `info`, `email`, `linkedin_url`, `x_url`, `facebook_url`,
+  `instagram_url`, `other_channels JSONB`) и имеет готовый дедуплицирующий
+  `upsert_contact(store, dict)` в `scripts/contacts_store.py`. Новую таблицу
+  контактов НЕ создаём — пишем через `upsert_contact`.
+- `companies.country TEXT` уже есть — переиспользуем для страны офиса.
+- `companies.founded_year SMALLINT` уже есть — переиспользуем для года
+  основания (парсим год из текста сайта в int). Новый столбец `founded` НЕ
+  добавляем.
 
-- `status` — добавить значения `new`, `site_researched` к существующему набору.
-- `category TEXT NULL` — значение из `category_options`.
-- `founded TEXT NULL` — дата/год основания (текст: «2021», «March 2021»).
-- `country TEXT NULL` — страна главного офиса.
-- `description`, `linkedin_url` — уже есть, переиспользуем.
+### companies (расширение — только новое)
+
+- `status` — добавить значения `new`, `site_researched` к существующему набору
+  (расширить CHECK-констрейнт `companies_status_check`).
+- `category TEXT NULL` — значение из `category_options` (FK).
+- `description`, `linkedin_url`, `country`, `founded_year` — уже есть,
+  переиспользуем.
 
 ### category_options (справочник, Notion-select)
 
@@ -106,20 +118,19 @@ SiteResearchAgent для каждой компании со `status='new'`:
 
 Новая категория → INSERT сюда перед проставлением в `companies.category`.
 
-### contacts (новая)
+### contacts (СУЩЕСТВУЕТ — не создаём)
 
-| колонка | тип | назначение |
-|---|---|---|
-| `id` | uuid PK | |
-| `company_id` | uuid FK → companies | |
-| `contact_type` | TEXT | `email`, `linkedin`, `github`, `huggingface`, `facebook`, `instagram`, `website`, `person`, `other` |
-| `value` | TEXT | адрес/ссылка |
-| `name` | TEXT NULL | имя человека (руководители/сотрудники) |
-| `role` | TEXT NULL | должность |
-| `source_url` | TEXT NULL | где на сайте найдено |
-| `created_at` | timestamptz | |
+Пишем через `scripts/contacts_store.py::upsert_contact(store, dict)`. Маппинг
+извлечённых данных:
+- человек → `{contact_type:"person", name, info=role, email?, linkedin_url?}`;
+- внешние ссылки компании → передаём в соответствующие поля контакта-компании
+  (`linkedin_url`, `x_url`, `facebook_url`, `instagram_url`) или в
+  `other_channels` (github/huggingface/website) через `upsert_contact`, который
+  сам нормализует каналы (`normalize_other_channels`);
+- email компании → `{contact_type:"email", email}` либо в other_channels.
 
-`UNIQUE(company_id, contact_type, value)` — upsert без дублей.
+`upsert_contact` уже дедуплицирует по `(company_id, contact_type, name)` —
+повторный запуск не плодит дубли.
 
 ### research_notes (новая)
 
