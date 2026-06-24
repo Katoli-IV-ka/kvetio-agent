@@ -34,6 +34,7 @@ Canonical company status flow:
 
 ```text
 discovered -> relevant/not_relevant/manual_review -> sources_gathered -> analyzed -> dossier_ready
+new -> site_researched/not_relevant
 ```
 
 Pipeline stages:
@@ -149,12 +150,27 @@ Routine environment:
 - `NOTION_TOKEN`, `NOTION_COMPANIES_DB_ID`, `NOTION_CONTACTS_DB_ID`
 - `GITHUB_TOKEN`, `HF_TOKEN`
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+- `SITE_FETCH_MAX_OUTPUT`, `SITE_FETCH_MAX_PAGES` for SiteResearchAgent defaults
 
 Railway bot environment:
 
 - `SUPABASE_URL`, `SUPABASE_KEY`
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `BOT_WEBHOOK_URL`
 - `ROUTINE_FIRE_URL`, `ROUTINE_TOKEN`
+
+### agent-browser (optional, for SiteResearchAgent)
+
+`scripts/site_fetch.py` uses the `agent-browser` CLI for token-efficient site
+scraping with accessibility snapshots instead of raw HTML. Without it, the
+script automatically falls back to httpx plus BeautifulSoup (`engine:
+"fallback"`).
+
+Install:
+
+```bash
+npm install -g agent-browser
+agent-browser install
+```
 
 ## Database Schema
 
@@ -164,8 +180,8 @@ Runtime table groups:
 
 | Group | Tables |
 |---|---|
-| Данные | `companies`, `contacts`, `dossiers` |
-| Процессные | `research_records`, `analysis_records` |
+| Данные | `companies`, `category_options`, `contacts`, `dossiers` |
+| Процессные | `research_records`, `research_notes`, `analysis_records` |
 | Технические | `analysis_links`, `dossier_links`, `record_types`, `run_logs` |
 
 Important runtime contracts:

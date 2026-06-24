@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 import notion_sync as ns
@@ -16,6 +20,19 @@ def test_load_mapping_reads_entities():
     assert "name" in names
     for column in ("outreach" + "_status", "outreach" + "_note", "latest" + "_signal"):
         assert column not in names
+
+
+def test_module_cli_imports_when_run_with_python_m():
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.notion_sync", "--help"],
+        cwd=Path(__file__).parent.parent,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Supabase" in result.stdout
 
 
 def test_contacts_mapping_has_company_relation_and_name():
@@ -140,6 +157,49 @@ class FakeDb:
         return [r for r in self.tables.get(table, []) if r.get("company_id") == company_id]
 
 
+class _FakeRawDatabases:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def retrieve(self, database_id):
+        self.owner.database_retrieves.append(database_id)
+        return {"id": database_id, "data_sources": [{"id": "ds-1"}]}
+
+
+class _FakeRawDataSources:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def retrieve(self, data_source_id):
+        self.owner.data_source_retrieves.append(data_source_id)
+        return {"id": data_source_id, "properties": {"Company name": {"type": "title"}}}
+
+    def update(self, data_source_id, properties):
+        self.owner.data_source_updates.append((data_source_id, properties))
+        return {"id": data_source_id, "properties": properties}
+
+
+class _FakeRawNotionClient:
+    def __init__(self):
+        self.database_retrieves = []
+        self.data_source_retrieves = []
+        self.data_source_updates = []
+        self.databases = _FakeRawDatabases(self)
+        self.data_sources = _FakeRawDataSources(self)
+
+
+def test_notion_gateway_supports_data_source_schema_api():
+    client = _FakeRawNotionClient()
+    gateway = ns.NotionGateway(client)
+
+    database = gateway.retrieve_database("db-1")
+    gateway.update_database("db-1", {"Category": {"select": {}}})
+
+    assert database["properties"] == {"Company name": {"type": "title"}}
+    assert client.data_source_retrieves == ["ds-1"]
+    assert client.data_source_updates == [("ds-1", {"Category": {"select": {}}})]
+
+
 COMPANIES_MAPPING = {
     "companies": {
         "notion_database_id_env": "NOTION_COMPANIES_DB_ID",
@@ -200,6 +260,32 @@ def test_forward_is_idempotent():
     assert r1["updated"] == 1
     assert r2["updated"] == 1
     assert len(notion.pages) == 1  # без дублей
+
+
+def test_forward_recreates_archived_page_and_rewrites_id():
+    rows = [{"domain": "acme.com", "name": "Acme", "icp_segment": "medical-imaging",
+             "status": "relevant", "notion_page_id": "archived-page"}]
+
+    class ArchivedPageNotion(FakeNotion):
+        def update_page(self, page_id, properties):
+            if page_id == "archived-page":
+                raise RuntimeError("Can't edit block that is archived.")
+            return super().update_page(page_id, properties)
+
+    notion = ArchivedPageNotion()
+    notion.pages["archived-page"] = {"_db": "DBID", "properties": {}, "children": []}
+    db = FakeDb(rows)
+    sync = ns.NotionSync(notion=notion, db=db, mapping=COMPANIES_MAPPING,
+                         env={"NOTION_COMPANIES_DB_ID": "DBID"})
+
+    result = sync.sync_forward("companies")
+
+    new_page_id = db.tables["companies"][0]["notion_page_id"]
+    assert result == {"entity": "companies", "created": 1, "updated": 0, "errors": 0}
+    assert new_page_id != "archived-page"
+    assert notion.pages[new_page_id]["properties"]["Company name"] == {
+        "title": [{"text": {"content": "Acme"}}],
+    }
 
 
 def test_forward_localizes_rich_text_before_notion_write():
@@ -476,33 +562,27 @@ def test_companies_mapping_matches_release_schema():
     # Core fields always present
     assert fields["name"]["notion_type"] == "title"
     assert fields["website"]["notion_type"] == "url"
-    assert fields["linkedin_url"]["notion_type"] == "url"
     assert fields["description"]["notion_type"] == "rich_text"
 
-    # Firmographic fields (029)
+    # Firmographic fields
     assert fields["icp_segment"]["notion_type"] == "select"
     assert fields["country"]["notion_type"] == "select"
-    assert fields["founded_year"]["notion_type"] == "number"
     assert fields["company_size"]["notion_type"] == "select"
 
-    # Computed field
-    assert fields["funding_info"]["notion_type"] == "rich_text"
-    assert fields["funding_info"]["direction"] == "forward"
     expected_columns = {
-        "name", "website", "linkedin_url", "icp_segment", "status",
-        "description", "country", "founded_year", "company_size",
-        "funding_info", "potential_data", "last_info_update",
+        "name", "website", "icp_segment", "status",
+        "description", "country", "company_size", "last_info_update",
     }
     assert set(fields.keys()) == expected_columns
     assert fields["name"]["notion_property"] == "Company Name"
     assert fields["name"]["notion_type"] == "title"
     assert fields["icp_segment"]["notion_property"] == "ICP-Segment"
     assert fields["description"]["notion_property"] == "AI Summary"
-    assert fields["founded_year"]["notion_property"] == "Founding"
-    assert fields["funding_info"]["source"] == "computed"
-    assert fields["potential_data"]["notion_type"] == "multi_select"
     assert fields["last_info_update"]["notion_property"] == "Last info update"
     assert fields["last_info_update"]["notion_type"] == "date"
+    assert "dossier_ready" in mapping["companies"]["db_status_filter"]
+    assert "data_partner" in mapping["companies"]["db_status_filter"]
+    assert "site_researched" in mapping["companies"]["db_status_filter"]
     assert mapping["companies"].get("profile_builder") is True
     for f in mapping["companies"]["fields"]:
         assert f["direction"] == "forward"

@@ -38,6 +38,8 @@
 - [PipelineAgent](#pipelineagent)
 - [DiscoveryAgent](#discoveryagent)
 - [RelevanceAgent](#relevanceagent)
+- [SiteResearchAgent](#siteresearchagent)
+- [SiteResearchAgent (Relevant Track)](#siteresearchagent-relevant-track)
 - [SourceExpansionAgent](#sourceexpansionagent)
 - [EnrichmentAgent](#enrichmentagent)
 - [AnalysisAgent](#analysisagent)
@@ -52,8 +54,10 @@
 <summary><b>4. База данных</b></summary>
 
 - [Схема таблиц](#схема-таблиц)
+- [category\_options](#category_options)
 - [companies](#companies)
 - [research\_records](#research_records)
+- [research\_notes](#research_notes)
 - [contacts](#contacts)
 - [analysis\_records](#analysis_records)
 - [analysis\_links](#analysis_links)
@@ -254,6 +258,8 @@ curl "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
 | `NOTION_DOSSIERS_DB_ID` | ID базы досье в Notion |
 | `GITHUB_TOKEN` | GitHub API |
 | `HF_TOKEN` | HuggingFace (расширяет лимиты до ~1000 req/min) |
+| `SITE_FETCH_MAX_OUTPUT` | Лимит символов вывода `scripts/site_fetch.py`, по умолчанию `50000` |
+| `SITE_FETCH_MAX_PAGES` | Лимит подстраниц для SiteResearchAgent, по умолчанию `5` |
 | `APOLLO_API_KEY` | Опционально, contacts adapter |
 
 ### Параметры запуска Routine
@@ -301,6 +307,10 @@ stateDiagram-v2
     discovered --> manual_review : RelevanceAgent
     discovered --> data_partner : RelevanceAgent (дата-провайдер)
 
+    [*] --> new : внешний seed / импорт сайта
+    new --> site_researched : SiteResearchAgent
+    new --> not_relevant : SiteResearchAgent
+
     manual_review --> relevant : ручная переквалификация
 
     relevant --> sources_gathered : SourceExpansionAgent / EnrichmentAgent
@@ -318,6 +328,10 @@ stateDiagram-v2
 
 `data_partner` — исход Relevance для компаний, которые сами продают датасеты/разметку (партнёрский трек вместо `not_relevant`). Downstream-стадии выбирают `relevant` И `data_partner`. Так как статус только повышается, партнёрская принадлежность дополнительно фиксируется durable-записью `research_records` с `record_type='data_partner_flag'` — по ней downstream-агенты и Аудит определяют трек, а не по текущему статусу.
 
+`new` → `site_researched` — отдельный терминальный pipeline SiteResearchAgent.
+Он не трогает `research_records` и не продолжает основной discovery→dossier flow:
+результаты сайта пишутся в `contacts`, `research_notes` и поля `companies`.
+
 ### Пайплайн агентов
 
 ```mermaid
@@ -326,8 +340,10 @@ stateDiagram-v2
 
     PipelineAgent --> DiscoveryAgent : icp_segment / startup_research
     PipelineAgent --> RelevanceAgent : enrich_existing
+    PipelineAgent --> SiteResearchAgent : site research batch
 
     DiscoveryAgent --> RelevanceAgent
+    SiteResearchAgent --> [*]
     RelevanceAgent --> SourceExpansionAgent
     SourceExpansionAgent --> EnrichmentAgent
     EnrichmentAgent --> ContactsAgent
@@ -402,6 +418,69 @@ stateDiagram-v2
 **Читает из БД:** `companies WHERE status='discovered'`.
 
 **Источники данных:** WebFetch (сайт компании), HuggingFace API, GitHub, LinkedIn.
+
+---
+
+### SiteResearchAgent
+
+**Промпты:** `agents/prompts/site_research_task.md` +
+`agents/prompts/relevance_check_task.md`.
+
+**Роль:** Терминальный разбор сайта для компаний со статусом `new`. Агент
+скрапит сайт, запускает вложенную проверку релевантности, классифицирует
+категорию компании и записывает найденные контакты/заметки/firmographics.
+
+**Как работает:**
+1. Берёт `companies WHERE status='new'`.
+2. Запускает `python scripts/site_fetch.py --domain <domain> --max-pages <N>`.
+   Скрипт использует `agent-browser` CLI, если он установлен, иначе fallback
+   `httpx` + BeautifulSoup.
+3. Передаёт JSON сайта во вложенный `relevance_check_task.md`.
+4. Для нерелевантных компаний ставит `not_relevant` и `category`, без записи
+   контента.
+5. Для релевантных пишет контакты, заметки, `category`, `founded_year`,
+   `country`, затем ставит `site_researched`.
+
+**Пишет в БД:**
+- `companies`: `status`, `category`, `founded_year`, `country`.
+- `contacts`: people/company channels через `contacts_store.upsert_contact`.
+- `research_notes`: `product`, `press_release`, `cooperative`, `finance`.
+- `category_options`: новые category select options через `ensure_category`.
+- `run_logs`: итог запуска.
+
+**Читает из БД:** `companies WHERE status='new'`.
+
+**Скрипты:** `scripts/site_fetch.py`, `scripts/research_notes_store.py`,
+`scripts/contacts_store.py`, `scripts/notify.py`.
+
+**Граница:** это параллельный pipeline. Он не пишет в `research_records` и не
+переводит компании в `sources_gathered`/`analyzed`/`dossier_ready`.
+
+### SiteResearchAgent (Relevant Track)
+
+**Промпт:** `agents/prompts/site_research_for_relevant_task.md`.
+
+**Роль:** Обогащение уже квалифицированных `relevant` компаний через скрейпинг их сайтов. Собирает контакты, информацию о продукте, год основания и страну.
+
+**Как работает:**
+1. Берёт `companies WHERE status='relevant'` (макс 20).
+2. Запускает `python scripts/site_fetch.py --domain <domain> --max-pages 5`.
+3. Парсит результат: ищет контакты (люди, email, социальные ссылки), описание продукта, год основания, страну.
+4. Записывает контакты через `contacts_store.upsert_contact`.
+5. Записывает product notes через `research_notes_store.upsert_note`.
+6. Обновляет `founded_year` и `country` в таблице `companies`.
+
+**Пишет в БД:**
+- `companies`: `status='site_researched'`, `founded_year`, `country`.
+- `contacts`: люди и каналы связи через `contacts_store.upsert_contact`.
+- `research_records`: `record_type='product_update'`, `record_role='source'`, `agent='site_research'`.
+- `run_logs`: итоговая статистика.
+
+**Читает из БД:** `companies WHERE status='relevant'`.
+
+**Скрипты:** `scripts/site_fetch.py`, `scripts/contacts_store.py`, `scripts/site_research_agent_relevant_track.py`.
+
+**Отличие от основной SiteResearchAgent:** не проверяет релевантность (компании уже квалифицированы), не работает с `category_options`. Идемпотентна. Не пишет в `research_notes`.
 
 ---
 
@@ -601,8 +680,10 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
+    category_options --> companies : category
     companies --> contacts : company_id
     companies --> research_records : company_id
+    companies --> research_notes : company_id
     companies --> analysis_records : company_id
     companies --> dossiers : company_id
     research_records --> analysis_links
@@ -616,9 +697,11 @@ stateDiagram-v2
 | Группа | Таблица | Назначение |
 |---|---|---|
 | Данные | `companies` | Центральная сущность. Все FK ссылаются сюда. Хранит статус в пайплайне. |
+| Данные | `category_options` | Справочник category select values для SiteResearchAgent. |
 | Данные | `contacts` | Люди и каналы связи. Всегда привязаны к `companies.id`. |
 | Данные | `dossiers` | Финальный профиль компании. Один на компанию. Источник для Notion. |
 | Процессные | `research_records` | Атомарные наблюдения агентов. Каждый найденный факт — одна строка. |
+| Процессные | `research_notes` | Идемпотентные заметки SiteResearchAgent по продукту, пресс-релизам, партнёрствам и финансам. |
 | Процессные | `analysis_records` | Структурированная интерпретация наблюдений по секциям. |
 | Технические | `analysis_links` | Провенанс: какие `research_records` стоят за каждым `analysis_record`. |
 | Технические | `dossier_links` | Провенанс: какие `analysis_records` вошли в поля досье. |
@@ -641,7 +724,19 @@ stateDiagram-v2
 | `status` | TEXT | Текущая стадия (см. status flow) |
 | `icp_segment` | TEXT | Сегмент ICP из `config/icp.yaml` |
 | `description` | TEXT | Краткое описание, заполняется на relevance |
+| `country` | TEXT | Страна офиса/компании, может заполняться SiteResearchAgent |
+| `category` | TEXT FK → category_options | Категория SiteResearchAgent / relevance-check |
+| `founded_year` | SMALLINT | Год основания, если найден |
 | `needs_refresh` | TIMESTAMPTZ | Флаг NewsAgent: у `dossier_ready`-компании появился сильный новостной сигнал → досье пересобрать инкрементально. НЕ статус (статус только повышается). Частичный индекс `idx_companies_needs_refresh`. Гасится ConclusionAgent после refresh |
+
+### `category_options`
+
+Справочник допустимых категорий для `companies.category`. Используется как
+select-like таблица: известные значения создаёт миграция `034_site_research.sql`,
+новые значения SiteResearchAgent добавляет через `ensure_category`.
+
+Базовые значения: `data_provider`, `product_builder`, `llm_wrapper`,
+`big_tech_ai`, `non_tech_product`, `startup_own_model`, `closed_project`.
 
 ### `research_records`
 
@@ -664,6 +759,23 @@ stateDiagram-v2
 | `raw_data` | JSONB | Опциональный сырой API-снэпшот |
 | `run_id` | UUID FK → run_logs | Привязка к запуску |
 | `dedupe_key` | TEXT UNIQUE | Детерминированный ключ. Гарантирует идемпотентность повторных запусков |
+
+### `research_notes`
+
+Заметки SiteResearchAgent. Это не замена `research_records`: таблица хранит
+сжатые смысловые заметки сайта по категориям нового pipeline и не участвует в
+основном analysis/dossier provenance.
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | UUID PK | — |
+| `company_id` | UUID FK → companies | Обязателен |
+| `note_type` | TEXT | `product` / `press_release` / `cooperative` / `finance` |
+| `content` | TEXT | Текст заметки |
+| `content_hash` | TEXT | SHA256 для идемпотентности |
+| `source_url` | TEXT | URL источника, если есть |
+
+Дедупликация: `(company_id, note_type, content_hash)`.
 
 ### `contacts`
 

@@ -582,11 +582,16 @@ RESOLVERS: list[Resolver] = [
 
 def _headcount_to_size(n: int) -> str:
     """Map raw headcount to a canonical company_size label."""
-    if n <= 10:   return "1-10"
-    if n <= 50:   return "11-50"
-    if n <= 200:  return "51-200"
-    if n <= 500:  return "201-500"
-    if n <= 1000: return "501-1000"
+    if n <= 10:
+        return "1-10"
+    if n <= 50:
+        return "11-50"
+    if n <= 200:
+        return "51-200"
+    if n <= 500:
+        return "201-500"
+    if n <= 1000:
+        return "501-1000"
     return "1000+"
 
 

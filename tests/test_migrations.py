@@ -32,10 +32,12 @@ def test_schema_file_is_the_only_active_sql_contract() -> None:
 def test_schema_creates_current_runtime_tables() -> None:
     sql = _schema()
     for table in (
+        "category_options",
         "companies",
         "run_logs",
         "record_types",
         "research_records",
+        "research_notes",
         "contacts",
         "analysis_records",
         "analysis_links",
@@ -69,6 +71,9 @@ def test_companies_status_contract_is_current() -> None:
         "sources_gathered",
         "analyzed",
         "dossier_ready",
+        "data_partner",
+        "new",
+        "site_researched",
     ):
         assert f"'{status}'" in companies
     for legacy_status in ("qualified", "triaged_out", "pending_enrich", "enriched", "Researching"):
@@ -97,6 +102,27 @@ def test_companies_status_includes_data_partner() -> None:
     """Phase 1: data-provider companies get a partner track instead of not_relevant."""
     companies = _table_body(_schema(), "companies")
     assert "'data_partner'" in companies
+
+
+def test_site_research_schema_contract() -> None:
+    sql = _schema()
+    companies = _table_body(sql, "companies")
+    notes = _table_body(sql, "research_notes")
+    assert "category       TEXT REFERENCES category_options(value)" in companies
+    assert "value      TEXT PRIMARY KEY" in _table_body(sql, "category_options")
+    for category in (
+        "data_provider",
+        "product_builder",
+        "llm_wrapper",
+        "big_tech_ai",
+        "non_tech_product",
+        "startup_own_model",
+        "closed_project",
+    ):
+        assert f"'{category}'" in sql
+    for note_type in ("product", "press_release", "cooperative", "finance"):
+        assert f"'{note_type}'" in notes
+    assert "UNIQUE (company_id, note_type, content_hash)" in notes
 
 
 def test_schema_has_phase1_record_types() -> None:
