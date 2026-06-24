@@ -67,13 +67,30 @@ Partial extraction is OK. If no contacts found for a company, skip contacts.
 
 ### 3b. Product Information
 
-Through `scripts/research_notes_store.py::upsert_note(...)`:
+Write to `research_records` via `store.upsert_research_record(record, company_id=<id>)`:
 
-- Product positioning, problem statement, approach, functionality, audience →
-  `note_type="product"`.
+```python
+record = ResearchRecord(
+    source="website",
+    record_type="product_update",
+    record_role="source",
+    agent="site_research",
+    company_name=<name>,
+    domain=<domain>,
+    linkedin_url=None,
+    url=<homepage_url>,
+    observed_at=date.today(),
+    confidence="medium",
+    title="<company_name> — product description",
+    summary=<product_text[:500]>,
+)
+store.upsert_research_record(record, company_id=<id>)
+```
+
 - Extract from: homepage copy, `/product` or `/solutions` pages, feature lists,
   documentation.
-- If no clear product description found, skip this note.
+- If no clear product description found, skip this record.
+- Do NOT use `research_notes` or `upsert_note()` — always use `research_records`.
 
 ### 3c. Company Fields
 

@@ -6,7 +6,7 @@ This script:
 1. Queries 20 most recent companies with status='relevant'
 2. Scrapes each company's website
 3. Extracts: contacts (LinkedIn, emails), product info, founded_year, country
-4. Writes to Supabase: contacts table, research_notes table, companies.founded_year/country
+4. Writes to Supabase: contacts, research_records (product_update), companies.founded_year/country
 5. Verifies all writes with count queries
 
 Requires:
@@ -39,7 +39,7 @@ load_dotenv()
 
 from supabase_store import SupabaseStore
 from contacts_store import upsert_contact
-from research_notes_store import upsert_note
+from models import ResearchRecord
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -201,23 +201,32 @@ def main():
                         print(f"  {link_type.upper()}: {link.get('url')}")
                         break
 
-            # 4. Product info
-            product_text = " ".join([p.get("text", "") for p in site_data.get("pages", [])])
+            # 4. Product info → research_records (record_type=product_update)
+            pages = site_data.get("pages", [])
+            product_text = " ".join([p.get("text", "") for p in pages])
 
             if product_text.strip():
-                product_desc = product_text.strip()[:500]
+                product_summary = product_text.strip()[:500]
+                home_url = pages[0].get("url") if pages else f"https://{domain}"
                 if not args.dry_run:
                     try:
-                        home_url = site_data.get("pages", [{}])[0].get("url") if site_data.get("pages") else None
-                        note_id = upsert_note(
-                            store,
-                            company_id=company_id,
-                            note_type="product",
-                            content=product_desc,
-                            source_url=home_url
+                        record = ResearchRecord(
+                            source="website",
+                            record_type="product_update",
+                            record_role="source",
+                            agent="site_research",
+                            company_name=company["name"],
+                            domain=domain,
+                            linkedin_url=None,
+                            url=home_url,
+                            observed_at=datetime.utcnow().date(),
+                            confidence="medium",
+                            title=f"{company['name']} — product description",
+                            summary=product_summary,
                         )
+                        store.upsert_research_record(record, company_id=company_id)
                         total_notes += 1
-                        print(f"  [✓ Added product note]")
+                        print(f"  [✓ Added product_update record]")
                     except Exception as e:
                         print(f"  [✗ Error: {e}]")
 
@@ -368,11 +377,11 @@ def main():
 
             print(f"\nContacts created in last 2 hours: {contacts_recent.count}")
 
-            notes_response = store._client.table("research_notes").select(
+            records_response = store._client.table("research_records").select(
                 "id", count="exact"
-            ).eq("note_type", "product").gte("created_at", two_hours_ago).execute()
+            ).eq("record_type", "product_update").eq("agent", "site_research").gte("created_at", two_hours_ago).execute()
 
-            print(f"Product notes created in last 2 hours: {notes_response.count}")
+            print(f"Product records (research_records) created in last 2 hours: {records_response.count}")
 
         except Exception as e:
             print(f"Verification error: {e}")
@@ -383,7 +392,7 @@ def main():
     print("=" * 80)
     print(f"Companies processed: {len(companies)}")
     print(f"Total contacts written: {total_contacts}")
-    print(f"Total product notes written: {total_notes}")
+    print(f"Total product_update records written: {total_notes}")
     print(f"Founded years updated: {founded_years_updated}")
     print(f"Countries updated: {countries_updated}")
     print(f"Companies with metadata: {updated_count}")
