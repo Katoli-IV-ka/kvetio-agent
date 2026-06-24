@@ -408,6 +408,44 @@ class NotionSync:
             return self.translator.translate(value)
         return value
 
+    def _write_page_ref(self, cfg: dict, row: dict, page_id: str) -> None:
+        self.db.update(
+            cfg["db_table"],
+            cfg["db_key"],
+            row[cfg["db_key"]],
+            {
+                "notion_page_id": page_id,
+                "notion_synced_at": datetime.utcnow().isoformat(),
+            },
+        )
+
+    @staticmethod
+    def _should_recreate_page(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return any(
+            marker in message
+            for marker in (
+                "archived",
+                "not found",
+                "could not find",
+                "object_not_found",
+                "page_id is not valid",
+                "block_id is not valid",
+            )
+        )
+
+    def _create_forward_page(self, entity: str, cfg: dict, db_id: str, row: dict, props: dict) -> str:
+        page = self.notion.create_page(db_id, props)
+        page_id = page["id"]
+        self._write_page_ref(cfg, row, page_id)
+        if entity == "companies" and row.get("id"):
+            try:
+                from notion_render import render_and_write_body  # noqa: PLC0415
+                render_and_write_body(self, row["id"], page_id, refresh=False)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("render body %s: %s", row.get("id"), exc)
+        return page_id
+
     def sync_forward(self, entity, dry_run=False) -> dict:
         cfg = self._cfg(entity)
         db_id = self._db_id(entity)
@@ -439,21 +477,23 @@ class NotionSync:
                     for f in fields
                 }
                 if page_id:
-                    self.notion.update_page(page_id, props)
-                    updated += 1
+                    try:
+                        self.notion.update_page(page_id, props)
+                        updated += 1
+                    except Exception as exc:  # noqa: BLE001
+                        if not self._should_recreate_page(exc):
+                            raise
+                        logger.warning(
+                            "forward %s %s: recreating unavailable Notion page %s: %s",
+                            entity,
+                            row.get(cfg["db_key"]),
+                            page_id,
+                            exc,
+                        )
+                        self._create_forward_page(entity, cfg, db_id, row, props)
+                        created += 1
                 else:
-                    page = self.notion.create_page(db_id, props)
-                    page_id = page["id"]
-                    self.db.update(cfg["db_table"], cfg["db_key"],
-                                   row[cfg["db_key"]],
-                                   {"notion_page_id": page_id,
-                                    "notion_synced_at": datetime.utcnow().isoformat()})
-                    if entity == "companies" and row.get("id"):
-                        try:
-                            from notion_render import render_and_write_body  # noqa: PLC0415
-                            render_and_write_body(self, row["id"], page_id, refresh=False)
-                        except Exception as exc:  # noqa: BLE001
-                            logger.error("render body %s: %s", row.get("id"), exc)
+                    self._create_forward_page(entity, cfg, db_id, row, props)
                     created += 1
             except Exception as exc:  # noqa: BLE001
                 logger.error("forward %s %s: %s", entity, row.get(cfg["db_key"]), exc)

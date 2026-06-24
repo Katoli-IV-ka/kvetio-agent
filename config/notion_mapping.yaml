@@ -8,20 +8,16 @@ companies:
   notion_database_id_env: NOTION_COMPANIES_DB_ID
   db_table: companies
   db_key: domain
-  db_status_filter: [relevant, sources_gathered, analyzed, dossier_ready, data_partner, site_researched]
+  db_status_filter: [dossier_ready, data_partner, site_researched]
   profile_builder: true
   fields:
     - { db_column: name,               notion_property: "Company Name",    notion_type: title,        direction: forward, source: db_column }
     - { db_column: website,            notion_property: "Website",         notion_type: url,          direction: forward, source: db_column }
-    - { db_column: linkedin_url,       notion_property: "LinkedIn",        notion_type: url,          direction: forward, source: db_column }
     - { db_column: icp_segment,        notion_property: "ICP-Segment",     notion_type: select,       direction: forward, source: db_column }
     - { db_column: status,             notion_property: "Pipeline Status", notion_type: select,       direction: forward, source: db_column }
     - { db_column: description,        notion_property: "AI Summary",      notion_type: rich_text,    direction: forward, source: db_column }
     - { db_column: country,            notion_property: "Country",         notion_type: select,       direction: forward, source: db_column }
-    - { db_column: category,           notion_property: "Category",        notion_type: select,       direction: forward, source: db_column }
-    - { db_column: founded_year,       notion_property: "Founding",        notion_type: number,       direction: forward, source: db_column }
     - { db_column: company_size,       notion_property: "Company Size",    notion_type: select,       direction: forward, source: db_column }
-    - { db_column: funding_info,       notion_property: "Funding Info",    notion_type: rich_text,    direction: forward, source: computed }
     - { db_column: last_info_update,   notion_property: "Last info update",notion_type: date,         direction: forward, source: computed }
 
 contacts:
